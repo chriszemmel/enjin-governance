@@ -1,0 +1,225 @@
+"use client"
+
+import { Hash } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { formatTrackName } from "@/lib/governance/display"
+import {
+  ENJIN_TREASURY_TIERS,
+  type pickOriginForAmount,
+} from "@/lib/governance/treasury"
+import {
+  AttachmentDropzone,
+  type UploadedAttachment,
+} from "@/components/create/attachment-dropzone"
+import type { EnactmentChoice } from "@/lib/governance/enactment"
+import { MyDraftsPanel } from "@/components/create/my-drafts-panel"
+import { BeneficiaryCard } from "./beneficiary-card"
+import { EnactmentField } from "./enactment-field"
+import { Field } from "./create-ui"
+
+type ComposeProps = {
+  isConnected: boolean
+  balanceFree: bigint | null
+  /** Connected signer - proposer of record (drafts, deposits, sign-in). */
+  proposerAddress: string | null
+  /** Resolved payout address (defaults to proposer when the field is empty). */
+  beneficiary: string | null
+  /** Raw text in the beneficiary field ("" = pay self). */
+  beneficiaryInput: string
+  beneficiaryValid: boolean
+  beneficiaryIsSelf: boolean
+  accountName: string | null
+  chainShort: string
+  chainTicker: string
+  chainDecimals: number
+  title: string
+  summary: string
+  body: string
+  amount: string
+  amountError: string | null
+  pickedTier: ReturnType<typeof pickOriginForAmount>
+  requiredPlanck: bigint | null
+  balanceSufficient: boolean
+  proposalId: string
+  network: "enjin-relay" | "enjin-matrix" | "canary-relay" | "canary-matrix"
+  attachments: UploadedAttachment[]
+  onAttachmentsChange: (v: UploadedAttachment[]) => void
+  beforeUpload?: () => Promise<boolean>
+  enactment: EnactmentChoice
+  enactmentError: string | null
+  minEnactment: number | null
+  onTitle: (v: string) => void
+  onSummary: (v: string) => void
+  onBody: (v: string) => void
+  onAmount: (v: string) => void
+  onBeneficiary: (v: string) => void
+  onEnactment: (v: EnactmentChoice) => void
+  onConnect: () => void
+}
+
+export function Compose(p: ComposeProps) {
+  return (
+    <div className="space-y-5">
+      <MyDraftsPanel address={p.proposerAddress} network={p.network} />
+      <BeneficiaryCard
+        isConnected={p.isConnected}
+        accountName={p.accountName}
+        address={p.proposerAddress}
+        chainShortName={p.chainShort}
+        balanceFree={p.balanceFree}
+        requiredPlanck={p.requiredPlanck}
+        balanceSufficient={p.balanceSufficient}
+        chainTicker={p.chainTicker}
+        chainDecimals={p.chainDecimals}
+        onConnect={p.onConnect}
+      />
+
+      <h2 className="text-sm font-semibold text-foreground">Proposal</h2>
+
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-foreground">
+          Beneficiary address
+        </label>
+        <input
+          type="text"
+          value={p.beneficiaryInput}
+          onChange={(e) => p.onBeneficiary(e.target.value)}
+          placeholder={p.proposerAddress ?? "Defaults to your connected wallet"}
+          disabled={!p.isConnected}
+          spellCheck={false}
+          className={cn(
+            "w-full px-4 py-3 rounded-xl bg-surface-1 border text-sm text-foreground font-mono focus:outline-none focus:ring-1 transition-all disabled:opacity-50",
+            p.beneficiaryInput.trim() && !p.beneficiaryValid
+              ? "border-destructive/50 focus:border-destructive focus:ring-destructive/30"
+              : "border-border focus:border-primary/50 focus:ring-primary/20",
+          )}
+        />
+        {p.beneficiaryInput.trim() && !p.beneficiaryValid ? (
+          <p className="text-[11px] text-destructive">
+            Not a valid address for {p.chainShort}.
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            {p.beneficiaryIsSelf
+              ? "Treasury payout goes to your connected wallet. Enter another address to pay someone else."
+              : "Treasury payout goes to this address - not your wallet. Double-check it."}
+          </p>
+        )}
+      </div>
+
+      <Field
+        label="Title"
+        required
+        value={p.title}
+        onChange={p.onTitle}
+        placeholder="Clear, descriptive title (≥ 10 chars)"
+        maxLength={200}
+        hint={`${p.title.length}/200 characters`}
+        disabled={!p.isConnected}
+      />
+
+      <Field
+        label="Summary"
+        required
+        value={p.summary}
+        onChange={p.onSummary}
+        placeholder="1-3 sentences. Appears in list views."
+        multiline
+        rows={3}
+        maxLength={500}
+        hint={`${p.summary.length}/500 · ≥ 20 chars required`}
+        disabled={!p.isConnected}
+      />
+
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-foreground">
+          Requested amount ({p.chainTicker}) <span className="text-red-400">*</span>
+        </label>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={p.amount}
+          onChange={(e) => p.onAmount(e.target.value)}
+          placeholder="e.g. 1000"
+          disabled={!p.isConnected}
+          className={cn(
+            "w-full px-4 py-3 rounded-xl bg-surface-1 border text-sm text-foreground font-mono focus:outline-none focus:ring-1 transition-all disabled:opacity-50",
+            p.amountError
+              ? "border-destructive/50 focus:border-destructive focus:ring-destructive/30"
+              : "border-border focus:border-primary/50 focus:ring-primary/20",
+          )}
+        />
+        {p.amountError ? (
+          <p className="text-[11px] text-destructive">{p.amountError}</p>
+        ) : p.pickedTier ? (
+          <p className="text-[11px] text-muted-foreground">
+            Will submit on the{" "}
+            <span className="text-primary">{formatTrackName(p.pickedTier.origin)}</span> track
+            (smallest tier that fits).
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            The smallest treasury track that covers this amount will be chosen automatically.
+          </p>
+        )}
+      </div>
+
+      <Field
+        label="Full proposal (markdown)"
+        required
+        value={p.body}
+        onChange={p.onBody}
+        placeholder="Motivation, specification, milestones, risks, reporting cadence. Markdown supported."
+        multiline
+        rows={12}
+        maxLength={100_000}
+        hint={`${p.body.length}/100,000 · ≥ 50 chars required · markdown`}
+        mono
+        disabled={!p.isConnected}
+      />
+
+      <EnactmentField
+        value={p.enactment}
+        error={p.enactmentError}
+        minEnactment={p.minEnactment}
+        disabled={!p.isConnected}
+        onChange={p.onEnactment}
+      />
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-foreground">Attachments (optional)</h3>
+        <p className="text-[11px] text-muted-foreground">
+          Uploaded to off-chain storage before the on-chain transaction.
+        </p>
+        <AttachmentDropzone
+          proposalId={p.proposalId}
+          network={p.network}
+          attachments={p.attachments}
+          onChange={p.onAttachmentsChange}
+          beforeUpload={p.beforeUpload}
+          disabled={!p.isConnected}
+        />
+      </div>
+
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer hover:text-foreground transition-colors flex items-center gap-1.5">
+          <Hash className="w-3 h-3" />
+          Treasury tier reference
+        </summary>
+        <ul className="mt-3 space-y-1.5 font-mono pl-5">
+          {ENJIN_TREASURY_TIERS.map((t) => (
+            <li key={t.origin} className="flex justify-between">
+              <span className="text-foreground">{formatTrackName(t.origin)}</span>
+              <span>
+                ≤{" "}
+                {t.maxAmount == null
+                  ? "∞"
+                  : `${(t.maxAmount / 10n ** BigInt(p.chainDecimals)).toString()} ${p.chainTicker}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  )
+}

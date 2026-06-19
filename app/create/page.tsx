@@ -1,0 +1,907 @@
+"use client"
+
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
+import { ArrowLeft, Coins } from "lucide-react"
+import { toast } from "sonner"
+import type { ApiPromise } from "@polkadot/api"
+import { Nav } from "@/components/layout/nav"
+import { Footer } from "@/components/layout/footer"
+import { WalletModal } from "@/components/wallet/wallet-modal"
+import { SignRequestModal } from "@/components/wallet/sign-request-modal"
+import { useSignFlow } from "@/lib/wallet/use-sign-flow"
+import { type CallStatus } from "@/components/create/call-card"
+import { type UploadedAttachment } from "@/components/create/attachment-dropzone"
+import { Compose } from "@/components/create/compose"
+import { Stage } from "@/components/create/stage"
+import { SignAndDone } from "@/components/create/sign-and-done"
+import { PlaceDepositButton } from "@/components/governance/place-deposit-button"
+import { WizardFooter } from "@/components/create/wizard-footer"
+import {
+  StepBar,
+  type DraftResponse,
+  type WizardStep,
+} from "@/components/create/create-ui"
+import { subscanExtrinsicUrl, subscanReferendumUrl } from "@/lib/chain/chains"
+import { useActiveChain } from "@/lib/chain/use-chain"
+import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
+import { encodeForChain, isValidAddressForChain } from "@/lib/chain/ss58"
+import { extractReferendumIndex } from "@/lib/governance/referenda"
+import { formatTrackName } from "@/lib/governance/display"
+import { maxTreasurySpend, pickOriginForAmount } from "@/lib/governance/treasury"
+import {
+  buildTreasuryProposal,
+  previewPreimage,
+} from "@/lib/governance/submit-treasury-proposal"
+import { useApi } from "@/lib/query/hooks/use-api"
+import { useBalance } from "@/lib/query/hooks/use-balance"
+import { useMe, useNoncePrefetch, useSignIn } from "@/lib/query/hooks/use-session"
+import { useTracks } from "@/lib/query/hooks/use-tracks"
+import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
+import { usePreimageStatus } from "@/lib/query/hooks/use-preimage"
+import { findTrackByName } from "@/lib/governance/tracks"
+import {
+  DEFAULT_ENACTMENT,
+  enactmentLabel,
+  resolveEnactment,
+  validateEnactment,
+  type EnactmentChoice,
+} from "@/lib/governance/enactment"
+import { useExtrinsic } from "@/lib/query/hooks/use-tx"
+import { useWallet } from "@/lib/wallet/use-wallet"
+import { walletDisplayFor } from "@/lib/wallet/connector-registry"
+import { formatError } from "@/lib/utils/format-error"
+
+export default function CreatePage() {
+  // useSearchParams() forces this subtree to opt out of static
+  // prerendering. Wrapping in Suspense satisfies Next's CSR-bailout
+  // requirement while keeping the rest of the chunk eligible.
+  return (
+    <Suspense fallback={null}>
+      <CreatePageInner />
+    </Suspense>
+  )
+}
+
+function CreatePageInner() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const fromDraftId = searchParams.get("from")
+  const autoAdvance = searchParams.get("go") === "review"
+  const chain = useActiveChain()
+  const apiQuery = useApi()
+  const tracksQuery = useTracks()
+  const currentBlockQuery = useCurrentBlock()
+
+  const [enactment, setEnactment] = useState<EnactmentChoice>(DEFAULT_ENACTMENT)
+  const [step, setStep] = useState<WizardStep>("create")
+  // Each draft we stage gets its own UUID. When the user lands here via
+  // "Edit" on an existing draft we still mint a fresh id - the prior R2
+  // blob stays addressable at its old URL, and the new submission gets a
+  // clean DB row + remark.
+  const [proposalId] = useState(() => crypto.randomUUID())
+  const [title, setTitle] = useState("")
+  const [summary, setSummary] = useState("")
+  const [body, setBody] = useState("")
+  const [amount, setAmount] = useState("")
+  const [attachments, setAttachments] = useState<UploadedAttachment[]>([])
+  // Track whether we've already populated the form from an existing draft -
+  // prevents the load effect from clobbering the user's edits if it re-runs.
+  const [prefilled, setPrefilled] = useState(false)
+
+  const [walletOpen, setWalletOpen] = useState(false)
+  const [draft, setDraft] = useState<DraftResponse | null>(null)
+  const [staging, setStaging] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [submittedIndex, setSubmittedIndex] = useState<number | null>(null)
+  const [callStatus, setCallStatus] = useState<CallStatus[]>([
+    "pending",
+    "pending",
+    "pending",
+  ])
+
+  const { status: walletStatus, activeAddress, session } = useWallet()
+  const isConnected = walletStatus === "connected" && !!activeAddress
+  const balanceQuery = useBalance(activeAddress)
+  const sign = useSignFlow()
+  const walletMeta = walletDisplayFor(session ?? null)
+
+  // The draft + media write endpoints now require an authenticated
+  // proposer. Mirror the comments flow: prefetch a nonce, and gate the
+  // first write behind a sign-in (a one-line nonce signature, no tx).
+  const meQuery = useMe()
+  const prefetchedNonce = useNoncePrefetch()
+  const signIn = useSignIn(prefetchedNonce)
+  const [signInModalOpen, setSignInModalOpen] = useState(false)
+  const [signInError, setSignInError] = useState<string | null>(null)
+
+  // The proposer is always the connected signer (drafts, deposits, sign-in
+  // are keyed to it). The beneficiary is who the treasury pays - defaults to
+  // the proposer's own wallet, but can be any valid address (gap #3).
+  const proposerAddress = useMemo(() => {
+    if (!activeAddress) return null
+    try {
+      return encodeForChain(activeAddress, chain.id)
+    } catch {
+      return activeAddress
+    }
+  }, [activeAddress, chain.id])
+  const [beneficiaryInput, setBeneficiaryInput] = useState("")
+  const beneficiary = useMemo(() => {
+    const raw = beneficiaryInput.trim()
+    if (!raw) return proposerAddress // empty = pay self
+    try {
+      return encodeForChain(raw, chain.id)
+    } catch {
+      return raw
+    }
+  }, [beneficiaryInput, proposerAddress, chain.id])
+  const beneficiaryValid =
+    beneficiary != null && isValidAddressForChain(beneficiary, chain.id)
+  const beneficiaryIsSelf =
+    beneficiary != null && beneficiary === proposerAddress
+  const activeAccountName =
+    session?.accounts.find((a) => a.address === activeAddress)?.name ?? null
+
+  useEffect(() => {
+    if (!isConnected && step !== "create") setStep("create")
+  }, [isConnected, step])
+
+  // Load an existing draft into the form when arriving via Edit/Submit.
+  // We fetch the canonical JSON (proxied through /api/proposals/[id]/json
+  // so CORS doesn't bite) and pre-fill the fields. Attachments aren't
+  // re-loaded - the proposer can re-attach if they want to keep them.
+  useEffect(() => {
+    if (!fromDraftId || prefilled) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/proposals/${fromDraftId}/json`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const j = (await res.json()) as {
+          title?: string
+          summary?: string | null
+          body_markdown?: string
+          spend?: { amount_planck?: string } | null
+        }
+        if (cancelled) return
+        setTitle(j.title ?? "")
+        setSummary(j.summary ?? "")
+        setBody(j.body_markdown ?? "")
+        if (j.spend?.amount_planck) {
+          try {
+            const planck = BigInt(j.spend.amount_planck)
+            const whole = planck / 10n ** BigInt(chain.decimals)
+            const frac = planck % 10n ** BigInt(chain.decimals)
+            const fracStr = frac
+              .toString()
+              .padStart(chain.decimals, "0")
+              .replace(/0+$/, "")
+            setAmount(fracStr ? `${whole}.${fracStr}` : whole.toString())
+          } catch {
+            // ignore - user can re-enter.
+          }
+        }
+        setPrefilled(true)
+        toast.success("Loaded draft", {
+          description: "Edit anything, then stage to publish a fresh version.",
+        })
+      } catch (e) {
+        toast.error("Could not load draft", { description: formatError(e) })
+        setPrefilled(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [chain.decimals, fromDraftId, prefilled])
+
+  // parsed amount + tier
+  let parsedAmount: bigint | null = null
+  let amountError: string | null = null
+  try {
+    if (amount) parsedAmount = parseTokenAmount(amount, chain)
+  } catch (e) {
+    amountError = e instanceof Error ? e.message : "Invalid amount"
+  }
+  const pickedTier =
+    parsedAmount != null ? pickOriginForAmount(parsedAmount) : null
+  // A positive amount with no covering tier means it exceeds the BigSpender
+  // cap - there is no unbounded fallback, so we block submission rather than
+  // file a referendum that can't enact.
+  const amountExceedsMaxTier =
+    parsedAmount != null && parsedAmount > 0n && !amountError && pickedTier == null
+
+  // Track-level deposits for the picked origin (read from chain consts).
+  const trackForOrigin = useMemo(() => {
+    if (!tracksQuery.data || !pickedTier) return null
+    return findTrackByName(tracksQuery.data, pickedTier.origin)
+  }, [tracksQuery.data, pickedTier])
+
+  // Submission deposit from referenda pallet consts (always-on small
+  // amount that gets reserved on submit and refunded once decided).
+  const submissionDeposit = useMemo<bigint | null>(() => {
+    const api = apiQuery.data as ApiPromise | undefined
+    if (!api?.consts?.referenda?.submissionDeposit) return null
+    try {
+      const codec = api.consts.referenda.submissionDeposit as unknown as {
+        toString(): string
+      }
+      return BigInt(codec.toString())
+    } catch {
+      return null
+    }
+  }, [apiQuery.data])
+
+  // Anti-spam balance gate. The proposer must hold the submission
+  // deposit (reserved immediately) + the track's decision deposit
+  // (anyone can place it later, but requiring the proposer to be able
+  // to cover it themselves screens out spam) + a small fee buffer.
+  const FEE_BUFFER_PLANCK = 10n ** BigInt(chain.decimals - 2) // 0.01 of one token
+  const requiredPlanck: bigint | null =
+    submissionDeposit != null && trackForOrigin
+      ? submissionDeposit + trackForOrigin.decisionDeposit + FEE_BUFFER_PLANCK
+      : null
+  const balanceSufficient =
+    requiredPlanck == null ||
+    balanceQuery.data == null ||
+    balanceQuery.data >= requiredPlanck
+
+  // preimage preview (computed locally, no network)
+  const preimagePreview = useMemo(() => {
+    const api = apiQuery.data as ApiPromise | undefined
+    if (!api || parsedAmount == null || !beneficiary || !beneficiaryValid) {
+      return null
+    }
+    try {
+      return previewPreimage(api, { amount: parsedAmount, beneficiary })
+    } catch {
+      return null
+    }
+  }, [apiQuery.data, beneficiary, beneficiaryValid, parsedAmount])
+
+  // If an earlier proposal already noted these exact call bytes,
+  // `preimage.notePreimage` would abort with AlreadyNoted and revert
+  // the whole batchAll. The hash + len are the same regardless, so we
+  // can skip step 1 and only sign submit + remark.
+  const preimageStatusQuery = usePreimageStatus(preimagePreview?.preimageHash ?? null)
+  const preimageAlreadyNoted =
+    preimageStatusQuery.data === "Unrequested" ||
+    preimageStatusQuery.data === "Requested"
+
+  // Authoritative "should we skip notePreimage?" decision used by the build
+  // closure at submit time. The status query is 30s-stale: if it read
+  // "Missing" but the preimage gets noted before we sign, notePreimage aborts
+  // with `preimage.AlreadyNoted` and reverts the whole batchAll - and a naive
+  // retry rebuilds the identical failing batch (a UX dead-end until the cache
+  // expires). We seed this ref from the cached status, but also (a) refetch
+  // the status right before submitting and (b) force it true if a dispatch
+  // error comes back as AlreadyNoted, so the next attempt drops step 1 and
+  // submits [submit, remark] against the same (hash, len). A ref (not state)
+  // avoids a render round-trip so the synchronous build closure sees the
+  // freshest decision immediately after an imperative refetch.
+  const skipNoteRef = useRef(false)
+  useEffect(() => {
+    skipNoteRef.current = preimageAlreadyNoted
+  }, [preimageAlreadyNoted])
+
+  // Validate the chosen enactment moment against the live head + the picked
+  // track's minEnactmentPeriod (gap #2). Standard/After are always fine; an
+  // At-block height must be in the future and past the track's floor.
+  const enactmentError = validateEnactment(enactment, {
+    currentBlock: currentBlockQuery.data ?? null,
+    minEnactment: trackForOrigin?.minEnactmentPeriod ?? null,
+  })
+
+  const composeValid =
+    isConnected &&
+    beneficiaryValid &&
+    title.trim().length >= 10 &&
+    summary.trim().length >= 20 &&
+    body.trim().length >= 50 &&
+    parsedAmount != null &&
+    parsedAmount > 0n &&
+    !amountError &&
+    pickedTier != null &&
+    !enactmentError &&
+    balanceSufficient
+
+  // Human-readable list of every unmet requirement, surfaced under the
+  // Stage button so the user doesn't have to hunt for the field that's
+  // blocking them. Order roughly follows the form layout top to bottom.
+  const missingReasons: string[] = []
+  if (!isConnected) {
+    missingReasons.push("Connect your wallet")
+  }
+  if (isConnected && !beneficiaryValid) {
+    missingReasons.push(
+      beneficiaryInput.trim()
+        ? "Beneficiary address isn't valid on this chain"
+        : "Connected address isn't valid on this chain",
+    )
+  }
+  if (title.trim().length < 10) {
+    missingReasons.push(
+      `Title needs at least 10 characters (currently ${title.trim().length})`,
+    )
+  }
+  if (summary.trim().length < 20) {
+    missingReasons.push(
+      `Summary needs at least 20 characters (currently ${summary.trim().length})`,
+    )
+  }
+  if (body.trim().length < 50) {
+    missingReasons.push(
+      `Proposal body needs at least 50 characters (currently ${body.trim().length})`,
+    )
+  }
+  if (amountError) {
+    missingReasons.push(`Amount: ${amountError}`)
+  } else if (parsedAmount == null) {
+    missingReasons.push(`Enter a requested amount in ${chain.ticker}`)
+  } else if (parsedAmount <= 0n) {
+    missingReasons.push("Requested amount must be greater than zero")
+  } else if (amountExceedsMaxTier) {
+    const cap = maxTreasurySpend()
+    missingReasons.push(
+      cap != null
+        ? `Requested amount exceeds the maximum treasury spend of ${formatTokenAmount(cap, chain)} (BigSpender). Reduce the amount.`
+        : "Requested amount exceeds the maximum treasury spend tier.",
+    )
+  }
+  if (!balanceSufficient && requiredPlanck != null && balanceQuery.data != null) {
+    missingReasons.push(
+      `Need at least ${formatTokenAmount(requiredPlanck, chain)} to cover the submission deposit, decision deposit, and fees (you have ${formatTokenAmount(balanceQuery.data, chain)})`,
+    )
+  }
+  if (enactmentError) {
+    missingReasons.push(`Enactment: ${enactmentError}`)
+  }
+
+  // Resolve a signed-in session, prompting the wallet to sign the nonce
+  // if we don't already have one. Returns false when the user cancels or
+  // the signature fails so callers can abort the write they were about to
+  // make. Gates both the media upload and the draft staging step.
+  const ensureSignedIn = useCallback(async (): Promise<boolean> => {
+    if (meQuery.data) return true
+    // The /api/auth/me poll can trail a fresh cookie by up to 60s - re-check
+    // before forcing a signature the user may not actually need.
+    try {
+      const refreshed = await meQuery.refetch()
+      if (refreshed.data) return true
+    } catch {
+      // fall through to the sign-in prompt
+    }
+    setSignInError(null)
+    if (sign.isWalletConnect) setSignInModalOpen(true)
+    try {
+      await signIn.submit()
+      setSignInModalOpen(false)
+      toast.success("Signed in")
+      return true
+    } catch (e) {
+      const message = formatError(e)
+      setSignInError(message)
+      if (!sign.isWalletConnect) {
+        toast.error("Sign-in required", { description: message })
+      }
+      return false
+    }
+  }, [meQuery, sign.isWalletConnect, signIn])
+
+  // staging hop (upload media is already done; here we upload JSON)
+  const stageDraft = useCallback(async () => {
+    if (!preimagePreview || !pickedTier || !beneficiary || !parsedAmount) {
+      toast.error("Form is incomplete")
+      return
+    }
+    // The draft endpoint requires an authenticated proposer - sign in
+    // first and bail out of staging if that doesn't go through.
+    if (!(await ensureSignedIn())) return
+    setStaging(true)
+    try {
+      const res = await fetch("/api/proposals/draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          proposal_id: proposalId,
+          network: chain.id,
+          proposer_address: proposerAddress,
+          title: title.trim(),
+          summary: summary.trim() || null,
+          body_markdown: body,
+          track: pickedTier.origin,
+          beneficiary,
+          amount_planck: parsedAmount.toString(),
+          preimage_hash: preimagePreview.preimageHash,
+          preimage_len: preimagePreview.preimageLen,
+          attachments: attachments.map((a) => ({
+            bucket_key: a.bucket_key,
+            name: a.name,
+            url: a.url,
+            sha256: a.sha256,
+            content_type: a.content_type,
+            size_bytes: a.size_bytes,
+          })),
+        }),
+      })
+      const json = (await res.json()) as DraftResponse | { ok: false; error: string }
+      if (!res.ok || !("ok" in json) || !json.ok) {
+        const err = "error" in json ? json.error : `HTTP ${res.status}`
+        toast.error("Could not stage Proposal", { description: err })
+        setStaging(false)
+        return
+      }
+      setDraft(json as DraftResponse)
+      setStep("review")
+    } catch (e) {
+      toast.error("Could not stage Proposal", {
+        description: formatError(e),
+      })
+    } finally {
+      setStaging(false)
+    }
+  }, [
+    attachments,
+    beneficiary,
+    proposerAddress,
+    body,
+    chain.id,
+    ensureSignedIn,
+    parsedAmount,
+    pickedTier,
+    preimagePreview,
+    proposalId,
+    summary,
+    title,
+  ])
+
+  // When arriving via "Submit" on a draft (?go=review), auto-stage once
+  // the form has been populated and is valid. The user still has to sign
+  // on the Review screen - we just save the click.
+  const [autoStaged, setAutoStaged] = useState(false)
+  useEffect(() => {
+    if (!autoAdvance || autoStaged || !prefilled) return
+    if (!isConnected || !composeValid) return
+    if (staging || step !== "create") return
+    setAutoStaged(true)
+    void stageDraft()
+  }, [
+    autoAdvance,
+    autoStaged,
+    prefilled,
+    isConnected,
+    composeValid,
+    staging,
+    step,
+    stageDraft,
+  ])
+
+  const tx = useExtrinsic({
+    // We persist the on-chain `referendum_index` from the batch's events
+    // into our DB via POST /api/proposals/[id]/confirm. A reorg between
+    // inBlock and finality would pin the wrong index, so this is the one
+    // flow that must wait for GRANDPA before resolving.
+    resolveOn: "finalized",
+    build: (api) => {
+      if (!draft || !pickedTier || !beneficiary || parsedAmount == null) {
+        throw new Error("Review the draft before submitting.")
+      }
+      // Light every call in the batch as running while the single
+      // signed extrinsic is in-flight - the user signs one tx that
+      // either applies all or none, so showing per-call pending state
+      // during signing/broadcast/in-block is misleading. Per-call
+      // status only meaningfully diverges once events come back at
+      // finalization (or one fails).
+      const skipNote = skipNoteRef.current
+      setCallStatus(
+        skipNote
+          ? ["ok", "running", "running"]
+          : ["running", "running", "running"],
+      )
+      const built = buildTreasuryProposal(api, {
+        amount: parsedAmount,
+        beneficiary,
+        tier: pickedTier,
+        remarkPayload: draft.remark_payload,
+        enactment: resolveEnactment(enactment),
+      })
+      // If the preimage is already on chain (e.g. an earlier identical
+      // submission noted it), retrying the note step would abort with
+      // preimage.AlreadyNoted and revert the whole batchAll. Drop step
+      // 1; the submit + remark sequence still references the same
+      // (hash, len).
+      return skipNote
+        ? [built.submitTx, built.remarkTx]
+        : built.calls
+    },
+    onStatus(status) {
+      if (status.kind === "error") {
+        setCallStatus((curr) =>
+          curr.map((c) => (c === "running" ? "failed" : c)) as CallStatus[],
+        )
+        // Self-heal the AlreadyNoted dead-end: the preimage is already on
+        // chain, so the next attempt must skip notePreimage instead of
+        // rebuilding the same batch that just reverted.
+        if (/AlreadyNoted/i.test(status.message)) {
+          skipNoteRef.current = true
+        }
+      }
+      if (sign.isWalletConnect) {
+        // SignRequestModal renders the full lifecycle.
+        return
+      }
+      if (status.kind === "signing") {
+        toast.dismiss("create-tx")
+        toast.loading("Waiting for wallet signature…", {
+          id: "create-tx",
+          description: "",
+        })
+      } else if (status.kind === "broadcast") {
+        toast.dismiss("create-tx")
+        toast.loading("Broadcasting batch…", {
+          id: "create-tx",
+          description: "",
+        })
+      } else if (status.kind === "in-block") {
+        toast.dismiss("create-tx")
+        toast.loading("Included in block - awaiting finalisation", {
+          id: "create-tx",
+          description: "",
+        })
+      } else if (status.kind === "error") {
+        toast.dismiss("create-tx")
+        toast.error("Submission failed", {
+          id: "create-tx",
+          description: status.message,
+        })
+      }
+    },
+    async onSuccess({ events, txHash, blockHash }) {
+      setCallStatus(["ok", "ok", "ok"])
+      const index = extractReferendumIndex(events)
+      setSubmittedIndex(index)
+
+      // Confirm on the server so the redirect file + DB row are updated.
+      if (draft && index != null) {
+        setConfirming(true)
+        try {
+          const api = apiQuery.data as ApiPromise | undefined
+          let blockNumber = 0
+          if (api) {
+            try {
+              const header = await api.rpc.chain.getHeader(blockHash)
+              blockNumber = (
+                header as unknown as { number: { toNumber(): number } }
+              ).number.toNumber()
+            } catch {
+              // best-effort
+            }
+          }
+          await fetch(`/api/proposals/${draft.id}/confirm`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              referendum_index: index,
+              tx_hash: txHash,
+              block_hash: blockHash,
+              block_number: blockNumber,
+            }),
+          })
+        } catch {
+          // confirm is best-effort; on-chain state is canonical anyway
+        } finally {
+          setConfirming(false)
+        }
+      }
+
+      toast.success("Proposal submitted", {
+        id: "create-tx",
+        description:
+          index != null
+            ? `Referendum #${index} created.`
+            : subscanExtrinsicUrl(chain, txHash),
+        action:
+          index != null
+            ? {
+                label: "View",
+                onClick: () => router.push(`/proposals/${index}`),
+              }
+            : undefined,
+      })
+      // Stay on the Submit step - its rendering branches on tx.status.kind
+      // and shows the success card automatically on finalised.
+    },
+  })
+
+  // Refresh the (30s-stale) preimage status right before broadcasting so the
+  // build closure's skip-note decision reflects on-chain reality, then submit.
+  // Without this, an identical preimage noted between page load and signing
+  // would trip preimage.AlreadyNoted and revert the batch.
+  const submitProposal = useCallback(async () => {
+    try {
+      const res = await preimageStatusQuery.refetch()
+      if (res.data === "Unrequested" || res.data === "Requested") {
+        skipNoteRef.current = true
+      }
+    } catch {
+      // Best-effort: fall back to whatever the seeded ref already holds.
+    }
+    void tx.submit()
+  }, [preimageStatusQuery, tx])
+
+  return (
+    <Shell>
+      <div className="max-w-3xl mx-auto">
+        <Link
+          href="/proposals"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back to Proposals
+        </Link>
+
+        <Header chainName={chain.name} chainShort={chain.shortName} />
+        <StepBar current={step} />
+
+        {step === "create" && (
+          <div className="mb-4 text-xs text-muted-foreground">
+            Filing a runtime upgrade, referendum cancel/kill, whitelist, or other
+            non-treasury call?{" "}
+            <Link href="/create/advanced" className="text-primary hover:underline">
+              Use the advanced composer
+            </Link>
+            .
+          </div>
+        )}
+
+        {step === "create" && (
+          <Compose
+            isConnected={isConnected}
+            balanceFree={balanceQuery.data ?? null}
+            proposerAddress={proposerAddress}
+            beneficiary={beneficiary}
+            beneficiaryInput={beneficiaryInput}
+            beneficiaryValid={beneficiaryValid}
+            beneficiaryIsSelf={beneficiaryIsSelf}
+            accountName={activeAccountName}
+            chainShort={chain.shortName}
+            chainTicker={chain.ticker}
+            chainDecimals={chain.decimals}
+            title={title}
+            summary={summary}
+            body={body}
+            amount={amount}
+            amountError={amountError}
+            pickedTier={pickedTier}
+            requiredPlanck={requiredPlanck}
+            balanceSufficient={balanceSufficient}
+            proposalId={proposalId}
+            network={chain.id}
+            attachments={attachments}
+            onAttachmentsChange={setAttachments}
+            beforeUpload={ensureSignedIn}
+            enactment={enactment}
+            enactmentError={enactmentError}
+            minEnactment={trackForOrigin?.minEnactmentPeriod ?? null}
+            onTitle={setTitle}
+            onSummary={setSummary}
+            onBody={setBody}
+            onAmount={setAmount}
+            onBeneficiary={setBeneficiaryInput}
+            onEnactment={setEnactment}
+            onConnect={() => setWalletOpen(true)}
+          />
+        )}
+
+        {step === "review" && draft && pickedTier && parsedAmount && beneficiary && (
+          <Stage
+            draft={draft}
+            title={title}
+            summary={summary}
+            body={body}
+            amountFormatted={formatTokenAmount(parsedAmount, chain)}
+            amountPlanck={parsedAmount}
+            beneficiary={beneficiary}
+            beneficiaryName={beneficiaryIsSelf ? activeAccountName : null}
+            track={formatTrackName(pickedTier.origin)}
+            trackRaw={pickedTier.origin}
+            chainName={chain.name}
+            attachments={attachments}
+            callHex={preimagePreview?.callHex ?? "0x"}
+            preimageHash={preimagePreview?.preimageHash ?? "0x"}
+            preimageLen={preimagePreview?.preimageLen ?? 0}
+            preimageAlreadyNoted={preimageAlreadyNoted}
+            decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
+            chainTicker={chain.ticker}
+            chainDecimals={chain.decimals}
+          />
+        )}
+
+        {step === "submit" && draft && pickedTier && parsedAmount && beneficiary && (
+          <SignAndDone
+            chainName={chain.name}
+            subscanTxUrl={(hash) => subscanExtrinsicUrl(chain, hash)}
+            calls={[
+              {
+                title: "Register the proposal content",
+                pallet: "preimage",
+                method: "notePreimage",
+                summary:
+                  "Stores the call bytes on chain so the referendum has something to enact when it passes.",
+                details: [
+                  { label: "Preimage hash", value: preimagePreview?.preimageHash ?? "-" },
+                  { label: "Length (bytes)", value: String(preimagePreview?.preimageLen ?? 0) },
+                ],
+                rawPayload: preimagePreview?.callHex,
+              },
+              {
+                title: `File the referendum on ${formatTrackName(pickedTier.origin)}`,
+                pallet: "referenda",
+                method: "submit",
+                summary: `Opens voting on the ${formatTrackName(pickedTier.origin)} track. Enacts the moment it's approved.`,
+                details: [
+                  { label: "Origin", value: `Origins.${pickedTier.origin}` },
+                  { label: "Lookup hash", value: preimagePreview?.preimageHash ?? "-" },
+                  { label: "Lookup len", value: String(preimagePreview?.preimageLen ?? 0) },
+                  { label: "Enactment", value: enactmentLabel(enactment) },
+                ],
+              },
+              {
+                title: "Anchor the EGOV1 metadata",
+                pallet: "system",
+                method: "remark",
+                summary:
+                  "Writes a permanent on-chain pointer to the off-chain proposal so anyone can fetch and verify it.",
+                details: [
+                  { label: "Standard", value: "EGOV1" },
+                  { label: "JSON URL", value: draft.json_url },
+                  { label: "sha256", value: draft.json_sha256 },
+                ],
+                rawPayload: draft.remark_payload,
+              },
+            ]}
+            callStatus={callStatus}
+            txStatus={tx.status}
+            submittedIndex={submittedIndex}
+            confirming={confirming}
+            referendumLink={
+              submittedIndex != null
+                ? subscanReferendumUrl(chain, submittedIndex)
+                : null
+            }
+            jsonUrl={draft.json_url}
+            decisionDepositSlot={
+              submittedIndex != null ? (
+                <PlaceDepositButton
+                  referendumIndex={submittedIndex}
+                  trackName={pickedTier.origin}
+                  chain={chain}
+                />
+              ) : null
+            }
+          />
+        )}
+
+        <WizardFooter
+          step={step}
+          canStage={composeValid && !staging}
+          missingReasons={missingReasons}
+          staging={staging}
+          tx={tx}
+          isConnected={isConnected}
+          isWalletConnect={
+            session?.connectorId === "enjin-wallet" ||
+            session?.connectorId === "walletconnect"
+          }
+          peerRedirect={(session?.meta?.peerRedirect as string | undefined) ?? null}
+          onBack={() => {
+            if (step === "review") setStep("create")
+            else if (step === "submit") setStep("review")
+          }}
+          onStage={stageDraft}
+          onSign={() => {
+            sign.open()
+            void submitProposal()
+            setStep("submit")
+          }}
+          onRetry={() => {
+            tx.reset()
+            setCallStatus(["pending", "pending", "pending"])
+            sign.open()
+            setTimeout(() => {
+              void submitProposal()
+            }, 50)
+          }}
+          onView={() =>
+            submittedIndex != null && router.push(`/proposals/${submittedIndex}`)
+          }
+        />
+      </div>
+
+      <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
+      <SignRequestModal
+        open={sign.isOpen}
+        walletName={walletMeta.name}
+        walletIcon={walletMeta.icon}
+        subtitle="Approve the proposal batch in your wallet"
+        status={tx.status}
+        deepLinkUrl={sign.deepLinkUrl}
+        explorerUrl={
+          tx.status.kind === "finalized"
+            ? subscanExtrinsicUrl(chain, tx.status.txHash)
+            : null
+        }
+        successTitle={
+          submittedIndex != null
+            ? `Referendum #${submittedIndex} submitted`
+            : "Proposal submitted on chain"
+        }
+        successBody="The referendum is live. You can view it from the footer below."
+        onClose={sign.close}
+        onRetry={() => {
+          tx.reset()
+          setCallStatus(["pending", "pending", "pending"])
+          setTimeout(() => {
+            void submitProposal()
+          }, 50)
+        }}
+      />
+      <SignRequestModal
+        open={signInModalOpen}
+        walletName={walletMeta.name}
+        walletIcon={walletMeta.icon}
+        subtitle="Sign in to stage your proposal"
+        status={
+          signInError
+            ? { kind: "error", message: signInError }
+            : { kind: "signing" }
+        }
+        deepLinkUrl={sign.deepLinkUrl}
+        onClose={() => setSignInModalOpen(false)}
+        onRetry={() => {
+          setSignInError(null)
+          signIn
+            .submit()
+            .then(() => {
+              setSignInModalOpen(false)
+              toast.success("Signed in")
+            })
+            .catch((e) => setSignInError(formatError(e)))
+        }}
+      />
+    </Shell>
+  )
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <Nav />
+      <main className="pt-24 pb-24 px-4 sm:px-6 lg:px-8 flex-1">{children}</main>
+      <Footer />
+    </div>
+  )
+}
+
+function Header({ chainName, chainShort }: { chainName: string; chainShort: string }) {
+  return (
+    <div className="mb-6 flex items-start gap-4">
+      <div className="w-11 h-11 rounded-xl bg-primary/10 border border-purple-border flex items-center justify-center flex-shrink-0">
+        <Coins className="w-5 h-5 text-primary" />
+      </div>
+      <div>
+        <h1 className="text-2xl font-semibold text-foreground mb-1">
+          Treasury Proposal
+        </h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Request a payout from the {chainShort} treasury to your
+          connected wallet on{" "}
+          <span className="text-foreground">{chainName}</span>.
+        </p>
+      </div>
+    </div>
+  )
+}
+

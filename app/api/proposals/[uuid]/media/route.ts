@@ -1,0 +1,193 @@
+/**
+ * POST /api/proposals/[uuid]/media
+ *
+ * Multipart upload. Body: a single `file` field. Stores the file under
+ * `proposals/{network}/{uuid}/media/{safe-filename}` and returns the URL +
+ * sha256.
+ *
+ * Called BEFORE the proposal draft is finalised so the client can
+ * include the URLs in proposal.json. The DB row for the proposal might
+ * not exist yet - that's fine; we don't insert attachments here. The
+ * draft endpoint inserts attachment rows after the proposals row exists.
+ *
+ * Hard limits:
+ *   - 20 MB per file (matches the DB CHECK constraint)
+ *   - image/png, image/jpeg, image/webp, image/gif, application/pdf
+ */
+
+import { NextResponse, type NextRequest } from "next/server"
+import { z } from "zod"
+import { getCurrentUser } from "@/lib/auth/current-user"
+import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
+import { isDbConfigured } from "@/lib/db/client"
+import { getProposalById } from "@/lib/db/proposals"
+import { isR2Configured } from "@/lib/r2/client"
+import { proposalMediaKey } from "@/lib/r2/paths"
+import { sniffMediaMime } from "@/lib/r2/sniff"
+import { putObject, sha256Hex } from "@/lib/r2/upload"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+
+export const runtime = "nodejs"
+
+const NETWORK_VALUES = [
+  "enjin-relay",
+  "enjin-matrix",
+  "canary-relay",
+  "canary-matrix",
+] as const
+
+const MAX_BYTES = 20 * 1024 * 1024
+const ALLOWED_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+])
+
+const uuidSchema = z.string().uuid()
+const networkSchema = z.enum(NETWORK_VALUES)
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ uuid: string }> },
+): Promise<NextResponse> {
+  if (!isR2Configured()) {
+    return NextResponse.json(
+      { ok: false, error: "Storage is not configured" },
+      { status: 503 },
+    )
+  }
+
+  const { uuid: rawUuid } = await context.params
+  const uuidParse = uuidSchema.safeParse(rawUuid)
+  if (!uuidParse.success) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid proposal uuid" },
+      { status: 400 },
+    )
+  }
+  const proposalUuid = uuidParse.data
+
+  const url = new URL(request.url)
+  const networkParse = networkSchema.safeParse(url.searchParams.get("network"))
+  if (!networkParse.success) {
+    return NextResponse.json(
+      { ok: false, error: "Missing or invalid `network` query param" },
+      { status: 400 },
+    )
+  }
+  const network = networkParse.data
+
+  // The proposal row doesn't exist yet at upload time, so there's no
+  // proposer to compare against - a signed-in session is all we can gate on.
+  const me = await getCurrentUser()
+  if (!me) {
+    return NextResponse.json(
+      { ok: false, error: "Sign in to upload media." },
+      { status: 401 },
+    )
+  }
+
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.mediaUpload, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many uploads - please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    )
+  }
+
+  // If a draft row already exists for this uuid, only its proposer may write
+  // media into its R2 path. Pre-draft uploads have no row yet, so a signed-in
+  // session is all we can gate on - the draft endpoint re-checks ownership by
+  // public key before the row is created.
+  if (isDbConfigured()) {
+    const existing = await getProposalById(proposalUuid)
+    if (existing) {
+      await initializeWasm()
+      if (!samePublicKey(existing.proposer_address, me.address)) {
+        return NextResponse.json(
+          { ok: false, error: "Only the proposer can upload media to this proposal." },
+          { status: 403 },
+        )
+      }
+    }
+  }
+
+  let form: FormData
+  try {
+    form = await request.formData()
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Multipart body required" },
+      { status: 400 },
+    )
+  }
+
+  const file = form.get("file")
+  if (!(file instanceof File)) {
+    return NextResponse.json(
+      { ok: false, error: "Missing `file` part" },
+      { status: 400 },
+    )
+  }
+  if (file.size === 0) {
+    return NextResponse.json({ ok: false, error: "Empty file" }, { status: 400 })
+  }
+  if (file.size > MAX_BYTES) {
+    return NextResponse.json(
+      { ok: false, error: `File exceeds ${MAX_BYTES} bytes` },
+      { status: 413 },
+    )
+  }
+  const contentType = file.type || "application/octet-stream"
+  if (!ALLOWED_MIME.has(contentType)) {
+    return NextResponse.json(
+      { ok: false, error: `Unsupported content-type: ${contentType}` },
+      { status: 415 },
+    )
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+
+  // Don't trust the client's content-type: derive the real type from the file
+  // bytes and store THAT, so nothing can be persisted (and later served) under
+  // a mismatched type. A file whose bytes aren't a recognized allowed type is
+  // rejected even if it claimed one.
+  const sniffed = sniffMediaMime(buffer)
+  if (!sniffed) {
+    return NextResponse.json(
+      { ok: false, error: "File contents do not match a supported media type." },
+      { status: 415 },
+    )
+  }
+
+  const key = proposalMediaKey(network, proposalUuid, file.name || "file")
+
+  try {
+    const result = await putObject({
+      key,
+      body: buffer,
+      contentType: sniffed,
+      cacheControl: "public, max-age=31536000, immutable",
+    })
+    return NextResponse.json({
+      ok: true,
+      bucket_key: result.key,
+      url: result.url,
+      sha256: result.sha256,
+      size_bytes: result.sizeBytes,
+      content_type: sniffed,
+      name: file.name || "file",
+      precomputed_sha256_matches: result.sha256 === sha256Hex(buffer),
+    })
+  } catch (e) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `R2 upload failed: ${e instanceof Error ? e.message : String(e)}`,
+      },
+      { status: 502 },
+    )
+  }
+}
