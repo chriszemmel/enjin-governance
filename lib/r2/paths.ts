@@ -45,8 +45,23 @@ export function userAvatarKey(userUuid: string): string {
   return `user-avatars/${userUuid}.png`
 }
 
-/** Build a public URL for a bucket key by joining with R2_PUBLIC_URL. */
+/** Build a public URL for a bucket key by joining with a public base. */
 export function publicUrlFor(publicBase: string, key: string): string {
   const trimmed = publicBase.endsWith("/") ? publicBase.slice(0, -1) : publicBase
   return `${trimmed}/${key}`
+}
+
+/**
+ * Keys the public `/r` read route is allowed to serve. The route streams
+ * objects straight from the bucket, so this allowlist is what stops it
+ * being an open proxy onto everything in R2: only the genuinely public
+ * object families (proposal JSON / media, user avatars) are readable, and
+ * any path-traversal attempt is rejected.
+ */
+const PUBLIC_READ_PREFIXES = ["proposals/", "user-avatars/"]
+
+export function isPublicReadableKey(key: string): boolean {
+  if (!key) return false
+  if (key.includes("..") || key.includes("\\") || key.startsWith("/")) return false
+  return PUBLIC_READ_PREFIXES.some((prefix) => key.startsWith(prefix))
 }

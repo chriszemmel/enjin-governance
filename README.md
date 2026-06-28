@@ -15,7 +15,7 @@
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" />
   <img alt="Polkadot.js" src="https://img.shields.io/badge/Polkadot.js-16-e6007a?style=flat-square&logo=polkadot&logoColor=white" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-305%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-330%20passing-22c55e?style=flat-square" />
 </p>
 
 <p align="center">
@@ -153,7 +153,7 @@
   on the site-access password gate, input-size caps on the batch-read
   endpoints, and a honeypot on the public disclosure form that silently
   drops bots.
-- **Open-source ready** - TS strict, ESLint clean, knip-clean, 305
+- **Open-source ready** - TS strict, ESLint clean, knip-clean, 330
   vitest tests, CI on every push.
 
 ---
@@ -164,7 +164,7 @@
 |---|---|
 | TypeScript source files (excl. vendored shadcn) | **~218** |
 | Docs files | **6** |
-| Unit tests | **305** (26 files) |
+| Unit tests | **330** (29 files) |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
 | External indexer dependencies | **0 required** (Subscan optional, only for very old finalised refs) |
@@ -229,7 +229,7 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (305 tests)
+pnpm test         # Vitest (330 tests)
 pnpm test:watch   # Vitest watch
 ```
 
@@ -306,7 +306,8 @@ lib/
   env.ts               t3-env zod schema
   config.ts            App constants
 docs/                  ARCHITECTURE · CHAIN_FLOW · GOVERNANCE_FLOW ·
-                       WALLET_INTEGRATION · ENVIRONMENT · DEPLOYMENT
+                       WALLET_INTEGRATION · ENVIRONMENT · DEPLOYMENT ·
+                       HANDOVER
 scripts/               SQL migrations (004-010) + run-migrations.mjs
 .github/workflows/     CI
 ```
@@ -356,6 +357,7 @@ picture.
 | [WALLET_INTEGRATION](docs/WALLET_INTEGRATION.md) | Connector pattern + WC + extensions + signer adapter |
 | [ENVIRONMENT](docs/ENVIRONMENT.md) | Every env var, what it does, when it's required |
 | [DEPLOYMENT](docs/DEPLOYMENT.md) | Vercel + Neon + R2 + Reown setup |
+| [HANDOVER](docs/HANDOVER.md) | Maintainer handover: secrets inventory, off-chain data export, accounts to transfer, sunset plan |
 | [SECURITY](SECURITY.md) | Reporting a vulnerability, security model, operator hardening |
 
 The off-chain schema lives in `scripts/0*.sql` (forward-only, applied

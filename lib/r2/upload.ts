@@ -7,7 +7,7 @@
 import "server-only"
 import { createHash } from "node:crypto"
 import { DeleteObjectsCommand, PutObjectCommand } from "@aws-sdk/client-s3"
-import { getR2Client, r2Bucket, r2PublicBase } from "./client"
+import { getR2Client, r2Bucket, publicAssetBase } from "./client"
 import { stringifyStable } from "./json"
 import { publicUrlFor } from "./paths"
 
@@ -50,7 +50,7 @@ export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
   )
   return {
     key: args.key,
-    url: publicUrlFor(r2PublicBase(), args.key),
+    url: publicUrlFor(publicAssetBase(), args.key),
     sha256,
     sizeBytes: body.byteLength,
   }

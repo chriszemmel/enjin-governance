@@ -53,3 +53,20 @@ export function r2PublicBase(): string {
   }
   return env.R2_PUBLIC_URL
 }
+
+/**
+ * Base for the URLs we hand out (and pin on chain in the EGOV1 remark).
+ *
+ * Public reads are served from the app's own `/r` route on its canonical
+ * origin, not the bucket's `r2.dev` URL. That keeps the on-chain proposal
+ * pointer on a durable, official domain, decoupled from where R2 actually
+ * lives, and off the rate-limited public dev URL. Falls back to the raw
+ * bucket URL only if no app origin is configured.
+ */
+export function publicAssetBase(): string {
+  const appOrigin = env.NEXT_PUBLIC_APP_URL
+  if (appOrigin) {
+    return `${appOrigin.replace(/\/+$/, "")}/r`
+  }
+  return r2PublicBase()
+}

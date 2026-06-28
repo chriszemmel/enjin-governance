@@ -85,8 +85,24 @@ if migration count exceeds ~20.
 4. Paste the credentials + the public base URL into Vercel.
 
 CORS isn't required - every R2 write goes through our API routes
-server-side. Reads are direct from the browser via the public URL but
-that's a GET-only HEAD-friendly fetch, no preflight.
+server-side.
+
+### Public reads go through the app, not the bucket URL
+
+Public reads (proposal JSON, media, avatars) are served from the app's
+own origin via the `/r/<key>` route (`app/r/[...key]/route.ts`), which
+streams the object from R2 with the right content type, cache window, and
+CORS. The URLs we hand out - including the EGOV1 `u` pointer pinned on
+chain - are therefore `https://<app>/r/...`, built from
+`NEXT_PUBLIC_APP_URL`, not the raw bucket URL.
+
+This is deliberate: the on-chain pointer stays on a durable, official
+domain, decoupled from where R2 actually lives (move the bucket later and
+the link still resolves), and off the rate-limited `r2.dev` URL.
+`R2_PUBLIC_URL` stays set but is now an internal fallback for when no app
+origin is configured. Because the EGOV1 `u` is baked in at submit time,
+make sure `NEXT_PUBLIC_APP_URL` is the canonical production domain before
+any mainnet proposal is filed.
 
 ## Reown (WalletConnect Cloud)
 
@@ -148,4 +164,5 @@ one deploy cycle.
 ## See also
 
 - [`ENVIRONMENT.md`](ENVIRONMENT.md) - every env var
+- [`HANDOVER.md`](HANDOVER.md) - secrets inventory, off-chain data export, accounts to transfer, sunset plan
 - [`WALLET_INTEGRATION.md`](WALLET_INTEGRATION.md) - Reown setup
