@@ -5,11 +5,12 @@ export const alt = "Enjin Governance · Referendum"
 export const size = OG_SIZE
 export const contentType = OG_CONTENT_TYPE
 
-type Props = { params: { index: string } }
+type Props = { params: Promise<{ index: string }> }
 
-export default function Image({ params }: Props) {
-  const index = Number(params.index)
-  const display = Number.isFinite(index) ? `#${index}` : params.index
+export default async function Image({ params }: Props) {
+  const { index: rawIndex } = await params
+  const index = Number(rawIndex)
+  const display = Number.isFinite(index) ? `#${index}` : rawIndex
   return renderOgImage({
     eyebrow: "Enjin Governance · Referendum",
     title: `Referendum ${display}`,
