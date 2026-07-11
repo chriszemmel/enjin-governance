@@ -5,7 +5,7 @@ import useEmblaCarousel from "embla-carousel-react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export interface SwiperSlide {
+interface SwiperSlide {
   /** Stable key + accessible label; also drives the tab text. */
   id: string
   label: string
