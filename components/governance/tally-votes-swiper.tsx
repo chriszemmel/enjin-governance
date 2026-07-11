@@ -5,38 +5,37 @@ import useEmblaCarousel from "embla-carousel-react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+export interface SwiperSlide {
+  /** Stable key + accessible label; also drives the tab text. */
+  id: string
+  label: string
+  header: React.ReactNode
+  content: React.ReactNode
+}
+
 /**
- * Swipeable two-slide carousel that replaces the stacked Tally + Votes
- * cards. Each slide is a self-contained block - the caller passes them
- * as children so this component stays presentational.
+ * Swipeable carousel that replaces the stacked detail-page cards. Each
+ * slide is a self-contained block the caller supplies, so this component
+ * stays presentational. Handles any number of slides (Tally · Decision ·
+ * Votes today).
  *
  * Mobile: swipe left/right between slides.
  * Desktop: dot indicators + arrow buttons.
  *
- * Heights differ a lot between the two (Tally is short, the Votes
- * slide carries the full voter list). Embla's default flex layout
- * stretches every slide to the tallest one, leaving a huge empty
- * column under Tally. We observe the active slide's height and set
- * the slides-track to match, so the card collapses to the live
- * slide's natural height.
+ * Heights differ a lot between slides (Tally is short, the Votes slide
+ * carries the full voter list). Embla's default flex layout stretches
+ * every slide to the tallest, leaving a huge empty column under the short
+ * ones. We observe the active slide's height and set the slides-track to
+ * match, so the card collapses to the live slide's natural height.
  */
-export function TallyVotesSwiper({
-  tally,
-  votes,
-  tallyHeader,
-  votesHeader,
-}: {
-  tally: React.ReactNode
-  votes: React.ReactNode
-  tallyHeader: React.ReactNode
-  votesHeader: React.ReactNode
-}) {
+export function TallyVotesSwiper({ slides }: { slides: SwiperSlide[] }) {
   const [emblaRef, embla] = useEmblaCarousel({
     align: "start",
     containScroll: "trimSnaps",
     loop: false,
   })
   const [selected, setSelected] = useState(0)
+  const lastIndex = slides.length - 1
 
   const onSelect = useCallback(() => {
     if (!embla) return
@@ -63,7 +62,7 @@ export function TallyVotesSwiper({
 
   // Track the active slide's content height and apply it to the
   // slides-track so embla doesn't stretch the short slide.
-  const slideRefs = useRef<Array<HTMLDivElement | null>>([null, null])
+  const slideRefs = useRef<Array<HTMLDivElement | null>>([])
   const [trackHeight, setTrackHeight] = useState<number | null>(null)
   useEffect(() => {
     const node = slideRefs.current[selected]
@@ -75,9 +74,9 @@ export function TallyVotesSwiper({
     return () => observer.disconnect()
   }, [selected])
 
-  // Re-init embla after each height change so the drag bounds match
-  // the new track height - without this, the swipe gesture can feel
-  // glitchy right after switching slides.
+  // Re-init embla after each height change so the drag bounds match the
+  // new track height - without this, the swipe gesture can feel glitchy
+  // right after switching slides.
   useEffect(() => {
     embla?.reInit()
   }, [embla, trackHeight])
@@ -86,16 +85,14 @@ export function TallyVotesSwiper({
     <div className="rounded-2xl bg-card border border-border overflow-hidden">
       <div className="px-6 pt-5 pb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-1">
-          <SlideTab
-            label="Tally"
-            active={selected === 0}
-            onClick={() => scrollTo(0)}
-          />
-          <SlideTab
-            label="Votes"
-            active={selected === 1}
-            onClick={() => scrollTo(1)}
-          />
+          {slides.map((slide, i) => (
+            <SlideTab
+              key={slide.id}
+              label={slide.label}
+              active={selected === i}
+              onClick={() => scrollTo(i)}
+            />
+          ))}
         </div>
         <div className="hidden sm:flex items-center gap-1">
           <ArrowBtn
@@ -105,8 +102,8 @@ export function TallyVotesSwiper({
           />
           <ArrowBtn
             dir="right"
-            disabled={selected === 1}
-            onClick={() => scrollTo(Math.min(1, selected + 1))}
+            disabled={selected === lastIndex}
+            onClick={() => scrollTo(Math.min(lastIndex, selected + 1))}
           />
         </div>
       </div>
@@ -116,43 +113,32 @@ export function TallyVotesSwiper({
           className="flex items-start transition-[height] duration-200 ease-out"
           style={trackHeight != null ? { height: trackHeight } : undefined}
         >
-          <div className="flex-[0_0_100%] min-w-0 px-6 pb-6">
-            <div
-              ref={(el) => {
-                slideRefs.current[0] = el
-              }}
-              className="space-y-5"
-            >
-              <div className="flex items-center justify-between">
-                {tallyHeader}
+          {slides.map((slide, i) => (
+            <div key={slide.id} className="flex-[0_0_100%] min-w-0 px-6 pb-6">
+              <div
+                ref={(el) => {
+                  slideRefs.current[i] = el
+                }}
+                className="space-y-5"
+              >
+                <div className="flex items-center justify-between">
+                  {slide.header}
+                </div>
+                {slide.content}
               </div>
-              {tally}
             </div>
-          </div>
-          <div className="flex-[0_0_100%] min-w-0 px-6 pb-6">
-            <div
-              ref={(el) => {
-                slideRefs.current[1] = el
-              }}
-              className="space-y-5"
-            >
-              <div className="flex items-center justify-between">
-                {votesHeader}
-              </div>
-              {votes}
-            </div>
-          </div>
+          ))}
         </div>
       </div>
 
       {/* Dots */}
       <div className="px-6 pt-3 pb-5 flex items-center justify-center gap-1.5">
-        {[0, 1].map((i) => (
+        {slides.map((slide, i) => (
           <button
-            key={i}
+            key={slide.id}
             type="button"
             onClick={() => scrollTo(i)}
-            aria-label={`Slide ${i + 1}`}
+            aria-label={`Slide ${i + 1}: ${slide.label}`}
             className={cn(
               "h-1.5 rounded-full transition-all",
               selected === i ? "w-6 bg-primary" : "w-1.5 bg-border",

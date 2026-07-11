@@ -24,6 +24,7 @@ import { PreimageDisplay } from "@/components/governance/preimage-display"
 import { VotingPanel } from "@/components/governance/vote-panel"
 import { TallyBar } from "@/components/governance/tally-bar"
 import { TallyVotesSwiper } from "@/components/governance/tally-votes-swiper"
+import { DecisionSlide } from "@/components/governance/decision-slide"
 import { TrackBadge } from "@/components/governance/track-badge"
 import { VotesList } from "@/components/governance/votes-list"
 import { ParticipationGraph } from "@/components/governance/participation-graph"
@@ -405,59 +406,98 @@ function ProposalDetailPageInner() {
           )}
 
           <TallyVotesSwiper
-            tallyHeader={
-              <>
-                <h2 className="font-semibold text-foreground">Tally</h2>
-                {!isOngoing && tally && (
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Final
-                  </span>
-                )}
-              </>
-            }
-            tally={
-              <>
-                <TallyBar
-                  tally={tally}
-                  chain={chain}
-                  voterCount={votesQuery.data?.length ?? null}
-                />
-                {!isOngoing && !tally && historyQuery.isSuccess && (
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Historical tally pruned from chain state.{" "}
-                    <a
-                      href={subscanUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:text-primary/80"
-                    >
-                      View on Subscan
-                    </a>{" "}
-                    for the final figures.
-                  </p>
-                )}
-              </>
-            }
-            votesHeader={
-              <>
-                <h2 className="font-semibold text-foreground">Votes</h2>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {isOngoing ? "Live" : "Final"}
-                </span>
-              </>
-            }
-            votes={
-              <>
-                <ParticipationGraph referendumIndex={ref.index} chain={chain} />
-                <div className="border-t border-border pt-5">
-                  <VotesList
-                    referendumIndex={ref.index}
-                    chain={chain}
-                    decisionPeriodBlocks={track?.decisionPeriod ?? null}
-                  />
-                </div>
-              </>
-            }
+            slides={[
+              {
+                id: "tally",
+                label: "Tally",
+                header: (
+                  <>
+                    <h2 className="font-semibold text-foreground">Tally</h2>
+                    {!isOngoing && tally && (
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Final
+                      </span>
+                    )}
+                  </>
+                ),
+                content: (
+                  <>
+                    <TallyBar
+                      tally={tally}
+                      chain={chain}
+                      voterCount={votesQuery.data?.length ?? null}
+                    />
+                    {!isOngoing && !tally && historyQuery.isSuccess && (
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Historical tally pruned from chain state.{" "}
+                        <a
+                          href={subscanUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:text-primary/80"
+                        >
+                          View on Subscan
+                        </a>{" "}
+                        for the final figures.
+                      </p>
+                    )}
+                  </>
+                ),
+              },
+              ...(isOngoing
+                ? [
+                    {
+                      id: "decision",
+                      label: "Decision",
+                      header: (
+                        <>
+                          <h2 className="font-semibold text-foreground">
+                            Decision
+                          </h2>
+                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Thresholds
+                          </span>
+                        </>
+                      ),
+                      content: (
+                        <DecisionSlide
+                          referendum={ref}
+                          track={track ?? null}
+                          tally={tally}
+                          chain={chain}
+                        />
+                      ),
+                    },
+                  ]
+                : []),
+              {
+                id: "votes",
+                label: "Votes",
+                header: (
+                  <>
+                    <h2 className="font-semibold text-foreground">Votes</h2>
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {isOngoing ? "Live" : "Final"}
+                    </span>
+                  </>
+                ),
+                content: (
+                  <>
+                    <ParticipationGraph
+                      referendumIndex={ref.index}
+                      chain={chain}
+                    />
+                    <div className="border-t border-border pt-5">
+                      <VotesList
+                        referendumIndex={ref.index}
+                        chain={chain}
+                        decisionPeriodBlocks={track?.decisionPeriod ?? null}
+                      />
+                    </div>
+                  </>
+                ),
+              },
+            ]}
           />
 
           {metadataQuery.data && (
