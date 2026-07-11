@@ -539,7 +539,10 @@ function ratio(num: bigint, den: bigint): number {
 function fmtPct(v: number): string {
   const p = v * 100
   if (p === 0) return "0%"
-  if (p < 1) return `${p.toFixed(1)}%`
+  // Support runs in hundredths of a percent - one decimal place would
+  // round e.g. 0.02% down to a misleading "0.0%".
+  if (p < 0.005) return "<0.01%"
+  if (p < 0.1) return `${p.toFixed(2)}%`
   if (p < 10) return `${p.toFixed(1)}%`
   return `${p.toFixed(0)}%`
 }
