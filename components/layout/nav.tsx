@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ChevronDown, Menu, X } from "lucide-react"
+import {
+  BookOpen,
+  ChevronDown,
+  CircleUser,
+  FileText,
+  Landmark,
+  Menu,
+  X,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { WalletModal } from "@/components/wallet/wallet-modal"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
@@ -23,10 +31,10 @@ import { PolkadotIdenticon } from "@/components/profile/identicon"
 // Two top-level destinations. "Create" lives as a per-page CTA on
 // Proposals and Treasury so it doesn't crowd the menu.
 const navLinks = [
-  { label: "Proposals", href: "/proposals" },
-  { label: "Treasury", href: "/treasury" },
-  { label: "Account", href: "/account" },
-  { label: "Docs", href: "/docs" },
+  { label: "Proposals", href: "/proposals", icon: FileText },
+  { label: "Treasury", href: "/treasury", icon: Landmark },
+  { label: "Account", href: "/account", icon: CircleUser },
+  { label: "Docs", href: "/docs", icon: BookOpen },
 ]
 
 export function Nav() {
@@ -130,21 +138,26 @@ export function Nav() {
         {mobileOpen && (
           <div className="md:hidden bg-background border-b border-border px-4 pb-4">
             <nav className="flex flex-col gap-1 pt-2">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    "px-4 py-3 rounded-lg text-sm font-medium transition-colors",
-                    pathname === link.href
-                      ? "text-foreground bg-surface-2"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {link.label}
-                </Link>
-              ))}
+              {navLinks.map((link) => {
+                const active = pathname === link.href
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "flex items-center gap-2.5 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
+                      active ? "text-foreground bg-surface-2" : "text-muted-foreground",
+                    )}
+                  >
+                    <link.icon
+                      className={cn("w-4 h-4", active && "text-primary")}
+                      strokeWidth={2}
+                    />
+                    {link.label}
+                  </Link>
+                )
+              })}
               <div className="flex flex-col gap-2 mt-2 pt-3 border-t border-border">
                 {isConnected ? (
                   <button
@@ -247,12 +260,16 @@ export function Nav() {
                   href={link.href}
                   onClick={() => setDesktopOpen(false)}
                   className={cn(
-                    "px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                    "flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                     active
                       ? "text-foreground bg-surface-2"
                       : "text-muted-foreground hover:text-foreground hover:bg-surface-1",
                   )}
                 >
+                  <link.icon
+                    className={cn("w-4 h-4", active && "text-primary")}
+                    strokeWidth={2}
+                  />
                   {link.label}
                 </Link>
               )
