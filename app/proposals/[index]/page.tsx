@@ -50,7 +50,7 @@ import { useSubscanPreimage } from "@/lib/query/hooks/use-subscan-preimage"
 import { usePreimage } from "@/lib/query/hooks/use-preimage"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { encodeForChain } from "@/lib/chain/ss58"
-import { statusColorClasses, statusLabel } from "@/lib/governance/display"
+import { StatusChip } from "@/components/governance/status-chip"
 import {
   type ChainConfig,
   type ChainId,
@@ -297,14 +297,7 @@ function ProposalDetailPageInner() {
         <div className="lg:col-span-2 space-y-5">
           <div className="rounded-2xl bg-card border border-border p-6">
             <div className="flex items-center gap-2 mb-4 flex-wrap">
-              <span
-                className={cn(
-                  "text-[11px] font-semibold px-2.5 py-1 rounded-full border uppercase tracking-wide",
-                  statusColorClasses(ref.status.type),
-                )}
-              >
-                {statusLabel(ref.status.type)}
-              </span>
+              <StatusChip type={ref.status.type} />
               <TrackBadge
                 track={track ?? null}
                 trackId={ref.trackId ?? historyOngoing?.trackId ?? null}

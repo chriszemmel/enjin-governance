@@ -217,21 +217,28 @@ function SummaryStat({
 }
 
 /**
- * Single horizontal bar split aye (green, left) vs nay (red, right).
- * Width ratio comes from ayePercent; the nay side fills whatever's left.
+ * Single horizontal bar split aye (green, left) vs nay (red, right),
+ * separated by a 2px gap over a neutral ground. The gap keeps the split
+ * legible without relying on the green/red hue distinction alone; the
+ * % labels above carry the exact numbers.
  */
 function SplitBar({ ayePercent }: { ayePercent: number }) {
   const safeAye = Math.max(0, Math.min(100, ayePercent))
+  const hasAye = safeAye > 0
+  const hasNay = safeAye < 100
   return (
     <div
-      className="relative w-full h-1.5 rounded-full bg-red-500/70 overflow-hidden"
+      className="flex items-center gap-[2px] w-full h-1.5 rounded-full bg-surface-3"
       role="img"
       aria-label={`Aye ${ayePercent.toFixed(1)} percent, Nay ${(100 - ayePercent).toFixed(1)} percent`}
     >
-      <div
-        className="absolute inset-y-0 left-0 bg-green-500 transition-all duration-500"
-        style={{ width: `${safeAye}%` }}
-      />
+      {hasAye && (
+        <div
+          className="h-full rounded-full bg-green-500 transition-all duration-500"
+          style={{ width: `${safeAye}%` }}
+        />
+      )}
+      {hasNay && <div className="h-full flex-1 rounded-full bg-red-400" />}
     </div>
   )
 }

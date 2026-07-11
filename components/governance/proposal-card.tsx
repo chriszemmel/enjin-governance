@@ -4,7 +4,7 @@ import Link from "next/link"
 import { Ban, Hash } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Referendum, Track } from "@/lib/governance/types"
-import { statusColorClasses, statusLabel } from "@/lib/governance/display"
+import { StatusChip } from "./status-chip"
 import {
   type ProposalMetadata,
   useProposalMetadata,
@@ -61,21 +61,14 @@ export function ProposalCard({
     <Link
       href={`/proposals/${index}`}
       className={cn(
-        "group block rounded-2xl border border-border bg-card p-5 transition-all duration-300",
-        "hover:border-purple-border hover:bg-surface-1 hover:shadow-lg hover:shadow-black/20",
+        "block rounded-2xl border border-border bg-card p-5 transition-colors duration-200",
+        "hover:border-muted-foreground/40",
         className,
       )}
     >
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-2 flex-wrap">
-          <span
-            className={cn(
-              "text-[11px] font-semibold px-2.5 py-1 rounded-full border uppercase tracking-wide",
-              statusColorClasses(status.type),
-            )}
-          >
-            {statusLabel(status.type)}
-          </span>
+          <StatusChip type={status.type} />
           <TrackBadge track={track ?? null} trackId={trackId} />
           {isWithdrawn && (
             <span
@@ -95,7 +88,7 @@ export function ProposalCard({
 
       <h3
         className={cn(
-          "text-base font-semibold leading-snug mb-3 group-hover:text-primary transition-colors line-clamp-2",
+          "text-base font-semibold leading-snug mb-3 line-clamp-2",
           isWithdrawn
             ? "text-muted-foreground line-through decoration-destructive/60 decoration-1"
             : "text-foreground",

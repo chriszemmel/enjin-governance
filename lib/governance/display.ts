@@ -49,20 +49,22 @@ export function formatTrackName(name: string): string {
     .replace(/^./, (c) => c.toUpperCase())
 }
 
-/** Tailwind class string for the per-status pill badge. */
-export function statusColorClasses(type: ReferendumStatusType): string {
+/**
+ * Tailwind class string for the status chip's state dot. The chip itself
+ * is neutral ink on `surface-1` for every status - state lives in this
+ * dot alone, keeping green/red reserved for vote outcomes.
+ */
+export function statusDotClasses(type: ReferendumStatusType): string {
   switch (type) {
     case "Ongoing":
-      return "text-blue-400 bg-blue-400/10 border-blue-400/20"
+      return "bg-primary animate-pulse"
     case "Approved":
-      return "text-green-400 bg-green-400/10 border-green-400/20"
+      return "bg-green-500"
     case "Rejected":
-      return "text-red-400 bg-red-400/10 border-red-400/20"
-    case "Cancelled":
-      return "text-zinc-400 bg-zinc-400/10 border-zinc-400/20"
-    case "TimedOut":
-      return "text-amber-400 bg-amber-400/10 border-amber-400/20"
     case "Killed":
-      return "text-red-500 bg-red-500/10 border-red-500/20"
+      return "bg-red-500"
+    case "Cancelled":
+    case "TimedOut":
+      return "bg-muted-foreground"
   }
 }

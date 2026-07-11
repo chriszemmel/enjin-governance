@@ -78,7 +78,9 @@
   --secondary-foreground: oklch(0.85 0 0);
 
   --muted: oklch(0.15 0.01 270);
-  --muted-foreground: oklch(0.55 0.02 270);
+  /* 0.62 clears the 4.5:1 AA line on card surfaces for the 10-11px meta
+   * text used throughout; the previous 0.55 landed ≈4.2:1. */
+  --muted-foreground: oklch(0.62 0.02 270);
 
   --accent: oklch(0.54 0.19 280);
   --accent-foreground: oklch(0.97 0 0);
@@ -86,7 +88,9 @@
   --destructive: oklch(0.5 0.22 25);
   --destructive-foreground: oklch(0.97 0 0);
 
-  --border: oklch(0.19 0.015 270);
+  /* 0.23 keeps card outlines legible against the 0.09 page background;
+   * it also gives the neutral hover step (border one level up) room to read. */
+  --border: oklch(0.23 0.015 270);
   --input: oklch(0.16 0.015 270);
   --ring: oklch(0.54 0.19 280);
 

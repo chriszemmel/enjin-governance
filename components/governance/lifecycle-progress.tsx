@@ -147,9 +147,11 @@ function StageColumn({
           className={cn(
             "h-[2px] flex-1 rounded-full",
             isLast && "opacity-0",
-            stage.state === "done" || stage.state === "active"
+            stage.state === "active"
               ? "bg-primary/60"
-              : "bg-border",
+              : stage.state === "done"
+                ? "bg-muted-foreground/40"
+                : "bg-border",
           )}
         />
       </div>
@@ -170,7 +172,7 @@ function StageColumn({
           className={cn(
             "h-full rounded-full transition-all duration-500",
             stage.state === "done"
-              ? "bg-emerald-500"
+              ? "bg-muted-foreground/40"
               : stage.state === "active"
                 ? "bg-primary"
                 : stage.state === "skipped" || stage.state === "cancelled"
@@ -187,8 +189,8 @@ function StageColumn({
 function StageDot({ stage }: { stage: LifecycleStage }) {
   if (stage.state === "done") {
     return (
-      <div className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/60 flex items-center justify-center flex-shrink-0">
-        <Check className="w-3 h-3 text-emerald-500" />
+      <div className="w-5 h-5 rounded-full bg-surface-2 border border-border flex items-center justify-center flex-shrink-0">
+        <Check className="w-3 h-3 text-muted-foreground" />
       </div>
     )
   }
@@ -262,7 +264,7 @@ function SegmentedBar({ lifecycle }: { lifecycle: Lifecycle }) {
             className={cn(
               "h-full rounded-full transition-all duration-500",
               stage.state === "done"
-                ? "bg-emerald-500"
+                ? "bg-muted-foreground/40"
                 : stage.state === "active"
                   ? "bg-primary"
                   : "bg-transparent",
