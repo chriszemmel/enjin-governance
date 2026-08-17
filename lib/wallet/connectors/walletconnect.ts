@@ -345,6 +345,31 @@ function fireDeepLink(url: string): void {
   }
 }
 
+/**
+ * Trim `SignerPayloadJSON` down to the fields `polkadot_signTransaction`
+ * actually defines.
+ *
+ * @polkadot/api serialises three extras that aren't part of that request
+ * shape: `assetId` and `metadataHash` arrive as explicit `null` when unused,
+ * and `withSignedTransaction` is an api-internal flag describing the signer's
+ * *return* shape, not signing input. The polkadot-js extension ignores them,
+ * but Enjin Wallet rejects the whole request with "Transaction invalid"
+ * before the user can confirm - which is why the identical extrinsic signs
+ * fine via the extension and lands on chain.
+ *
+ * Dropping them does not change the signed bytes for this app: `mode` (0) is
+ * preserved, and `metadataHash` / `assetId` only carry data when mode is 1 or
+ * a fee asset is set, neither of which we use.
+ */
+export function toRequestPayload(
+  payload: SignerPayloadJSON,
+): Record<string, unknown> {
+  const entries = Object.entries(payload).filter(
+    ([key, value]) => value !== null && key !== "withSignedTransaction",
+  )
+  return Object.fromEntries(entries)
+}
+
 function buildSigner(
   signClient: SignClientType,
   topic: string,
@@ -384,7 +409,10 @@ function buildSigner(
         chainId: caipChainId,
         request: {
           method: "polkadot_signTransaction",
-          params: { address: payload.address, transactionPayload: payload },
+          params: {
+            address: payload.address,
+            transactionPayload: toRequestPayload(payload),
+          },
         },
       })
       return { id: ++id, signature: result.signature }
