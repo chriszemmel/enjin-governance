@@ -77,7 +77,7 @@ export default function DocsPage() {
             icon={<Send />}
           >
             <p>
-              The wizard composes up to three calls and wraps them in a single{" "}
+              The wizard composes up to four calls and wraps them in a single{" "}
               <Code>utility.batchAll</Code> so the submission either lands
               whole or reverts whole:
             </p>
@@ -93,9 +93,19 @@ export default function DocsPage() {
                 whose authority covers the spend amount.
               </li>
               <li>
-                <Code>system.remark(&quot;EGOV1:&#123;u, h&#125;&quot;)</Code>{" "}
-                - pins a content-addressed pointer to the off-chain
+                <Code>preimage.notePreimage(&quot;EGOV1:&#123;u, h&#125;&quot;)</Code>{" "}
+                - stores a content-addressed pointer to the off-chain
                 JSON (see <A href="#egov1">EGOV1 standard</A>).
+              </li>
+              <li>
+                <Code>referenda.setMetadata(index, blake2_256(envelope))</Code>{" "}
+                - binds that pointer to the referendum, where{" "}
+                <Code>index</Code> is <Code>referendumCount()</Code> read at
+                build time. If another submission lands first the index is
+                stale, the runtime rejects it with{" "}
+                <Code>NoPermission</Code>, and the whole batch reverts - a
+                stale index can never annotate someone else&apos;s
+                referendum.
               </li>
             </ol>
             <p>
@@ -105,10 +115,9 @@ export default function DocsPage() {
               building the batch - if the status is{" "}
               <Code>Unrequested</Code> or <Code>Requested</Code>, re-noting
               would abort with <Code>AlreadyNoted</Code> and revert the whole
-              batch, so the wizard signs only{" "}
-              <Code>referenda.submit</Code> + <Code>system.remark</Code>. The
-              referendum still references the same (hash, len) pair, so the
-              on-chain outcome is identical.
+              batch, so the wizard drops step 1 and signs the remaining
+              three calls. The referendum still references the same
+              (hash, len) pair, so the on-chain outcome is identical.
             </p>
             <p>
               The proposer separately places the per-track decision deposit
@@ -147,17 +156,18 @@ export default function DocsPage() {
               summary, body, attachments, and signature to an on-chain
               referendum without bloating chain state. It&apos;s designed so
               any third party - Polkassembly, Subscan, an indexer, or another
-              client - can rebuild the proposal corpus by decoding{" "}
-              <Code>system.remark</Code> call args from finalised blocks for
-              the <Code>EGOV1:</Code> magic prefix.
+              client - can rebuild the proposal corpus by resolving{" "}
+              <Code>referenda.metadataOf</Code> through the preimage pallet
+              and filtering for the <Code>EGOV1:</Code> magic prefix.
             </p>
 
             <h3 className="text-base font-semibold text-foreground pt-2">
               On-chain envelope
             </h3>
             <p>
-              The submission batch includes a <Code>system.remark</Code> with
-              the UTF-8 payload:
+              The submission batch notes a preimage with the UTF-8 payload
+              below and binds its blake2-256 to the referendum via{" "}
+              <Code>referenda.setMetadata</Code>:
             </p>
             <Pre>{`EGOV1:{"u":"<url>","h":"<sha256-hex>"}`}</Pre>
             <ul className="list-disc pl-5 space-y-1">
@@ -168,7 +178,7 @@ export default function DocsPage() {
               <li>
                 <Code>h</Code> - sha256 of the canonical
                 (sorted-keys-at-every-level) JSON bytes. Pinned forever by
-                the on-chain remark.
+                the on-chain envelope.
               </li>
             </ul>
 
@@ -216,12 +226,15 @@ export default function DocsPage() {
             </h3>
             <ol className="list-decimal pl-5 space-y-1.5">
               <li>
-                Scan finalised blocks and decode each{" "}
-                <Code>system.remark</Code> call (the proposal nests it inside a{" "}
-                <Code>utility.batchAll</Code>).
+                Read <Code>referenda.metadataOf(index)</Code> and resolve the
+                hash through the <Code>preimage</Code> pallet to the envelope
+                bytes. For referenda filed before this binding shipped, fall
+                back to scanning finalised blocks for <Code>system.remark</Code>{" "}
+                calls nested in the submission&apos;s{" "}
+                <Code>utility.batchAll</Code>.
               </li>
               <li>
-                Filter remarks whose UTF-8 payload starts with{" "}
+                Filter payloads whose UTF-8 bytes start with{" "}
                 <Code>EGOV1:</Code>.
               </li>
               <li>
@@ -236,9 +249,10 @@ export default function DocsPage() {
                 public signal an edit happened.
               </li>
               <li>
-                Link the remark to its referendum via the same extrinsic
-                index: the batch that emitted the remark is the same one
-                that emitted <Code>referenda.Submitted&#123;index&#125;</Code>.
+                The referendum link is explicit: <Code>MetadataOf</Code> is
+                keyed by index. For legacy remarks, link via the same
+                extrinsic: the batch that emitted the remark is the one that
+                emitted <Code>referenda.Submitted&#123;index&#125;</Code>.
               </li>
             </ol>
             <p>
@@ -257,8 +271,8 @@ export default function DocsPage() {
               from the <strong>Edit Proposal</strong> page on the referendum.
               The PATCH endpoint overwrites <Code>proposal.json</Code> at the
               same bucket key, so existing URLs keep resolving - but the
-              sha256 changes, and the on-chain remark still pins the original
-              hash. The detail page shows an <Code>(edited)</Code> chip and
+              sha256 changes, and the on-chain envelope still pins the
+              original hash. The detail page shows an <Code>(edited)</Code> chip and
               the EGOV1 source modal explains the divergence.
             </p>
             <p>
@@ -473,7 +487,8 @@ export default function DocsPage() {
             </ul>
             <p>
               External indexers should additionally check that the bucket
-              sha256 matches the <Code>h</Code> pinned by the on-chain remark.
+              sha256 matches the <Code>h</Code> pinned by the on-chain
+              envelope.
               When that fails but <Code>edited_at</Code> is present in the
               JSON, the proposer edited after submission; when{" "}
               <Code>edited_at</Code> is absent, treat the content as

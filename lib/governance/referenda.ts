@@ -9,8 +9,10 @@ import type { ApiPromise, SubmittableResult } from "@polkadot/api"
 import type { SubmittableExtrinsic } from "@polkadot/api/types"
 import type { Call, EventRecord } from "@polkadot/types/interfaces"
 import type { ISubmittableResult } from "@polkadot/types/types"
-import { u8aToHex } from "@polkadot/util"
+import { u8aToHex, u8aToString } from "@polkadot/util"
 import { findEvent } from "@/lib/chain/events"
+import { getPreimage } from "./preimage"
+import { parseRemarkPayload, type RemarkEnvelope } from "./proposal-metadata"
 import { decodeReferendumInfo } from "./status"
 import type { PreimageRef, Referendum, ReferendumStatusType } from "./types"
 
@@ -143,6 +145,50 @@ export function buildSubmit(
     boundedProposalArg(params.proposal),
     enactmentArg,
   ) as SubmittableExtrinsic<"promise", SubmittableResult>
+}
+
+/**
+ * Build `referenda.setMetadata(index, Some(hash))` - binds a noted preimage
+ * to a referendum as its metadata. The runtime only accepts this from the
+ * referendum's submission depositor while the referendum is Ongoing, and
+ * only for a hash the preimage pallet can already resolve - so in a
+ * submission batch this must come after both `referenda.submit` and the
+ * envelope's `preimage.notePreimage`.
+ */
+export function buildSetMetadata(
+  api: ApiPromise,
+  index: number,
+  hash: `0x${string}`,
+): SubmittableExtrinsic<"promise", ISubmittableResult> {
+  return api.tx.referenda.setMetadata(index, hash) as SubmittableExtrinsic<
+    "promise",
+    ISubmittableResult
+  >
+}
+
+/**
+ * Resolve a referendum's on-chain metadata binding to an EGOV1 envelope:
+ * `referenda.metadataOf(index)` → preimage bytes → parsed `{u, h}`.
+ *
+ * Returns null when the referendum has no metadata, the preimage has been
+ * pruned, or the bytes aren't an `EGOV1:` envelope (e.g. a plain IPFS-hash
+ * metadata set by another client). `MetadataOf` stores only the hash, so the
+ * length is recovered by getPreimage's status/scan fallbacks.
+ */
+export async function getReferendumMetadata(
+  api: ApiPromise,
+  index: number,
+): Promise<RemarkEnvelope | null> {
+  const raw = await api.query.referenda.metadataOf(index)
+  const opt = raw as unknown as {
+    isSome: boolean
+    unwrap: () => { toHex: () => `0x${string}` }
+  }
+  if (!opt.isSome) return null
+  const hash = opt.unwrap().toHex()
+  const preimage = await getPreimage(api, { hash, len: 0 })
+  if (!preimage?.bytes) return null
+  return parseRemarkPayload(u8aToString(preimage.bytes))
 }
 
 /**

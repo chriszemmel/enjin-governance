@@ -78,7 +78,7 @@ export async function deleteObjects(keys: string[]): Promise<void> {
 /**
  * Drop-in for putObject with a JSON value. Stringifies with sorted keys
  * so the sha256 is stable across serialisers - important because we put
- * this hash inside the on-chain `system.remark`.
+ * this hash inside the on-chain EGOV1 envelope.
  */
 export async function putJson(
   key: string,

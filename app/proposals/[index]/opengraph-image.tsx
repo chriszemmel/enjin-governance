@@ -15,6 +15,6 @@ export default async function Image({ params }: Props) {
     eyebrow: "Enjin Governance · Referendum",
     title: `Referendum ${display}`,
     subtitle:
-      "Live tally, voter list, conviction breakdown, and the EGOV1 narrative pinned by the on-chain system.remark.",
+      "Live tally, voter list, conviction breakdown, and the EGOV1 narrative pinned by the on-chain metadata.",
   })
 }
