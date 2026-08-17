@@ -188,6 +188,16 @@ export default function DocsPage() {
                 yields a different sha256, so a reimplementation that indents
                 will read every proposal as tampered.
               </li>
+              <li>
+                Non-ASCII characters are emitted{" "}
+                <strong>literally as UTF-8</strong>, never as{" "}
+                <Code>\uXXXX</Code> escapes. This is the second way a
+                reimplementation silently diverges: Python&apos;s{" "}
+                <Code>json.dumps</Code> escapes non-ASCII by default, so any
+                proposal containing an em dash, a curly quote or an accented
+                name hashes differently unless it passes{" "}
+                <Code>ensure_ascii=False</Code>.
+              </li>
             </ul>
 
             <h3 className="text-base font-semibold text-foreground pt-2">
@@ -201,7 +211,7 @@ export default function DocsPage() {
   "title": "<≤ 200 chars>",
   "summary": "<≤ 500 chars> | null",
   "body_markdown": "<≤ 100000 chars>",
-  "track": "<track name, e.g. SmallTipper or root>" | null,
+  "track": "<track name, e.g. SmallTipper or root — ≤ 80 chars>" | null,
   "spend": {
     "beneficiary": "<SS58 address>",
     "amount_planck": "<decimal string>"
@@ -227,6 +237,15 @@ export default function DocsPage() {
               All <Code>amount_planck</Code> values are decimal strings (not
               numbers) to preserve precision - the relay has 18
               decimals, which overflows <Code>Number</Code>.
+            </p>
+            <p>
+              <Code>track</Code> is a free-form label, not an enum, and{" "}
+              <strong>its casing is not normalised</strong>. Treasury
+              proposals filed through this client carry the PascalCase Origins
+              variant (<Code>SmallTipper</Code>); proposals filed elsewhere
+              carry whatever their author wrote, typically the runtime track
+              name (<Code>root</Code>). Match case-insensitively, and treat an
+              unrecognised value as opaque rather than dropping the proposal.
             </p>
 
             <h3 className="text-base font-semibold text-foreground pt-2">
