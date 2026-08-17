@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ApiPromise } from "@polkadot/api"
 import { blake2AsHex } from "@polkadot/util-crypto"
-import { stringToHex, u8aToHex } from "@polkadot/util"
+import { stringToU8a, u8aToHex } from "@polkadot/util"
 import {
   buildTreasuryProposal,
   previewPreimage,
@@ -9,11 +9,12 @@ import {
 import { ENJIN_TREASURY_TIERS } from "@/lib/governance/treasury"
 
 /**
- * buildTreasuryProposal composes [notePreimage, submit, remark]. We fake
- * `api.tx` so each builder records the args it receives and returns a tagged
- * object, letting us assert call ordering, the Lookup wrapping, and - most
- * importantly - that the remark is passed as a hex string (the documented
- * codec workaround), not the raw UTF-8 payload.
+ * buildTreasuryProposal composes [notePreimage, submit, notePreimage,
+ * setMetadata]. We fake `api.tx` so each builder records the args it
+ * receives and returns a tagged object, letting us assert call ordering,
+ * the Lookup wrapping, the envelope's hex encoding, and - most importantly
+ * - that setMetadata binds the blake2-256 of the envelope bytes to the
+ * referendum index read at build time.
  */
 
 const CALL_BYTES = new Uint8Array([1, 2, 3, 4])
@@ -35,13 +36,19 @@ function fakeApi(sink: Recorded[]): ApiPromise {
         spendLocal: rec("treasury.spendLocal", { method: { toU8a: () => CALL_BYTES } }),
       },
       preimage: { notePreimage: rec("preimage.notePreimage", { __tx: "note" }) },
-      referenda: { submit: rec("referenda.submit", { __tx: "submit" }) },
-      system: { remark: rec("system.remark", { __tx: "remark" }) },
+      referenda: {
+        submit: rec("referenda.submit", { __tx: "submit" }),
+        setMetadata: rec("referenda.setMetadata", { __tx: "setMetadata" }),
+      },
     },
   } as unknown as ApiPromise
 }
 
 const tier = ENJIN_TREASURY_TIERS[0]
+
+const ENVELOPE = 'EGOV1:{"u":"https://x/p.json","h":"deadbeef"}'
+const ENVELOPE_BYTES = stringToU8a(ENVELOPE)
+const ENVELOPE_HASH = blake2AsHex(ENVELOPE_BYTES, 256)
 
 describe("buildTreasuryProposal", () => {
   it("derives hash/len/callHex from the spend_local call bytes", () => {
@@ -49,29 +56,57 @@ describe("buildTreasuryProposal", () => {
       amount: 1000n,
       beneficiary: "enAlice",
       tier,
-      remarkPayload: 'EGOV1:{"u":"https://x/p.json","h":"deadbeef"}',
+      remarkPayload: ENVELOPE,
+      referendumIndex: 11,
     })
     expect(built.preimageHash).toBe(EXPECTED_HASH)
     expect(built.preimageLen).toBe(4)
     expect(built.callHex).toBe(CALL_HEX)
   })
 
-  it("orders the batch as [notePreimage, submit, remark]", () => {
+  it("derives metadataHash/metadataLen from the envelope bytes", () => {
+    const built = buildTreasuryProposal(fakeApi([]), {
+      amount: 1000n,
+      beneficiary: "enAlice",
+      tier,
+      remarkPayload: ENVELOPE,
+      referendumIndex: 11,
+    })
+    expect(built.metadataHash).toBe(ENVELOPE_HASH)
+    expect(built.metadataLen).toBe(ENVELOPE_BYTES.length)
+  })
+
+  it("orders the batch as [notePreimage, submit, notePreimage, setMetadata]", () => {
     const sink: Recorded[] = []
     const built = buildTreasuryProposal(fakeApi(sink), {
       amount: 1000n,
       beneficiary: "enAlice",
       tier,
       remarkPayload: "EGOV1:{}",
+      referendumIndex: 0,
     })
-    expect(built.calls).toEqual([built.noteTx, built.submitTx, built.remarkTx])
-    expect(built.calls).toEqual([{ __tx: "note" }, { __tx: "submit" }, { __tx: "remark" }])
-    // spendLocal runs first (to produce the bytes), then the three batch members.
+    expect(built.calls).toEqual([
+      built.noteTx,
+      built.submitTx,
+      built.metadataNoteTx,
+      built.setMetadataTx,
+    ])
+    expect(built.calls).toEqual([
+      { __tx: "note" },
+      { __tx: "submit" },
+      { __tx: "note" },
+      { __tx: "setMetadata" },
+    ])
+    // spendLocal runs first (to produce the bytes), then the four batch
+    // members. setMetadata is strictly after both submit (the referendum
+    // must exist) and the envelope note (the hash must resolve) - the
+    // runtime rejects any other order with PreimageNotExist.
     expect(sink.map((r) => r.call)).toEqual([
       "treasury.spendLocal",
       "preimage.notePreimage",
       "referenda.submit",
-      "system.remark",
+      "preimage.notePreimage",
+      "referenda.setMetadata",
     ])
   })
 
@@ -82,21 +117,37 @@ describe("buildTreasuryProposal", () => {
       beneficiary: "enBob",
       tier,
       remarkPayload: "EGOV1:{}",
+      referendumIndex: 0,
     })
     const spend = sink.find((r) => r.call === "treasury.spendLocal")!
     expect(spend.args).toEqual(["250", "enBob"])
   })
 
-  it("notes the preimage as the hex of the call bytes", () => {
+  it("notes the spend preimage as the hex of the call bytes", () => {
     const sink: Recorded[] = []
     buildTreasuryProposal(fakeApi(sink), {
       amount: 1n,
       beneficiary: "enBob",
       tier,
       remarkPayload: "EGOV1:{}",
+      referendumIndex: 0,
     })
     const note = sink.find((r) => r.call === "preimage.notePreimage")!
     expect(note.args).toEqual([CALL_HEX])
+  })
+
+  it("notes the envelope preimage as the hex of its UTF-8 bytes", () => {
+    const sink: Recorded[] = []
+    buildTreasuryProposal(fakeApi(sink), {
+      amount: 1n,
+      beneficiary: "enBob",
+      tier,
+      remarkPayload: ENVELOPE,
+      referendumIndex: 0,
+    })
+    const notes = sink.filter((r) => r.call === "preimage.notePreimage")
+    expect(notes).toHaveLength(2)
+    expect(notes[1].args).toEqual([u8aToHex(ENVELOPE_BYTES)])
   })
 
   it("submits with the tier origin, Lookup wrapper, and After-0 enactment", () => {
@@ -106,6 +157,7 @@ describe("buildTreasuryProposal", () => {
       beneficiary: "enBob",
       tier,
       remarkPayload: "EGOV1:{}",
+      referendumIndex: 0,
     })
     const submit = sink.find((r) => r.call === "referenda.submit")!
     expect(submit.args).toEqual([
@@ -113,6 +165,50 @@ describe("buildTreasuryProposal", () => {
       { Lookup: { hash: EXPECTED_HASH, len: 4 } },
       { After: 0 },
     ])
+  })
+
+  it("binds setMetadata to the given index and the envelope's blake2-256", () => {
+    const sink: Recorded[] = []
+    buildTreasuryProposal(fakeApi(sink), {
+      amount: 1n,
+      beneficiary: "enBob",
+      tier,
+      remarkPayload: ENVELOPE,
+      referendumIndex: 11,
+    })
+    const set = sink.find((r) => r.call === "referenda.setMetadata")!
+    expect(set.args).toEqual([11, ENVELOPE_HASH])
+  })
+
+  it("passes the referendum index through verbatim - a different count targets a different index", () => {
+    for (const index of [0, 7, 42]) {
+      const sink: Recorded[] = []
+      buildTreasuryProposal(fakeApi(sink), {
+        amount: 1n,
+        beneficiary: "enBob",
+        tier,
+        remarkPayload: ENVELOPE,
+        referendumIndex: index,
+      })
+      const set = sink.find((r) => r.call === "referenda.setMetadata")!
+      expect(set.args[0]).toBe(index)
+    }
+  })
+
+  it("hashes the envelope bytes for setMetadata, never the sha256 inside the envelope", () => {
+    const sink: Recorded[] = []
+    const built = buildTreasuryProposal(fakeApi(sink), {
+      amount: 1n,
+      beneficiary: "enBob",
+      tier,
+      remarkPayload: ENVELOPE,
+      referendumIndex: 3,
+    })
+    const set = sink.find((r) => r.call === "referenda.setMetadata")!
+    expect(set.args[1]).toBe(ENVELOPE_HASH)
+    expect(set.args[1]).not.toContain("deadbeef")
+    // Nor the spend call's preimage hash - the two preimages are distinct.
+    expect(built.metadataHash).not.toBe(built.preimageHash)
   })
 
   it("throws if the chosen tier cannot authorize the amount (submit-time guard)", () => {
@@ -123,33 +219,20 @@ describe("buildTreasuryProposal", () => {
         beneficiary: "enAlice",
         tier: undersized,
         remarkPayload: "EGOV1:{}",
+        referendumIndex: 0,
       }),
     ).toThrow(/SmallTipper/)
-  })
-
-  it("passes the remark as a HEX string, never the raw UTF-8 payload", () => {
-    const sink: Recorded[] = []
-    const payload = 'EGOV1:{"u":"https://x/p.json","h":"abc123"}'
-    buildTreasuryProposal(fakeApi(sink), {
-      amount: 1n,
-      beneficiary: "enBob",
-      tier,
-      remarkPayload: payload,
-    })
-    const remark = sink.find((r) => r.call === "system.remark")!
-    expect(remark.args).toEqual([stringToHex(payload)])
-    expect(remark.args[0]).not.toBe(payload)
   })
 })
 
 describe("previewPreimage", () => {
-  it("computes the same hash/len/callHex without building submit/remark", () => {
+  it("computes the same hash/len/callHex without building submit/setMetadata", () => {
     const sink: Recorded[] = []
     const preview = previewPreimage(fakeApi(sink), { amount: 1000n, beneficiary: "enAlice" })
     expect(preview.preimageHash).toBe(EXPECTED_HASH)
     expect(preview.preimageLen).toBe(4)
     expect(preview.callHex).toBe(CALL_HEX)
-    // Only the spend call + preimage note are touched - no submit, no remark.
+    // Only the spend call + preimage note are touched - no submit, no metadata.
     expect(sink.map((r) => r.call)).toEqual(["treasury.spendLocal", "preimage.notePreimage"])
   })
 })

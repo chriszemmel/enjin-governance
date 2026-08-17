@@ -35,6 +35,7 @@ type StageProps = {
   preimageHash: string
   preimageLen: number
   preimageAlreadyNoted: boolean
+  metadataHash: string | null
   decisionDeposit: bigint | null
   chainTicker: string
   chainDecimals: number
@@ -110,7 +111,7 @@ export function Stage(p: StageProps) {
               <p className="text-[11px] text-muted-foreground mt-1">
                 Open the URL above to inspect the stored proposal. The
                 sha256 listed is what we&apos;ll commit into the on-chain
-                remark.
+                metadata envelope.
               </p>
             </ArtefactRow>
           </div>
@@ -123,8 +124,8 @@ export function Stage(p: StageProps) {
         </h2>
         <p className="text-xs text-muted-foreground leading-relaxed">
           {p.preimageAlreadyNoted
-            ? "One signature covers the two remaining steps. The proposal content was already registered on chain by an earlier identical submission - we'll re-use it."
-            : "One signature covers all three steps. If any of them fails, none apply."}
+            ? "One signature covers the three remaining steps. The proposal content was already registered on chain by an earlier identical submission - we'll re-use it."
+            : "One signature covers all four steps. If any of them fails, none apply."}
         </p>
 
         <CallCard
@@ -161,16 +162,27 @@ export function Stage(p: StageProps) {
         <CallCard
           index={2}
           status="pending"
-          title="Anchor the EGOV1 metadata"
-          pallet="system"
-          method="remark"
-          summary="Writes a permanent on-chain pointer to the off-chain proposal so anyone can fetch and verify it."
+          title="Register the EGOV1 metadata envelope"
+          pallet="preimage"
+          method="notePreimage"
+          summary="Stores the pointer to the off-chain proposal on chain so anyone can fetch and verify it."
           details={[
             { label: "Standard", value: "EGOV1" },
             { label: "JSON URL", value: p.draft.json_url },
             { label: "sha256", value: p.draft.json_sha256 },
           ]}
           rawPayload={p.draft.remark_payload}
+        />
+        <CallCard
+          index={3}
+          status="pending"
+          title="Bind the metadata to the referendum"
+          pallet="referenda"
+          method="setMetadata"
+          summary="Points the referendum at the envelope so wallets, explorers, and indexers resolve it natively. Targets the index the submission above is assigned."
+          details={[
+            { label: "Metadata hash", value: p.metadataHash ?? "-" },
+          ]}
         />
       </div>
 

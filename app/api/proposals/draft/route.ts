@@ -11,7 +11,7 @@
  *     id,                  // UUID, same as the R2 key prefix
  *     json_url,            // public R2 URL of proposal.json
  *     json_sha256,         // sha256 of canonical JSON bytes
- *     remark_payload,      // exact string to put in system.remark
+ *     remark_payload,      // exact EGOV1 envelope string anchored on chain
  *     proposal             // the proposal.json contents (for preview)
  *   }
  *

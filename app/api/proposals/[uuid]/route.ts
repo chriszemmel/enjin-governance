@@ -10,14 +10,14 @@
  * The proposal's R2 objects (proposal.json + attachments) are deleted too,
  * best-effort, so a discarded draft doesn't leave blobs behind. Only
  * deletable rows reach here (never an on-chain proposal whose URL a finalised
- * remark pins), so this can't 404 a shared on-chain link.
+ * envelope pins), so this can't 404 a shared on-chain link.
  *
  * PATCH /api/proposals/[uuid]
  *
  * Proposer-only edit to the off-chain narrative (title, summary, body,
  * attachments). Re-uploads the canonical proposal.json at the SAME R2
  * key, so existing URLs keep resolving - but the sha256 changes, so
- * the on-chain remark's pinned hash will no longer match the bucket
+ * the on-chain envelope's pinned hash will no longer match the bucket
  * bytes. That divergence is the visible signal that an edit happened.
  *
  * The pre-image, spend amount, beneficiary, and submitter address are
@@ -110,7 +110,7 @@ export async function DELETE(
 
   // Gather the R2 keys BEFORE the row (and its cascade-deleted attachment
   // rows) are gone, so we can clean the bucket after. A deletable proposal is
-  // never pinned by a finalised on-chain remark, so removing its objects is
+  // never pinned by a finalised on-chain envelope, so removing its objects is
   // safe.
   let r2Keys: string[] = [existing.json_key]
   try {
