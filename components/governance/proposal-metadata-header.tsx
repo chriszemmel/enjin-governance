@@ -7,6 +7,7 @@ import { ProposalSourceModal } from "@/components/governance/proposal-source-mod
 import type { ChainConfig } from "@/lib/chain/chains"
 import type { ProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
 import { stringifyStable } from "@/lib/r2/json"
+import { parseMarkdownBlocks } from "@/lib/governance/markdown-lite"
 import type { ProposalJson } from "@/lib/governance/proposal-metadata"
 
 type Props = {
@@ -239,120 +240,17 @@ function sourceBadgeState({
  *
  *   block-level: paragraphs (blank-line separated), unordered lists
  *     (- or *), ordered lists (1. 2. …), ATX headings (# / ## / ###),
- *     fenced code blocks (```).
+ *     fenced code blocks (```), GFM pipe tables.
  *   inline:      **bold**, *italic*, `code`, [label](url), <url>.
  *
  * Avoids pulling a full markdown lib into the bundle for what are
- * usually a few hundred lines of prose. All output goes through React
- * children (never dangerouslySetInnerHTML) so user content can't
- * inject markup.
+ * usually a few hundred lines of prose. Block parsing lives in
+ * lib/governance/markdown-lite.ts so it can be unit tested; this half is
+ * purely presentational. All output goes through React children (never
+ * dangerouslySetInnerHTML) so user content can't inject markup.
  */
 function MarkdownLite({ source }: { source: string }) {
-  type Block =
-    | { kind: "code"; text: string }
-    | { kind: "ul"; items: string[] }
-    | { kind: "ol"; items: string[] }
-    | { kind: "h1" | "h2" | "h3"; text: string }
-    | { kind: "para"; text: string }
-
-  const blocks: Block[] = []
-  const lines = source.split(/\r?\n/)
-  let paraBuf: string[] = []
-  let ulBuf: string[] = []
-  let olBuf: string[] = []
-  let codeBuf: string[] = []
-  let inCode = false
-
-  const flushPara = () => {
-    if (paraBuf.length) {
-      blocks.push({ kind: "para", text: paraBuf.join(" ") })
-      paraBuf = []
-    }
-  }
-  const flushUl = () => {
-    if (ulBuf.length) {
-      blocks.push({ kind: "ul", items: ulBuf })
-      ulBuf = []
-    }
-  }
-  const flushOl = () => {
-    if (olBuf.length) {
-      blocks.push({ kind: "ol", items: olBuf })
-      olBuf = []
-    }
-  }
-  const flushAll = () => {
-    flushPara()
-    flushUl()
-    flushOl()
-  }
-
-  for (const rawLine of lines) {
-    const line = rawLine
-    if (line.startsWith("```")) {
-      if (inCode) {
-        blocks.push({ kind: "code", text: codeBuf.join("\n") })
-        codeBuf = []
-        inCode = false
-      } else {
-        flushAll()
-        inCode = true
-      }
-      continue
-    }
-    if (inCode) {
-      codeBuf.push(line)
-      continue
-    }
-
-    if (line.trim() === "") {
-      flushAll()
-      continue
-    }
-
-    const h1 = /^#\s+(.*)$/.exec(line)
-    const h2 = /^##\s+(.*)$/.exec(line)
-    const h3 = /^###\s+(.*)$/.exec(line)
-    if (h3) {
-      flushAll()
-      blocks.push({ kind: "h3", text: h3[1]! })
-      continue
-    }
-    if (h2) {
-      flushAll()
-      blocks.push({ kind: "h2", text: h2[1]! })
-      continue
-    }
-    if (h1) {
-      flushAll()
-      blocks.push({ kind: "h1", text: h1[1]! })
-      continue
-    }
-
-    const ol = /^\s*\d+\.\s+(.*)$/.exec(line)
-    if (ol) {
-      flushPara()
-      flushUl()
-      olBuf.push(ol[1]!)
-      continue
-    }
-
-    const ul = /^\s*[-*]\s+(.*)$/.exec(line)
-    if (ul) {
-      flushPara()
-      flushOl()
-      ulBuf.push(ul[1]!)
-      continue
-    }
-
-    flushUl()
-    flushOl()
-    paraBuf.push(line)
-  }
-  if (inCode && codeBuf.length) {
-    blocks.push({ kind: "code", text: codeBuf.join("\n") })
-  }
-  flushAll()
+  const blocks = parseMarkdownBlocks(source)
 
   return (
     <div className="space-y-3 text-sm leading-relaxed">
@@ -365,6 +263,43 @@ function MarkdownLite({ source }: { source: string }) {
             >
               {b.text}
             </pre>
+          )
+        }
+        if (b.kind === "table") {
+          return (
+            // Proposal tables run wide (the GP stage ladder is 5 columns), so
+            // the table scrolls inside its own box rather than forcing the
+            // whole card to scroll.
+            <div key={i} className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr>
+                    {b.head.map((cell, j) => (
+                      <th
+                        key={j}
+                        className="border border-border bg-surface-2 px-2 py-1.5 text-left font-semibold text-foreground"
+                      >
+                        {renderInline(cell)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {b.rows.map((row, r) => (
+                    <tr key={r}>
+                      {row.map((cell, j) => (
+                        <td
+                          key={j}
+                          className="border border-border px-2 py-1.5 align-top text-foreground/90"
+                        >
+                          {renderInline(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )
         }
         if (b.kind === "ul") {
