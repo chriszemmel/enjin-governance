@@ -17,6 +17,16 @@ describe("splitTableRow", () => {
   it("preserves empty cells", () => {
     expect(splitTableRow("| a |  | c |")).toEqual(["a", "", "c"])
   })
+
+  it("does not split on an escaped pipe, and unescapes it", () => {
+    // GFM's only way to put a pipe in a cell. Splitting here would both
+    // inflate the column count and leave a literal backslash on screen.
+    expect(splitTableRow("| a \\| b | c |")).toEqual(["a | b", "c"])
+  })
+
+  it("keeps a trailing escaped pipe as cell content", () => {
+    expect(splitTableRow("| a \\|")).toEqual(["a |"])
+  })
 })
 
 describe("isTableSeparatorRow", () => {
@@ -65,6 +75,35 @@ describe("parseMarkdownBlocks", () => {
     // rather than disappear.
     const blocks = parseMarkdownBlocks("| not | really | a table")
     expect(blocks).toEqual([{ kind: "para", text: "| not | really | a table" }])
+  })
+
+  it("rejoins a stray pipe line with the paragraph around it", () => {
+    // A hard-wrapped sentence whose continuation happens to start with a
+    // pipe must stay one paragraph, exactly as it rendered before tables
+    // were parsed at all - not split into three.
+    const blocks = parseMarkdownBlocks(
+      "Compare throughput\n| latency across regions\nfor each validator.",
+    )
+    expect(blocks).toEqual([
+      { kind: "para", text: "Compare throughput | latency across regions for each validator." },
+    ])
+  })
+
+  it("pads short rows and truncates long ones to the header width", () => {
+    // The renderer borders each cell, so a ragged row would leave a hole in
+    // the grid or open a phantom unheaded column. GFM squares them off too.
+    expect(parseMarkdownBlocks("| a | b | c |\n|---|---|---|\n| 1 | 2 |")).toEqual([
+      { kind: "table", head: ["a", "b", "c"], rows: [["1", "2", ""]] },
+    ])
+    expect(parseMarkdownBlocks("| a | b | c |\n|---|---|---|\n| 1 | 2 | 3 | 4 |")).toEqual([
+      { kind: "table", head: ["a", "b", "c"], rows: [["1", "2", "3"]] },
+    ])
+  })
+
+  it("keeps an escaped pipe inside a cell instead of splitting the row", () => {
+    expect(parseMarkdownBlocks("| Op | Meaning |\n|---|---|\n| a \\| b | logical or |")).toEqual([
+      { kind: "table", head: ["Op", "Meaning"], rows: [["a | b", "logical or"]] },
+    ])
   })
 
   it("separates a table from the heading and prose around it", () => {
