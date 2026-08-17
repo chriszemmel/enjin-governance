@@ -3,9 +3,8 @@
  *
  * Returns the off-chain metadata row for a referendum index, or 404
  * when no row exists (which is normal for proposals filed before this
- * system shipped - external indexers can still recover the JSON from
- * the chain via `referenda.metadataOf` or, for older referenda, by
- * decoding `system.remark` call args for the EGOV1 prefix).
+ * system shipped - external indexers can still recover the JSON by
+ * decoding the chain's `system.remark` call args for the EGOV1 prefix).
  *
  * Cached on the CDN for 60s; ongoing referenda may have edits to the
  * metadata row (status flips, redirect file write).

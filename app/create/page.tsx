@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft, Coins } from "lucide-react"
 import { toast } from "sonner"
 import type { ApiPromise } from "@polkadot/api"
-import { stringToU8a } from "@polkadot/util"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { WalletModal } from "@/components/wallet/wallet-modal"
@@ -29,7 +28,6 @@ import { useActiveChain } from "@/lib/chain/use-chain"
 import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
 import { encodeForChain, isValidAddressForChain } from "@/lib/chain/ss58"
 import { extractReferendumIndex } from "@/lib/governance/referenda"
-import { hashCall } from "@/lib/governance/preimage"
 import { formatTrackName } from "@/lib/governance/display"
 import { maxTreasurySpend, pickOriginForAmount } from "@/lib/governance/treasury"
 import {
@@ -42,7 +40,6 @@ import { useMe, useNoncePrefetch, useSignIn } from "@/lib/query/hooks/use-sessio
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
 import { usePreimageStatus } from "@/lib/query/hooks/use-preimage"
-import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
 import { findTrackByName } from "@/lib/governance/tracks"
 import {
   DEFAULT_ENACTMENT,
@@ -99,7 +96,6 @@ function CreatePageInner() {
   const [confirming, setConfirming] = useState(false)
   const [submittedIndex, setSubmittedIndex] = useState<number | null>(null)
   const [callStatus, setCallStatus] = useState<CallStatus[]>([
-    "pending",
     "pending",
     "pending",
     "pending",
@@ -265,18 +261,6 @@ function CreatePageInner() {
     }
   }, [apiQuery.data, beneficiary, beneficiaryValid, parsedAmount])
 
-  // blake2-256 of the EGOV1 envelope bytes - the hash setMetadata binds to
-  // the referendum. Distinct from the sha256 inside the envelope, which
-  // commits to the off-chain JSON.
-  const metadataHash = useMemo(() => {
-    if (!draft) return null
-    try {
-      return hashCall(stringToU8a(draft.remark_payload))
-    } catch {
-      return null
-    }
-  }, [draft])
-
   // If an earlier proposal already noted these exact call bytes,
   // `preimage.notePreimage` would abort with AlreadyNoted and revert
   // the whole batchAll. The hash + len are the same regardless, so we
@@ -301,21 +285,6 @@ function CreatePageInner() {
   useEffect(() => {
     skipNoteRef.current = preimageAlreadyNoted
   }, [preimageAlreadyNoted])
-
-  // The referendum index setMetadata targets = referendumCount() at the
-  // moment referenda.submit executes. Same seed-a-ref shape as skipNoteRef:
-  // the query keeps a recent value warm, and submitProposal refetches
-  // imperatively right before signing so the synchronous build closure sees
-  // the freshest count. If another submission still lands between the read
-  // and inclusion, setMetadata fails the depositor check (NoPermission) and
-  // the whole batchAll reverts - retry rebuilds with a fresh count.
-  const referendumCountQuery = useReferendumCount()
-  const referendumIndexRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (referendumCountQuery.data != null) {
-      referendumIndexRef.current = referendumCountQuery.data
-    }
-  }, [referendumCountQuery.data])
 
   // Validate the chosen enactment moment against the live head + the picked
   // track's minEnactmentPeriod (gap #2). Standard/After are always fine; an
@@ -525,32 +494,26 @@ function CreatePageInner() {
       // during signing/broadcast/in-block is misleading. Per-call
       // status only meaningfully diverges once events come back at
       // finalization (or one fails).
-      const referendumIndex = referendumIndexRef.current
-      if (referendumIndex == null) {
-        throw new Error(
-          "Couldn't read the next referendum index - try again in a moment.",
-        )
-      }
       const skipNote = skipNoteRef.current
       setCallStatus(
         skipNote
-          ? ["ok", "running", "running", "running"]
-          : ["running", "running", "running", "running"],
+          ? ["ok", "running", "running"]
+          : ["running", "running", "running"],
       )
       const built = buildTreasuryProposal(api, {
         amount: parsedAmount,
         beneficiary,
         tier: pickedTier,
         remarkPayload: draft.remark_payload,
-        referendumIndex,
         enactment: resolveEnactment(enactment),
       })
       // If the preimage is already on chain (e.g. an earlier identical
       // submission noted it), retrying the note step would abort with
       // preimage.AlreadyNoted and revert the whole batchAll. Drop step
-      // 1; the rest of the batch still references the same (hash, len).
+      // 1; the submit + remark sequence still references the same
+      // (hash, len).
       return skipNote
-        ? [built.submitTx, built.metadataNoteTx, built.setMetadataTx]
+        ? [built.submitTx, built.remarkTx]
         : built.calls
     },
     onStatus(status) {
@@ -596,7 +559,7 @@ function CreatePageInner() {
       }
     },
     async onSuccess({ events, txHash, blockHash }) {
-      setCallStatus(["ok", "ok", "ok", "ok"])
+      setCallStatus(["ok", "ok", "ok"])
       const index = extractReferendumIndex(events)
       setSubmittedIndex(index)
 
@@ -652,14 +615,10 @@ function CreatePageInner() {
     },
   })
 
-  // Refresh the (30s-stale) preimage status and the referendum count right
-  // before broadcasting so the build closure sees on-chain reality, then
-  // submit. Without the former, an identical preimage noted between page
-  // load and signing would trip preimage.AlreadyNoted; without the latter,
-  // another submission landing in the meantime would leave setMetadata
-  // pointing at someone else's index (NoPermission). Either way the whole
-  // batch reverts, so both refreshes are correctness-of-first-try, not
-  // safety.
+  // Refresh the (30s-stale) preimage status right before broadcasting so the
+  // build closure's skip-note decision reflects on-chain reality, then submit.
+  // Without this, an identical preimage noted between page load and signing
+  // would trip preimage.AlreadyNoted and revert the batch.
   const submitProposal = useCallback(async () => {
     try {
       const res = await preimageStatusQuery.refetch()
@@ -669,16 +628,8 @@ function CreatePageInner() {
     } catch {
       // Best-effort: fall back to whatever the seeded ref already holds.
     }
-    try {
-      const count = await referendumCountQuery.refetch()
-      if (count.data != null) {
-        referendumIndexRef.current = count.data
-      }
-    } catch {
-      // Best-effort: fall back to the seeded ref; build throws if empty.
-    }
     void tx.submit()
-  }, [preimageStatusQuery, referendumCountQuery, tx])
+  }, [preimageStatusQuery, tx])
 
   return (
     <Shell>
@@ -762,7 +713,6 @@ function CreatePageInner() {
             preimageHash={preimagePreview?.preimageHash ?? "0x"}
             preimageLen={preimagePreview?.preimageLen ?? 0}
             preimageAlreadyNoted={preimageAlreadyNoted}
-            metadataHash={metadataHash}
             decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
             chainTicker={chain.ticker}
             chainDecimals={chain.decimals}
@@ -799,34 +749,17 @@ function CreatePageInner() {
                 ],
               },
               {
-                title: "Register the EGOV1 metadata envelope",
-                pallet: "preimage",
-                method: "notePreimage",
+                title: "Anchor the EGOV1 metadata",
+                pallet: "system",
+                method: "remark",
                 summary:
-                  "Stores the pointer to the off-chain proposal on chain so anyone can fetch and verify it.",
+                  "Writes a permanent on-chain pointer to the off-chain proposal so anyone can fetch and verify it.",
                 details: [
                   { label: "Standard", value: "EGOV1" },
                   { label: "JSON URL", value: draft.json_url },
                   { label: "sha256", value: draft.json_sha256 },
                 ],
                 rawPayload: draft.remark_payload,
-              },
-              {
-                title: "Bind the metadata to the referendum",
-                pallet: "referenda",
-                method: "setMetadata",
-                summary:
-                  "Points the referendum at the envelope so wallets, explorers, and indexers resolve it natively.",
-                details: [
-                  {
-                    label: "Referendum index",
-                    value:
-                      referendumCountQuery.data != null
-                        ? `#${referendumCountQuery.data}`
-                        : "next index at signing",
-                  },
-                  { label: "Metadata hash", value: metadataHash ?? "-" },
-                ],
               },
             ]}
             callStatus={callStatus}
@@ -875,7 +808,7 @@ function CreatePageInner() {
           }}
           onRetry={() => {
             tx.reset()
-            setCallStatus(["pending", "pending", "pending", "pending"])
+            setCallStatus(["pending", "pending", "pending"])
             sign.open()
             setTimeout(() => {
               void submitProposal()
@@ -909,7 +842,7 @@ function CreatePageInner() {
         onClose={sign.close}
         onRetry={() => {
           tx.reset()
-          setCallStatus(["pending", "pending", "pending", "pending"])
+          setCallStatus(["pending", "pending", "pending"])
           setTimeout(() => {
             void submitProposal()
           }, 50)

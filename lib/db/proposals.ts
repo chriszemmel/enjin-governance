@@ -136,7 +136,7 @@ export type UpdateProposalContentArgs = {
 
 /**
  * Apply a proposer-driven edit to the off-chain narrative. Bumps
- * `edit_count` and stamps `edited_at`. The on-chain envelope + the
+ * `edit_count` and stamps `edited_at`. The on-chain remark + the
  * row's `remark_payload` are intentionally untouched - they still
  * pin the original sha256, and divergence is the expected signal
  * that an edit happened.

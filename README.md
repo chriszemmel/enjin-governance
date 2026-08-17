@@ -69,11 +69,10 @@
   WalletConnect sessions never get a stale prompt and the wake/redirect
   always targets the right peer. Sign-request TTL capped at 120s.
 - **Treasury proposals end to end** - create wizard batches `preimage.notePreimage`
-  + `referenda.submit` + `preimage.notePreimage(envelope)` +
-  `referenda.setMetadata` via `utility.batchAll`. The referendum's
-  `MetadataOf` binding carries an `EGOV1:{"u":"…","h":"…"}` envelope so any
-  third party can rebuild the proposal corpus by resolving it through the
-  preimage pallet. Auto-picks the smallest origin tier that covers the amount (capped
+  + `referenda.submit` + `system.remark` via `utility.batchAll`. The
+  remark carries an `EGOV1:{"u":"…","h":"…"}` envelope so any third
+  party can rebuild the proposal corpus by reading the `system.remark`
+  call args from finalised blocks. Auto-picks the smallest origin tier that covers the amount (capped
   at BigSpender / 1,000,000 ENJ); the beneficiary can be any address, and the
   enactment moment is selectable (as-soon-as-possible / delay / at a block).
 - **General + admin proposals** - a separate `/create/advanced` composer files
@@ -317,42 +316,31 @@ scripts/               SQL migrations (004-010) + run-migrations.mjs
 
 ## The EGOV1 metadata standard
 
-Every treasury proposal filed through this app batches four calls
+Every treasury proposal filed through this app batches three calls
 into a single signed extrinsic:
 
 ```text
 utility.batchAll([
   preimage.notePreimage(<treasury.spendLocal call bytes>),
   referenda.submit(<track origin>, Lookup{hash, len}, <enactment>),
-  preimage.notePreimage('EGOV1:{"u":"<json url>","h":"<sha256>"}'),
-  referenda.setMetadata(<index>, blake2_256(<envelope bytes>)),
+  system.remark('EGOV1:{"u":"<json url>","h":"<sha256>"}'),
 ])
 ```
 
 `<enactment>` defaults to `After 0` (as soon as possible after passing) but is
 selectable in the wizard (a block delay or a fixed `At` height).
-`<index>` is `referenda.referendumCount()` read at build time - the index
-`referenda.submit` is about to mint. If another submission lands first the
-index is stale, `setMetadata` fails the runtime's depositor check
-(`NoPermission`), and the whole batch reverts - a stale index can never
-annotate someone else's referendum; the wizard rebuilds and retries.
 
-The `EGOV1:` envelope is a content-addressed backlink to the off-chain
-JSON proposal stored in R2, bound to the referendum through
-`referenda.metadataOf(index)`. Anyone - Polkassembly, Subscan, a
-third-party indexer, or another client - can rebuild the proposal corpus
-by reading `MetadataOf`, resolving the hash through the `preimage`
-pallet, filtering for the `EGOV1:` magic prefix, and fetching the URL.
-Generic tooling renders the binding natively.
-
-Referenda filed before the `setMetadata` anchor shipped carry the same
-envelope as a `system.remark` call inside the submission
-`utility.batchAll` - indexers should check `MetadataOf` first and fall
-back to remark-scanning for those.
+The `EGOV1:` envelope in the `system.remark` is a content-addressed
+backlink to the off-chain JSON proposal stored in R2. Anyone -
+Polkassembly, Subscan, a third-party indexer, or another client -
+can rebuild the proposal corpus by decoding `system.remark` call args
+from finalised blocks (the proposal nests the remark inside
+`utility.batchAll`), filtering for the `EGOV1:` magic prefix, and
+fetching the URL.
 
 The off-chain JSON is the source of truth for the human-readable
 title / summary / body / attachments / preimage hash. The on-chain
-binding just pins it.
+remark just pins it.
 
 ---
 

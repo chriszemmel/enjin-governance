@@ -1,26 +1,14 @@
 /**
  * Compose the on-chain submission for a treasury referendum.
  *
- * Four calls, atomically batched:
+ * Three calls, atomically batched:
  *
  *   1. preimage.notePreimage(<spend_local call bytes>)
  *   2. referenda.submit(<track origin>, Lookup{hash,len}, After 0)
- *   3. preimage.notePreimage(EGOV1:{"u":"<json url>","h":"<sha256>"})
- *   4. referenda.setMetadata(<index>, blake2_256(envelope bytes))
+ *   3. system.remark(EGOV1:{"u":"<json url>","h":"<sha256>"})
  *
- * Wrapped in `utility.batchAll` so the metadata can never reference a
+ * Wrapped in `utility.batchAll` so the remark can never reference a
  * referendum that wasn't actually submitted in the same block.
- *
- * `referendumIndex` is `referenda.referendumCount()` read at build time -
- * the index the submit in call 2 will be assigned. If another submission
- * lands first the index is stale, setMetadata fails the runtime's
- * depositor check (NoPermission), and batchAll reverts the whole thing;
- * the caller rebuilds with a fresh count and retries. A stale index can
- * never annotate someone else's referendum.
- *
- * Ordering matters: setMetadata requires an Ongoing referendum (call 2)
- * and a resolvable preimage for the envelope hash (call 3), so it must
- * come last.
  *
  * Returns the calls + the metadata derived from the preimage so the
  * staging step can display the hash + length + raw call bytes BEFORE
@@ -30,11 +18,11 @@
 import type { ApiPromise } from "@polkadot/api"
 import type { SubmittableExtrinsic } from "@polkadot/api/types"
 import type { ISubmittableResult } from "@polkadot/types/types"
-import { stringToU8a, u8aToHex } from "@polkadot/util"
+import { stringToHex, u8aToHex } from "@polkadot/util"
 import type { TreasuryTier } from "./types"
 import { assertTierCoversAmount, buildSpendLocalCall } from "./treasury"
 import { noteAndHash } from "./preimage"
-import { buildSetMetadata, buildSubmit } from "./referenda"
+import { buildSubmit } from "./referenda"
 
 type BuildTreasuryProposalArgs = {
   amount: bigint
@@ -42,12 +30,6 @@ type BuildTreasuryProposalArgs = {
   tier: TreasuryTier
   /** UTF-8 string produced by buildRemarkPayload(jsonUrl, sha256). */
   remarkPayload: string
-  /**
-   * The index referenda.submit will assign - `referendumCount()` read
-   * immediately before building. Stale (another submission landed first)
-   * → setMetadata returns NoPermission and the batch reverts.
-   */
-  referendumIndex: number
   /**
    * Enactment moment. Defaults to `After 0` (as soon as possible after
    * passing, which the runtime clamps to the track's minEnactmentPeriod).
@@ -59,17 +41,10 @@ type BuiltTreasuryProposal = {
   preimageHash: `0x${string}`
   preimageLen: number
   callHex: `0x${string}`
-  /** blake2-256 of the EGOV1 envelope bytes - what setMetadata binds. */
-  metadataHash: `0x${string}`
-  metadataLen: number
   noteTx: SubmittableExtrinsic<"promise", ISubmittableResult>
   submitTx: SubmittableExtrinsic<"promise", ISubmittableResult>
-  metadataNoteTx: SubmittableExtrinsic<"promise", ISubmittableResult>
-  setMetadataTx: SubmittableExtrinsic<"promise", ISubmittableResult>
-  /**
-   * [noteTx, submitTx, metadataNoteTx, setMetadataTx] - caller wraps in
-   * utility.batchAll.
-   */
+  remarkTx: SubmittableExtrinsic<"promise", ISubmittableResult>
+  /** [noteTx, submitTx, remarkTx] - caller wraps in utility.batchAll. */
   calls: SubmittableExtrinsic<"promise", ISubmittableResult>[]
 }
 
@@ -99,29 +74,24 @@ export function buildTreasuryProposal(
     enactment: args.enactment ?? { type: "After", block: 0 },
   }) as SubmittableExtrinsic<"promise", ISubmittableResult>
 
-  // The envelope is noted as its own preimage (distinct from the spend
-  // call's), and setMetadata binds its blake2-256 - NOT the sha256 inside
-  // the envelope, which commits to the off-chain JSON bytes instead.
-  const envelopeBytes = stringToU8a(args.remarkPayload)
-  const {
-    extrinsic: metadataNoteTx,
-    hash: metadataHash,
-    len: metadataLen,
-  } = noteAndHash(api, envelopeBytes)
-
-  const setMetadataTx = buildSetMetadata(api, args.referendumIndex, metadataHash)
+  // Pass the remark as a hex string, not a Uint8Array. polkadot.js's
+  // codec on this runtime mis-decodes a bare Uint8Array as already-encoded
+  // Bytes (interprets the first byte as a compact-length prefix and
+  // reads a phantom payload length), throwing "Bytes: required length
+  // less than remainder, expected at least N, found M". Hex strings
+  // are unambiguous and round-trip cleanly.
+  const remarkTx = api.tx.system.remark(
+    stringToHex(args.remarkPayload),
+  ) as SubmittableExtrinsic<"promise", ISubmittableResult>
 
   return {
     preimageHash,
     preimageLen,
     callHex,
-    metadataHash,
-    metadataLen,
     noteTx,
     submitTx,
-    metadataNoteTx,
-    setMetadataTx,
-    calls: [noteTx, submitTx, metadataNoteTx, setMetadataTx],
+    remarkTx,
+    calls: [noteTx, submitTx, remarkTx],
   }
 }
 

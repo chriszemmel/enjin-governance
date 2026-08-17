@@ -8,8 +8,7 @@
  *   user-avatars/{user_uuid}.png
  *
  * Anything that wants to find a proposal externally only needs to read
- * the EGOV1 envelope bound via `referenda.metadataOf` (or, for older
- * referenda, the `system.remark` payload from the submission batch);
+ * the `system.remark` payload from the referendum's submission batch;
  * the URL points straight at proposal.json.
  */
 

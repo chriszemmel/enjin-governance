@@ -170,24 +170,20 @@ export function ProposalSourceModal({
                   bloating chain state.
                 </p>
                 <p>
-                  The submission batch notes a preimage with payload{" "}
-                  <code className="font-mono text-foreground break-all">
-                    EGOV1:{"{"}&quot;u&quot;:&quot;…&quot;,&quot;h&quot;:&quot;…&quot;{"}"}
-                  </code>{" "}
-                  - a content-addressed pointer to the bucket JSON - and
-                  binds it to the referendum with{" "}
-                  <code className="font-mono text-foreground">
-                    referenda.setMetadata
-                  </code>
-                  . Any indexer can rebuild the corpus by resolving{" "}
-                  <code className="font-mono text-foreground">
-                    referenda.metadataOf
-                  </code>{" "}
-                  (older referenda used a{" "}
+                  The submission batch includes a{" "}
                   <code className="font-mono text-foreground">
                     system.remark
                   </code>{" "}
-                  in the same batch instead).
+                  with payload{" "}
+                  <code className="font-mono text-foreground break-all">
+                    EGOV1:{"{"}&quot;u&quot;:&quot;…&quot;,&quot;h&quot;:&quot;…&quot;{"}"}
+                  </code>{" "}
+                  - a content-addressed pointer to the bucket JSON. Any
+                  indexer can rebuild the corpus by scanning{" "}
+                  <code className="font-mono text-foreground">
+                    system.Remarked
+                  </code>{" "}
+                  events for the magic prefix.
                 </p>
               </div>
             )}

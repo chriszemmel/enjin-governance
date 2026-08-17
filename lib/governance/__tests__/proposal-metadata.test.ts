@@ -33,28 +33,6 @@ describe("buildRemarkPayload", () => {
   })
 })
 
-describe("backwards compatibility with pre-setMetadata remarks", () => {
-  it("parses a legacy on-chain remark string verbatim", () => {
-    // Frozen copy of the envelope shape emitted while the anchor was
-    // system.remark. Referenda filed then must stay resolvable forever.
-    const legacy =
-      'EGOV1:{"u":"https://pub.example.com/p/abc/proposal.json","h":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}'
-    expect(parseRemarkPayload(legacy)).toEqual({
-      u: "https://pub.example.com/p/abc/proposal.json",
-      h: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
-    })
-  })
-
-  it("builds an envelope byte-identical to the legacy remark output", () => {
-    // The setMetadata change moves the anchor, not the envelope: the same
-    // (url, sha256) must produce the same string the remark era produced,
-    // so one decoder serves both bindings.
-    const url = "https://pub.example.com/p/abc/proposal.json"
-    const sha = "deadbeefdeadbeefdeadbeefdeadbeef"
-    expect(buildRemarkPayload(url, sha)).toBe(`EGOV1:{"u":"${url}","h":"${sha}"}`)
-  })
-})
-
 describe("ProposalJson edit fields", () => {
   it("schema version is at 1.1.0 once edit fields land", () => {
     expect(PROPOSAL_SCHEMA_VERSION).toBe("1.1.0")

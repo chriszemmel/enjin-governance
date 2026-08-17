@@ -5,31 +5,24 @@
  *   1. The proposer composes a JSON blob describing the proposal
  *      (title, body, attachments, beneficiary, amount, preimage hash).
  *   2. The blob is uploaded to a public bucket at a stable URL.
- *   3. The bucket URL + sha256 of the bytes form an envelope that is
- *      noted as its own preimage and bound to the referendum with
- *      `referenda.setMetadata(index, blake2_256(envelope))`, inside the
- *      same `utility.batchAll` as `preimage.notePreimage` +
- *      `referenda.submit`. Atomicity of the batch guarantees the
- *      metadata can never reference a referendum that wasn't actually
- *      submitted, and the runtime's depositor check guarantees nobody
- *      can annotate someone else's referendum.
+ *   3. The bucket URL + sha256 of the bytes is embedded as a
+ *      `system.remark(<bytes>)` call inside the same `utility.batchAll`
+ *      as `preimage.notePreimage` + `referenda.submit`. Atomicity of the
+ *      batch guarantees the remark can never reference a referendum that
+ *      wasn't actually submitted.
  *
- * Envelope format (UTF-8 bytes of the string):
+ * Remark payload format (UTF-8 bytes of the string):
  *
  *   EGOV1:{"u":"<url>","h":"<sha256-hex>"}
  *
- * - `EGOV1:` magic prefix is cheap to filter for in call args.
+ * - `EGOV1:` magic prefix is cheap to filter for in remark call args.
  * - The JSON body is deliberately minimal - full metadata is at `u`.
  * - `h` is the sha256 of the canonical (sorted-keys) JSON bytes.
  *
  * Anyone - including non-Enjin clients - can index proposals without a
- * database by reading `referenda.metadataOf(index)` and resolving the
- * hash through the `preimage` pallet to the envelope bytes.
- *
- * Referenda filed before the setMetadata anchor shipped carry the same
- * envelope as a `system.remark(<bytes>)` call co-located in the
- * submission `utility.batchAll` instead. Indexers should check both
- * bindings; the envelope format is identical in each.
+ * database by decoding `system.remark` call args from finalised blocks
+ * (the remark is nested in the proposal's `utility.batchAll`), filtering
+ * for `EGOV1:`, parsing the JSON, and fetching the URL.
  */
 
 import type { ChainId } from "@/lib/chain/chains"
@@ -69,7 +62,7 @@ export type ProposalJson = {
   created_at: string
   /**
    * Set whenever the proposer overwrites the JSON post-submission. The
-   * on-chain envelope still pins the original sha256, so an
+   * on-chain `system.remark` still pins the original sha256, so an
    * external indexer can detect divergence; this field tells clients
    * the divergence is an intentional edit rather than tampering.
    */
@@ -88,10 +81,9 @@ export type RemarkEnvelope = {
 }
 
 /**
- * Build the envelope string that gets anchored on chain - noted as a
- * preimage and bound via `referenda.setMetadata` (older referenda carried
- * it in a `system.remark` instead). Returns a UTF-8 string - the extrinsic
- * builder hashes/encodes its bytes as needed.
+ * Build the bytes that go into `system.remark`. Returns a UTF-8 string
+ * - the extrinsic builder should pass `stringToU8a(payload)` or pass
+ * the string directly if the metadata accepts `Bytes`.
  */
 export function buildRemarkPayload(url: string, sha256Hex: string): string {
   const envelope: RemarkEnvelope = { u: url, h: sha256Hex }

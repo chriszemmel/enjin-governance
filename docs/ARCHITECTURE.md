@@ -102,19 +102,16 @@ state; the hook falls through to:
     └── useExtrinsic({ build: buildTreasuryProposal(api, …) })
           ├── api.tx.preimage.notePreimage(<spend bytes>)
           ├── api.tx.referenda.submit({ Origins }, Lookup{hash, len}, <enactment>)
-          ├── api.tx.preimage.notePreimage('EGOV1:{"u":"…","h":"…"}')
-          ├── api.tx.referenda.setMetadata(<index>, blake2_256(envelope))
+          ├── api.tx.system.remark('EGOV1:{"u":"…","h":"…"}')
           └── api.tx.utility.batchAll([…])             ← what the wallet signs
     └── on finalised: POST /api/proposals/[id]/confirm
           └── attachReferendumIndex(…)                 [lib/db/proposals.ts]
 ```
 
-The `EGOV1:` envelope is a content-addressed backlink to the off-chain
-JSON, bound to the referendum via `referenda.metadataOf(index)`. Anyone
-resolving `MetadataOf` through the `preimage` pallet can rebuild the
-proposal corpus by URL + sha256 without our DB. (Referenda filed before
-this anchor shipped carry the same envelope as a `system.remark` in the
-submission batch - indexers fall back to remark-scanning for those.)
+The `EGOV1:` envelope in `system.remark` is a content-addressed backlink
+to the off-chain JSON. Anyone decoding `system.remark` call args from
+finalised blocks can rebuild the proposal corpus by URL + sha256
+without our DB.
 
 ## Data flow: signing in (SIWE-style)
 
@@ -156,8 +153,7 @@ touches one chain.
    like treasury addresses.
 5. **The R2 proposal JSON is the source of truth for proposal narrative.**
    The DB row is an index for fast list pages; the on-chain
-   `EGOV1:` envelope (bound via `referenda.metadataOf`, or a legacy
-   `system.remark`) is the canonical pointer.
+   `EGOV1:` remark is the canonical pointer.
 
 ## When to add a new layer
 
