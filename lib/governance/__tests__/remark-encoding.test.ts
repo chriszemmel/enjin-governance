@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest"
 import { stringToHex } from "@polkadot/util"
 import { buildRemarkPayload } from "@/lib/governance/proposal-metadata"
 
-describe("remark payload encoding", () => {
-  // Guard: on the canary runtime, passing a Uint8Array to
-  // api.tx.system.remark(...) triggers a polkadot.js codec mis-decode
-  // ("Bytes: required length less than remainder, expected at least N"),
-  // so we always pass a hex string. This test asserts the contract -
-  // that the payload is producible as hex and round-trips - since
-  // constructing an ApiPromise in the test would require a chain
+describe("envelope payload encoding", () => {
+  // Guard: on the canary runtime, passing a bare Uint8Array to a
+  // Bytes-typed extrinsic arg (system.remark historically, now the
+  // envelope's preimage.notePreimage) triggers a polkadot.js codec
+  // mis-decode ("Bytes: required length less than remainder, expected at
+  // least N"), so we always pass a hex string. This test asserts the
+  // contract - that the payload is producible as hex and round-trips -
+  // since constructing an ApiPromise in the test would require a chain
   // connection.
   it("round-trips through stringToHex without loss", () => {
     const payload = buildRemarkPayload(

@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest"
 import type { ApiPromise } from "@polkadot/api"
-import { u8aToHex } from "@polkadot/util"
+import { stringToU8a, u8aToHex } from "@polkadot/util"
 import {
   boundedProposalArg,
   buildCancelReferendumCall,
   buildKillReferendumCall,
+  buildSetMetadata,
   buildSubmit,
   buildWhitelistCall,
   extractReferendumIndex,
+  getReferendumMetadata,
 } from "@/lib/governance/referenda"
 import type { EventRecord } from "@polkadot/types/interfaces"
 
@@ -134,6 +136,100 @@ describe("admin call builders", () => {
     const sink: Recorded[] = []
     buildWhitelistCall(adminApi(sink), "0xdeadbeef")
     expect(sink[0].args).toEqual(["0xdeadbeef"])
+  })
+})
+
+describe("buildSetMetadata", () => {
+  it("calls referenda.setMetadata(index, hash)", () => {
+    const sink: Recorded[] = []
+    const api = {
+      tx: {
+        referenda: {
+          setMetadata: (...args: unknown[]) => {
+            sink.push({ args })
+            return { __tx: "setMetadata" }
+          },
+        },
+      },
+    } as unknown as ApiPromise
+    const tx = buildSetMetadata(api, 11, "0xfeed")
+    expect(sink[0].args).toEqual([11, "0xfeed"])
+    expect(tx).toEqual({ __tx: "setMetadata" })
+  })
+})
+
+describe("getReferendumMetadata", () => {
+  const ENVELOPE = 'EGOV1:{"u":"https://x/p.json","h":"abc123"}'
+  const ENVELOPE_BYTES = stringToU8a(ENVELOPE)
+  const HASH = "0x11" as `0x${string}`
+
+  /**
+   * Fakes the three storage reads the resolution path touches:
+   * referenda.metadataOf → the bound hash, preimage.requestStatusFor →
+   * the Unrequested{len} row (MetadataOf stores no length, so getPreimage
+   * recovers it from here), preimage.preimageFor → the envelope bytes.
+   */
+  function metadataApi(opts: {
+    metadataHash: `0x${string}` | null
+    preimageBytes: Uint8Array | null
+  }): ApiPromise {
+    const preimageFor = async (key: [string, number]) =>
+      opts.preimageBytes && key[0] === opts.metadataHash
+        ? {
+            isSome: true,
+            unwrap: () => ({ toU8a: () => opts.preimageBytes }),
+          }
+        : { isSome: false }
+    preimageFor.keys = async () => []
+    return {
+      query: {
+        referenda: {
+          metadataOf: async () =>
+            opts.metadataHash
+              ? { isSome: true, unwrap: () => ({ toHex: () => opts.metadataHash }) }
+              : { isSome: false },
+        },
+        preimage: {
+          requestStatusFor: async () =>
+            opts.preimageBytes
+              ? {
+                  isSome: true,
+                  unwrap: () => ({
+                    isUnrequested: true,
+                    asUnrequested: {
+                      len: { toNumber: () => opts.preimageBytes!.length },
+                    },
+                  }),
+                }
+              : { isSome: false },
+          preimageFor,
+        },
+      },
+    } as unknown as ApiPromise
+  }
+
+  it("resolves MetadataOf → preimage bytes → parsed envelope", async () => {
+    const api = metadataApi({ metadataHash: HASH, preimageBytes: ENVELOPE_BYTES })
+    const envelope = await getReferendumMetadata(api, 10)
+    expect(envelope).toEqual({ u: "https://x/p.json", h: "abc123" })
+  })
+
+  it("returns null when the referendum has no metadata", async () => {
+    const api = metadataApi({ metadataHash: null, preimageBytes: null })
+    expect(await getReferendumMetadata(api, 10)).toBeNull()
+  })
+
+  it("returns null when the bound preimage is missing/pruned", async () => {
+    const api = metadataApi({ metadataHash: HASH, preimageBytes: null })
+    expect(await getReferendumMetadata(api, 10)).toBeNull()
+  })
+
+  it("returns null when the preimage is not an EGOV1 envelope", async () => {
+    const api = metadataApi({
+      metadataHash: HASH,
+      preimageBytes: stringToU8a("QmSomeIpfsHashFromAnotherClient"),
+    })
+    expect(await getReferendumMetadata(api, 10)).toBeNull()
   })
 })
 

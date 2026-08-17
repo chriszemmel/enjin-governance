@@ -98,9 +98,11 @@ governance; these hold human-readable metadata and the social layer.
   from the repo plus a Postgres dump plus an R2 sync.
 
 > Losing the off-chain data does not lose governance state. Every
-> proposal's canonical metadata is the on-chain `EGOV1:` remark plus the
-> R2 JSON it points to, recoverable straight from chain by decoding the
-> `system.remark` call args (see [`GOVERNANCE_FLOW.md`](GOVERNANCE_FLOW.md)).
+> proposal's canonical metadata is the on-chain `EGOV1:` envelope plus the
+> R2 JSON it points to, recoverable straight from chain by resolving
+> `referenda.metadataOf` through the preimage pallet (or, for older
+> referenda, decoding the `system.remark` call args - see
+> [`GOVERNANCE_FLOW.md`](GOVERNANCE_FLOW.md)).
 
 ## 4. Third-party accounts and services
 

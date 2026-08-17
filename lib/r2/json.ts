@@ -2,7 +2,7 @@
  * Deterministic JSON encoding. Lives in its own file (no server-only)
  * so both client and server can reproduce the exact bytes - important
  * because the sha256 of these bytes is committed to chain inside the
- * `system.remark` envelope and must be reproducible by external indexers.
+ * EGOV1 envelope and must be reproducible by external indexers.
  */
 
 /**

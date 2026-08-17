@@ -118,7 +118,7 @@ status + toast treatment for free.
 ## Write flow: submitting a treasury referendum
 
 The wizard's full pipeline. The signed extrinsic is one
-`utility.batchAll` of three calls.
+`utility.batchAll` of four calls.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -151,6 +151,8 @@ The wizard's full pipeline. The signed extrinsic is one
 │                                                                      │
 │   const tier = pickOriginForAmount(amountPlanck)                     │
 │                  // -> { origin: "BigSpender", maxAmount } | null    │
+│   const index = referenda.referendumCount()  // read at build time   │
+│   const envelope = stringToU8a(remark_payload)                       │
 │                                                                      │
 │   utility.batchAll([                                                 │
 │     preimage.notePreimage(bytes),                                    │
@@ -159,10 +161,15 @@ The wizard's full pipeline. The signed extrinsic is one
 │       { Lookup: { hash: blake2_256(bytes), len: bytes.length } },    │
 │       { After: 0 },                                                  │
 │     ),                                                               │
-│     system.remark(remark_payload),                                   │
+│     preimage.notePreimage(envelope),                                 │
+│     referenda.setMetadata(index, blake2_256(envelope)),              │
 │   ])                                                                 │
 │                                                                      │
-│   One signature; all three apply atomically or none do.              │
+│   One signature; all four apply atomically or none do. If another    │
+│   submission lands first, `index` is stale, setMetadata fails the    │
+│   runtime's depositor check (NoPermission), the batch reverts, and   │
+│   the wizard rebuilds with a fresh count on retry - a stale index    │
+│   can never annotate someone else's referendum.                      │
 └──────────────────────────────────────────────────────────────────────┘
                           │
                           ▼
@@ -187,11 +194,17 @@ The wizard's full pipeline. The signed extrinsic is one
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-The `EGOV1:` envelope in the `system.remark` is a content-addressed
-backlink to the off-chain JSON. Any third party can rebuild the
-proposal corpus by decoding `system.remark` call args from finalised
-blocks, filtering for the magic prefix, and fetching the URL - no
-integration against our DB required.
+The `EGOV1:` envelope is a content-addressed backlink to the off-chain
+JSON, bound to the referendum through `referenda.metadataOf(index)`.
+Any third party can rebuild the proposal corpus by reading `MetadataOf`,
+resolving the hash through the `preimage` pallet to the envelope bytes,
+and fetching the URL - no integration against our DB required. Generic
+tooling (Polkadot-JS Apps, Subscan) renders the binding natively.
+
+Referenda filed before the setMetadata anchor shipped carry the same
+envelope as a `system.remark` call co-located in the submission
+`utility.batchAll` instead - indexers should check `MetadataOf` first
+and fall back to remark-scanning for those.
 Schema lives in `lib/governance/proposal-metadata.ts`.
 
 ### Proposer edits
@@ -200,9 +213,9 @@ After submission the proposer can edit the off-chain narrative (title,
 summary, body, attachments) via `PATCH /api/proposals/[uuid]`. The
 endpoint re-uploads `proposal.json` at the same R2 key, so existing
 URLs keep resolving, but the canonical bytes (and therefore the
-sha256) change. The on-chain `system.remark` still pins the
-**original** hash, so the pinned-hash vs. bucket-hash divergence is
-the public signal that an edit happened.
+sha256) change. The on-chain envelope still pins the **original**
+hash, so the pinned-hash vs. bucket-hash divergence is the public
+signal that an edit happened.
 
 The DB tracks `edited_at` + `edit_count`. The detail page shows
 `(edited)` next to the title and switches the verification badge to
