@@ -28,7 +28,33 @@ import { putJson } from "@/lib/r2/upload"
 
 export const runtime = "nodejs"
 
-type BindingCheck = { ok: true } | { ok: false; status: 409 | 503; error: string }
+/**
+ * The chain read is bounded to CHAIN_READ_DEADLINE_MS below; this is the
+ * outer backstop so the route always answers with its own status code
+ * rather than being cut off by the platform's default function timeout.
+ */
+export const maxDuration = 20
+
+type BindingCheck =
+  | { ok: true }
+  | { ok: false; status: 409 | 503; error: string; retryable: boolean }
+
+/**
+ * Hard ceiling on the whole chain read. `getApi` already bounds its own
+ * connect (10s) and ready (15s) waits, but the query that follows has no
+ * timeout at all, so a socket that opens against a wedged node would hang
+ * the request until the platform kills it. One deadline covers both.
+ */
+const CHAIN_READ_DEADLINE_MS = 8_000
+
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`chain read exceeded ${ms}ms`)), ms).unref?.(),
+    ),
+  ])
+}
 
 /**
  * Confirm that `referenda.metadataOf(index)` on chain is the blake2-256 of
@@ -44,9 +70,13 @@ type BindingCheck = { ok: true } | { ok: false; status: 409 | 503; error: string
  * Fails CLOSED, unlike the edit path's `referendumConcluded` which fails
  * open. The polarity differs on purpose: there, a transient RPC error at
  * worst allows an edit that the on-chain hash divergence still exposes;
- * here, proceeding on an unverified claim IS the vulnerability. Closed is
- * safe to retry because the on-chain binding is durable - the row simply
- * stays 'draft' until a retry succeeds.
+ * here, proceeding on an unverified claim IS the vulnerability.
+ *
+ * Failing closed is only safe because the caller retries: the row stays
+ * 'draft' until one succeeds, and the on-chain binding it re-reads is
+ * durable. `retryable` tells the caller which failures are worth another
+ * attempt - a 503 or a not-yet-anchored referendum will clear on their own,
+ * a hash mismatch never will.
  */
 async function metadataBindingMatches(
   network: string,
@@ -56,34 +86,46 @@ async function metadataBindingMatches(
 ): Promise<BindingCheck> {
   const chain = CHAINS[network as ChainId]
   if (!chain) {
-    return { ok: false, status: 409, error: `Unknown network ${network}` }
+    return { ok: false, status: 409, error: `Unknown network ${network}`, retryable: false }
   }
 
   const expected = expectedMetadataHash(jsonUrl, jsonSha256)
 
   let onChain: string | null
   try {
-    const api = await getApi(chain.rpc)
-    const raw = await api.query.referenda.metadataOf(index)
-    const opt = raw as unknown as {
-      isSome: boolean
-      unwrap: () => { toHex: () => string }
-    }
-    onChain = opt.isSome ? opt.unwrap().toHex() : null
+    // retries = 0: the caller retries the whole request, so a retry loop
+    // here only stacks 25s attempts inside a request that must answer fast.
+    onChain = await withDeadline(
+      (async () => {
+        const api = await getApi(chain.rpc, 0)
+        const raw = await api.query.referenda.metadataOf(index)
+        const opt = raw as unknown as {
+          isSome: boolean
+          unwrap: () => { toHex: () => string }
+        }
+        return opt.isSome ? opt.unwrap().toHex() : null
+      })(),
+      CHAIN_READ_DEADLINE_MS,
+    )
   } catch {
     return {
       ok: false,
       status: 503,
       error:
         "Could not reach the chain to verify the metadata binding. The on-chain state is durable - retry shortly.",
+      retryable: true,
     }
   }
 
   if (onChain == null) {
+    // Retryable on purpose: the client confirms on finalization, but a node
+    // that is briefly behind can still answer None for a setMetadata that
+    // did land. Only a mismatch below is a permanent verdict.
     return {
       ok: false,
       status: 409,
       error: `Referendum ${index} has no metadata set on chain. Anchor setMetadata before confirming.`,
+      retryable: true,
     }
   }
   if (onChain.toLowerCase() !== expected.toLowerCase()) {
@@ -91,6 +133,7 @@ async function metadataBindingMatches(
       ok: false,
       status: 409,
       error: `Referendum ${index} is bound to a different envelope (${onChain}); this proposal's is ${expected}.`,
+      retryable: false,
     }
   }
   return { ok: true }
@@ -161,7 +204,10 @@ export async function POST(
     existing.json_sha256,
   )
   if (!binding.ok) {
-    return NextResponse.json({ ok: false, error: binding.error }, { status: binding.status })
+    return NextResponse.json(
+      { ok: false, error: binding.error, retryable: binding.retryable },
+      { status: binding.status },
+    )
   }
 
   let row

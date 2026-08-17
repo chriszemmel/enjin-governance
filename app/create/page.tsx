@@ -67,6 +67,57 @@ export default function CreatePage() {
   )
 }
 
+type ConfirmBody = {
+  referendum_index: number
+  tx_hash: string
+  block_hash: string
+  block_number: number
+}
+
+/** Backoff between confirm attempts. Short - the user is watching. */
+const CONFIRM_RETRY_DELAYS_MS = [1_000, 3_000, 6_000]
+
+/**
+ * POST the confirm, retrying the failures that can clear on their own.
+ *
+ * The route verifies the on-chain metadata binding before it will attach the
+ * index, and fails closed: an unreachable RPC (503) or a node that has not
+ * caught up with our own setMetadata yet (409 + retryable) are both
+ * transient. A hash mismatch is not - it means this row does not own that
+ * referendum, and retrying would never change the answer.
+ *
+ * Returns null on success, or a message describing why the link failed.
+ */
+async function confirmWithRetry(draftId: string, body: ConfirmBody): Promise<string | null> {
+  let lastError = "Could not reach the server."
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`/api/proposals/${draftId}/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) return null
+
+      const payload = (await res.json().catch(() => null)) as {
+        error?: string
+        retryable?: boolean
+      } | null
+      lastError = payload?.error ?? `Server responded ${res.status}.`
+      // Absent flag: 4xx is a verdict, 5xx is worth another go.
+      const retryable = payload?.retryable ?? res.status >= 500
+      if (!retryable) return lastError
+    } catch (e) {
+      lastError = formatError(e)
+    }
+
+    const delay = CONFIRM_RETRY_DELAYS_MS[attempt]
+    if (delay == null) return lastError
+    await new Promise((r) => setTimeout(r, delay))
+  }
+}
+
 function CreatePageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -601,6 +652,12 @@ function CreatePageInner() {
       setSubmittedIndex(index)
 
       // Confirm on the server so the redirect file + DB row are updated.
+      // The referendum is already on chain at this point, so a failure here
+      // does not lose the proposal - but it does leave the row 'draft' with
+      // no narrative attached to a referendum that is live and taking votes,
+      // and nothing else in the app re-attaches it. So: retry the retryable
+      // failures, and never claim success for one that stuck.
+      let confirmError: string | null = null
       if (draft && index != null) {
         setConfirming(true)
         try {
@@ -616,37 +673,53 @@ function CreatePageInner() {
               // best-effort
             }
           }
-          await fetch(`/api/proposals/${draft.id}/confirm`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              referendum_index: index,
-              tx_hash: txHash,
-              block_hash: blockHash,
-              block_number: blockNumber,
-            }),
+          confirmError = await confirmWithRetry(draft.id, {
+            referendum_index: index,
+            tx_hash: txHash,
+            block_hash: blockHash,
+            block_number: blockNumber,
           })
-        } catch {
-          // confirm is best-effort; on-chain state is canonical anyway
+        } catch (err) {
+          confirmError = formatError(err)
         } finally {
           setConfirming(false)
         }
       }
 
-      toast.success("Proposal submitted", {
-        id: "create-tx",
-        description:
-          index != null
-            ? `Referendum #${index} created.`
-            : subscanExtrinsicUrl(chain, txHash),
-        action:
-          index != null
-            ? {
-                label: "View",
-                onClick: () => router.push(`/proposals/${index}`),
-              }
-            : undefined,
-      })
+      if (confirmError) {
+        // The submission itself succeeded; only the off-chain link failed.
+        // Say both, rather than a green toast over a half-finished job.
+        toast.warning("Submitted on chain, but not linked", {
+          id: "create-tx",
+          duration: Infinity,
+          description:
+            index != null
+              ? `Referendum #${index} was created, but attaching its off-chain details failed: ${confirmError}`
+              : confirmError,
+          action:
+            index != null
+              ? {
+                  label: "View",
+                  onClick: () => router.push(`/proposals/${index}`),
+                }
+              : undefined,
+        })
+      } else {
+        toast.success("Proposal submitted", {
+          id: "create-tx",
+          description:
+            index != null
+              ? `Referendum #${index} created.`
+              : subscanExtrinsicUrl(chain, txHash),
+          action:
+            index != null
+              ? {
+                  label: "View",
+                  onClick: () => router.push(`/proposals/${index}`),
+                }
+              : undefined,
+        })
+      }
       // Stay on the Submit step - its rendering branches on tx.status.kind
       // and shows the success card automatically on finalised.
     },
