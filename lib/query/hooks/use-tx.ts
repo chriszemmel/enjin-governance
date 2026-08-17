@@ -15,6 +15,14 @@ import { useApi } from "./use-api"
 import { queryKeys } from "@/lib/query/keys"
 import { formatError } from "@/lib/utils/format-error"
 
+/**
+ * Mortality window, in blocks, baked into every signature this hook makes.
+ * Enjin's relay produces a block every 6s, so 256 blocks is ~25 minutes -
+ * long enough to survive a slow mobile wallet round-trip plus the WS
+ * reconnect wait below, short enough that the transaction stays mortal.
+ */
+const MORTAL_ERA_BLOCKS = 256
+
 type AnyExtrinsic = SubmittableExtrinsic<"promise", ISubmittableResult>
 type Builder = (api: ApiPromise) => AnyExtrinsic | AnyExtrinsic[]
 
@@ -190,16 +198,27 @@ export function useExtrinsic(options: UseExtrinsicOptions) {
     // internally, so we can't insert the wait between them. Split it:
     // signAsync first (which round-trips to the wallet), THEN wait
     // for the WS to come back, THEN send.
-    // Sign with an immortal era (era: 0). signAsync freezes the nonce AND
-    // era into the signature at sign time - but on this hardened mobile path
-    // we then deliberately wait up to 15s for the WS to reconnect *after*
-    // signing, and the wallet round-trip itself can take minutes on iOS. With
-    // the default ~64-block mortal era that window can lapse before we
-    // broadcast, and the node rejects the signed tx with "bad signature /
-    // ancient birth block" - losing a vote/submit the user already approved.
-    // These governance txs are still nonce-guarded against replay, so trading
-    // mortality for not dropping a freshly-signed submission is the right call.
-    const signed = await tx.signAsync(signingAddress, { signer, era: 0 })
+    // Sign with a long mortal era rather than the default ~64 blocks.
+    // signAsync freezes the nonce AND era into the signature at sign time,
+    // but on this hardened mobile path we then deliberately wait up to 15s
+    // for the WS to reconnect *after* signing, and the wallet round-trip
+    // itself can take minutes on iOS. With the default window that can lapse
+    // before we broadcast, and the node rejects the signed tx with "bad
+    // signature / ancient birth block" - losing a vote/submit the user
+    // already approved.
+    //
+    // This was `era: 0` (immortal), which covers that case completely but
+    // Enjin Wallet refuses to sign an immortal payload over WalletConnect,
+    // surfacing as "Transaction invalid" before the user can confirm - on
+    // every extrinsic this app builds, not just proposals. The polkadot-js
+    // extension signs the same payload fine, which is what isolated it.
+    // MORTAL_ERA_BLOCKS at 6s/block gives ~25 minutes, far past the 15s
+    // reconnect wait and any realistic wallet round-trip, while keeping the
+    // transaction mortal.
+    const signed = await tx.signAsync(signingAddress, {
+      signer,
+      era: MORTAL_ERA_BLOCKS,
+    })
     if (!api.isConnected) {
       await waitForApiConnected(api, 15_000)
     }
