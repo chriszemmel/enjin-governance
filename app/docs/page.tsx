@@ -180,6 +180,14 @@ export default function DocsPage() {
                 (sorted-keys-at-every-level) JSON bytes. Pinned forever by
                 the on-chain envelope.
               </li>
+              <li>
+                Canonical means keys sorted lexicographically at every level,{" "}
+                <strong>no insignificant whitespace</strong> (
+                <Code>JSON.stringify</Code>&apos;s default separators), UTF-8
+                bytes; arrays keep their order. Pretty-printing the same object
+                yields a different sha256, so a reimplementation that indents
+                will read every proposal as tampered.
+              </li>
             </ul>
 
             <h3 className="text-base font-semibold text-foreground pt-2">
@@ -193,7 +201,7 @@ export default function DocsPage() {
   "title": "<≤ 200 chars>",
   "summary": "<≤ 500 chars> | null",
   "body_markdown": "<≤ 100000 chars>",
-  "track": "SmallTipper" | "BigTipper" | ... | null,
+  "track": "<track name, e.g. SmallTipper or root>" | null,
   "spend": {
     "beneficiary": "<SS58 address>",
     "amount_planck": "<decimal string>"
