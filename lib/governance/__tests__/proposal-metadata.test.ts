@@ -3,17 +3,17 @@ import {
   PROPOSAL_SCHEMA_VERSION,
   REMARK_MAGIC,
   buildRemarkPayload,
+  expectedMetadataHash,
   parseRemarkPayload,
   type ProposalJson,
 } from "@/lib/governance/proposal-metadata"
+import { hashCall } from "@/lib/governance/preimage"
+import { stringToU8a } from "@polkadot/util"
 import { stringifyStable } from "@/lib/r2/json"
 
 describe("buildRemarkPayload", () => {
   it("starts with the EGOV1 magic prefix", () => {
-    const payload = buildRemarkPayload(
-      "https://pub.example.com/p/abc/proposal.json",
-      "deadbeef",
-    )
+    const payload = buildRemarkPayload("https://pub.example.com/p/abc/proposal.json", "deadbeef")
     expect(payload.startsWith(REMARK_MAGIC)).toBe(true)
   })
 
@@ -30,6 +30,33 @@ describe("buildRemarkPayload", () => {
 
   it("rejects malformed JSON after the magic prefix", () => {
     expect(parseRemarkPayload(`${REMARK_MAGIC}not-json`)).toBeNull()
+  })
+})
+
+describe("expectedMetadataHash", () => {
+  const url = "https://pub.example.com/p/abc/proposal.json"
+  const sha = "6a1c2d46e6b22ee5e95816daebfc2a06ddb2b4297d9921c23c17b58b95c7078a"
+
+  it("is the blake2-256 of the envelope bytes", () => {
+    expect(expectedMetadataHash(url, sha)).toBe(hashCall(stringToU8a(buildRemarkPayload(url, sha))))
+  })
+
+  it("is NOT the sha256 that the envelope carries in h", () => {
+    // The distinction the confirm check depends on: setMetadata binds the
+    // envelope's blake2-256, while `h` commits to the off-chain JSON.
+    expect(expectedMetadataHash(url, sha)).not.toBe(`0x${sha}`)
+  })
+
+  it("is deterministic and 32 bytes", () => {
+    const a = expectedMetadataHash(url, sha)
+    expect(a).toBe(expectedMetadataHash(url, sha))
+    expect(a).toMatch(/^0x[0-9a-f]{64}$/)
+  })
+
+  it("changes when either the url or the sha changes", () => {
+    const base = expectedMetadataHash(url, sha)
+    expect(expectedMetadataHash(`${url}?v=2`, sha)).not.toBe(base)
+    expect(expectedMetadataHash(url, sha.replace(/a/g, "b"))).not.toBe(base)
   })
 })
 
