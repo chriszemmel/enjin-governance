@@ -20,7 +20,8 @@
  *
  * - `EGOV1:` magic prefix is cheap to filter for in call args.
  * - The JSON body is deliberately minimal - full metadata is at `u`.
- * - `h` is the sha256 of the canonical (sorted-keys) JSON bytes.
+ * - `h` is the sha256 of the canonical JSON bytes: keys sorted at every
+ *   level, no insignificant whitespace, UTF-8. See `stringifyStable`.
  *
  * Anyone - including non-Enjin clients - can index proposals without a
  * database by reading `referenda.metadataOf(index)` and resolving the
@@ -32,7 +33,9 @@
  * bindings; the envelope format is identical in each.
  */
 
+import { stringToU8a } from "@polkadot/util"
 import type { ChainId } from "@/lib/chain/chains"
+import { hashCall } from "./preimage"
 
 export const REMARK_MAGIC = "EGOV1:"
 export const PROPOSAL_SCHEMA = "enjin-governance-proposal"
@@ -96,6 +99,23 @@ export type RemarkEnvelope = {
 export function buildRemarkPayload(url: string, sha256Hex: string): string {
   const envelope: RemarkEnvelope = { u: url, h: sha256Hex }
   return `${REMARK_MAGIC}${JSON.stringify(envelope)}`
+}
+
+/**
+ * The hash `referenda.setMetadata` binds for a given bucket URL + JSON
+ * sha256: blake2-256 over the envelope's UTF-8 bytes.
+ *
+ * Note this is NOT the sha256 in `h` - that commits to the off-chain JSON,
+ * while this commits to the envelope itself, which is what lives on chain
+ * as a preimage.
+ *
+ * The submitting client hashes the envelope string it was handed, which is
+ * self-consistent by construction. This rebuilds the same envelope from the
+ * persisted url + sha256, which is all a later verifier has to work from -
+ * both routes agree because both go through `buildRemarkPayload`.
+ */
+export function expectedMetadataHash(url: string, sha256Hex: string): `0x${string}` {
+  return hashCall(stringToU8a(buildRemarkPayload(url, sha256Hex)))
 }
 
 /**
