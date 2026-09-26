@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-526%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-665%20passing-22c55e?style=flat-square" />
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
@@ -307,7 +307,7 @@
   on the site-access password gate, input-size caps on the batch-read
   endpoints, and a honeypot on the public disclosure form that silently
   drops bots.
-- **Open-source ready** - TS strict, ESLint clean, knip-clean, 526
+- **Open-source ready** - TS strict, ESLint clean, knip-clean, 665
   vitest tests, CI on every push.
 
 ---
@@ -318,7 +318,8 @@
 |---|---|
 | TypeScript source files (excl. vendored shadcn) | **~260** |
 | Docs files | **7** |
-| Unit tests | **526** (50 files) |
+| Unit tests | **665** (58 files) |
+| Test coverage (lines) | **82%** of API routes, **72%** of server code. Pages and components have no unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
 | External indexer dependencies | **0 required** (Subscan optional, only for very old finalised refs) |
@@ -387,7 +388,7 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (526 tests)
+pnpm test         # Vitest (665 tests)
 pnpm test:watch   # Vitest watch
 ```
 
@@ -713,7 +714,7 @@ open an issue first to align on approach.
 
 | Version | What changed |
 |---|---|
-| **1.8** | Uploads capped at 4 MB to match the host's request limit, with large photos shrunk in the browser first. Attachment size, type and hash are checked against the stored file. Fixes from a security review: every staged draft version is kept, a copied EGOV1 envelope can't block or claim a submission, unsigned drafts are private to their proposer, and the daily check limit is a hard cap. |
+| **1.8** | Uploads capped at 4 MB to match the host's request limit, with large photos shrunk in the browser first. Attachment size, type and hash are checked against the stored file. Fixes from a security review: every staged draft version is kept, a copied EGOV1 envelope can't block or claim a submission, unsigned drafts are private to their proposer, and the daily check limit is a hard cap. Route tests for sign-in, profiles, the password gate, comments, withdrawals, roles, the review queue and uploads (665 tests), and the fixes they led to: no redirect to another site after unlocking, no look-alike handles, comments only on published proposals, and a failed undo no longer withdraws again. |
 | **1.7** | Content-check settings for admins: on/off, model (Haiku 4.5 default, Sonnet 5, Opus 5), what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migrations `012` and `013`. New reports are posted to Telegram. |
 | **1.6** | Imprint, privacy policy and terms (filled from `LEGAL_*`), footer with legal links, disclaimer and AGPL source link. |
 | **1.5** | Automatic checks of uploads, proposal text and comments; borderline items go to the review queue. |
