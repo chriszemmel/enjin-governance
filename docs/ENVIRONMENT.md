@@ -61,6 +61,31 @@ user-avatars/{user_uuid}.png
 | `CRON_SECRET` | future cron handlers | Not currently used; reserved for any post-v1 background job. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `lib/security/notify.ts` | Set both to also push each `/security` disclosure to a Telegram chat (e.g. a shared Enjin team group). Token from @BotFather; chat id is the group id (add the bot first). Unset = disclosures persist to the DB only. |
 
+## Moderation
+
+| Variable | Where used | Notes |
+|---|---|---|
+| `GOVERNANCE_ADMIN_PUBLIC_KEYS` | `lib/auth/roles.ts` | Wallets that are always admins: comma or space separated SS58 addresses (any network prefix) or 0x public keys. Admins grant further moderator/admin roles in `/moderation → Roles` (stored in the database). Needs migration `011`. |
+| `ANTHROPIC_API_KEY` | `lib/moderation/scan.ts` | Enables the automatic content checks. Having the key alone checks nothing: an admin switches the checks on and picks the model, the kinds checked and a daily limit in `/moderation → Settings` (needs migration `012`). The key never leaves the server. |
+
+## Legal pages and footer
+
+The imprint (`/imprint`), privacy policy (`/privacy`) and terms (`/terms`)
+read the operator's details from the environment so nothing personal is
+committed. A missing value shows as an amber "not configured" placeholder
+on the page. The pages are prerendered, so **redeploy after changing
+these**.
+
+| Variable | Notes |
+|---|---|
+| `LEGAL_OPERATOR_NAME` | Full name (or company) of the person responsible. |
+| `LEGAL_OPERATOR_ADDRESS` | Postal address for service. Separate lines with `\|` or newlines, e.g. `Street 1 \| 12345 City \| Germany`. |
+| `LEGAL_CONTACT_EMAIL` | Contact address, also used for reports and complaints. |
+| `LEGAL_CONTACT_PHONE` | Optional. |
+| `LEGAL_VAT_ID` | Optional; only if you have one. |
+| `NEXT_PUBLIC_SITE_MAINTAINER` | Name in the footer disclaimer. Default `Chris Zemmel`. |
+| `NEXT_PUBLIC_SOURCE_URL` | Public repository for the AGPL source offer in the footer and terms. Default `https://github.com/chriszemmel/enjin-governance`. |
+
 ## Site password gate
 
 Pre-launch / staging access control. The Next.js proxy (`proxy.ts`)

@@ -21,6 +21,11 @@ The path of least resistance is **Vercel + Neon + Cloudflare R2 + Reown
    | `R2_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` | Production, Preview |
    | `R2_PUBLIC_URL` | `https://<bucket>.r2.dev` or custom domain | Production, Preview |
    | `SUBSCAN_API_KEY` | optional, from `pro.subscan.io` | Production |
+   | `GOVERNANCE_ADMIN_PUBLIC_KEYS` | your wallet address(es), comma separated | Production, Preview |
+   | `LEGAL_OPERATOR_NAME` / `LEGAL_OPERATOR_ADDRESS` / `LEGAL_CONTACT_EMAIL` | imprint + privacy policy | Production, Preview |
+   | `LEGAL_CONTACT_PHONE` / `LEGAL_VAT_ID` | optional, imprint | Production, Preview |
+   | `NEXT_PUBLIC_SITE_MAINTAINER` / `NEXT_PUBLIC_SOURCE_URL` | footer (defaults set) | Production, Preview |
+   | `ANTHROPIC_API_KEY` | optional, automatic content checks | Production |
 
 4. Deploy.
 
@@ -44,6 +49,8 @@ refuse to load metadata.
    psql "$DATABASE_URL_UNPOOLED" -f scripts/008_auth_nonces.sql
    psql "$DATABASE_URL_UNPOOLED" -f scripts/009_users_per_network_handle.sql
    psql "$DATABASE_URL_UNPOOLED" -f scripts/010_security_disclosures.sql
+   psql "$DATABASE_URL_UNPOOLED" -f scripts/011_moderation.sql
+   psql "$DATABASE_URL_UNPOOLED" -f scripts/012_moderation_settings.sql
    ```
 
    (or `pnpm db:migrate`, which runs `scripts/run-migrations.mjs`.)
@@ -68,6 +75,8 @@ The migrations create:
 | `comment_reactions` | Up/down votes on comments. |
 | `auth_nonces` | Short-lived SIWE sign-in nonces, consumed atomically on verify (added in `008`). |
 | `security_disclosures` | Inbound vulnerability reports from the public `/security` form (added in `010`). No account required; IP-rate-limited and honeypot-guarded against bots, raw IP never stored. |
+| `moderation_roles`, `moderation_state`, `moderation_actions`, `moderation_reports`, `moderation_suspensions` | Moderator/admin roles by public key, per-item state (visible / blurred / hidden / removed), the public action log, reports and posting pauses (added in `011`). |
+| `moderation_settings`, `moderation_scan_usage` | Admin settings for the automatic content checks and a per-day, per-model usage counter for the daily limit and cost display (added in `012`). |
 
 The `updated_at` trigger function ships with the same migration.
 There's no migration framework wired in by design - flat, forward-only

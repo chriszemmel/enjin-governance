@@ -56,6 +56,9 @@ Environment Variables). Full descriptions in
 | `NEXT_PUBLIC_*_WSS` | Custom RPC endpoints (relay / matrix, plus fallbacks) | RPC provider (Dwellir / OnFinality / self-host) | Optional |
 | `SUBSCAN_API_KEY` | Call-data enrichment for old finalised referenda | pro.subscan.io | Optional |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Mirror `/security` reports to a team chat | Telegram | Optional |
+| `ANTHROPIC_API_KEY` | Automatic content checks (settings in `/moderation`) | console.anthropic.com | Optional |
+| `GOVERNANCE_ADMIN_PUBLIC_KEYS` | Wallets that are always moderation admins | New owner's wallets | For moderation |
+| `LEGAL_*` | Operator details for imprint and privacy policy | New operator | For a public deployment |
 | `SITE_PASSWORD` / `SITE_PASSWORD_STATUS` | Pre-launch access gate (`OFF` to disable) | Config | Optional |
 | `CRON_SECRET` | Guards any scheduled route | Config | Optional |
 
@@ -120,6 +123,7 @@ requirement.
 | **Reown (WalletConnect Cloud)** | Connect project ID and allowed domains | Transfer project ownership, or the new owner creates their own project and swaps `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` plus re-adds allowed domains |
 | **RPC provider** (Dwellir / OnFinality, optional) | Dedicated chain endpoints | Swap the `NEXT_PUBLIC_*_WSS` values to the new owner's endpoints |
 | **Subscan API** (optional) | Call-data fallback | New owner's key in `SUBSCAN_API_KEY` |
+| **Anthropic API** (optional) | Automatic content checks | New owner's key in `ANTHROPIC_API_KEY` |
 | **Telegram** (optional) | Security-report mirror | New owner's bot token and chat id |
 | **Cloudflare DNS** | `enjin.cloud` zone, `gov` record | Already controlled by Enjin |
 | **GitHub** | Source repository | Public and AGPL-3.0 on approval; anyone can fork and run it. The maintainer's repo stays canonical while maintained |

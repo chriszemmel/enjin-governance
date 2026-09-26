@@ -15,14 +15,20 @@
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" />
   <img alt="Polkadot.js" src="https://img.shields.io/badge/Polkadot.js-16-e6007a?style=flat-square&logo=polkadot&logoColor=white" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-330%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-487%20passing-22c55e?style=flat-square" />
 </p>
 
 <p align="center">
   <a href="https://enjin-governance.vercel.app">Live (Vercel)</a> ·
   <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-  <a href="docs/GOVERNANCE_FLOW.md">Governance flow</a>
+  <a href="docs/GOVERNANCE_FLOW.md">Governance flow</a> ·
+  <a href="#changelog">Changelog</a>
 </p>
+
+> Independent, community-maintained interface for Enjin on-chain governance,
+> developed and maintained by Chris Zemmel. The domain is provided by Enjin.
+> The Enjin Blockchain itself is developed by Atlas Development Services, a
+> core contributor, whose developers occasionally contribute to this project.
 
 ---
 
@@ -87,7 +93,52 @@
 - **Resumable drafts** - proposal JSON + media land in R2 before the
   user signs anything. If they bail out, the wizard offers to resume,
   edit, or delete the draft on `/account`. Drafts can be submitted
-  later with the same confirmation flow as a fresh proposal.
+  later with the same confirmation flow as a fresh proposal. An unsigned
+  draft is updated in place when it is staged again, never duplicated.
+- **Wrong-network guard** - an address from another network (for example
+  a Matrixchain `ef…` address in a Relay proposal) is caught before
+  signing; the composer offers to convert it and the server re-checks
+  the beneficiary.
+
+### Writing proposals
+
+- **Rich proposal text** - a small, safe Markdown subset with headings,
+  lists, tables, code, links and inline images from the proposal's own
+  attachments. SS58 addresses render as compact, checksum-validated
+  chips. A live preview shows exactly what voters will see.
+- **Images and PDFs** - drag-and-drop uploads; images are re-encoded
+  (metadata such as GPS stripped), get WebP thumbnails and open in a
+  viewer. Proposers can remove their own attachments at any time.
+- **Advanced proposals with a record** - proposals from
+  `/create/advanced` carry a title, description and an EGOV1 record like
+  treasury proposals; EGOV1 1.2.0 adds the optional `call` and
+  `enactment` sections so the enacted call is documented next to the
+  text.
+
+### Moderation
+
+- **Reports and one review queue** - anyone signed in can report a
+  proposal, an image or a comment. Moderators keep, blur, hide or restore
+  content; admins can also delete files and pause posting for a wallet.
+  Every decision needs a reason and is listed in the public
+  `/moderation-log`. On-chain data and proposal JSON are never changed.
+- **Roles by wallet** - admins come from `GOVERNANCE_ADMIN_PUBLIC_KEYS`;
+  they grant moderator or admin roles in `/moderation`. Roles are keyed
+  by public key, so they hold on every network prefix.
+- **Optional automatic checks** - with an Anthropic API key, uploads and
+  text can be checked by an AI model before moderators see them. Admins
+  choose the model (Haiku 4.5 by default), what is checked, how clear
+  violations are handled and a daily limit, and see this month's usage
+  and cost. Text is only ever flagged for a human, never hidden
+  automatically. See [Moderation](#moderation-1).
+
+### Legal
+
+- **Imprint, privacy policy and terms** - `/imprint`, `/privacy` and
+  `/terms`, filled from `LEGAL_*` environment variables (nothing
+  personal in the repository). Missing details show as a visible
+  placeholder. The footer links all of them, the content policy, the
+  moderation log and the AGPL source code.
 
 ### Identity + community
 
@@ -135,6 +186,13 @@
   rate-limited and honeypot-guarded against bot spam.
 - **`/user/[address]`** - public profile + voting history.
 - **`/unlock`** - claims expired conviction locks.
+- **`/moderation`** - review queue for moderators; **Roles** and
+  **Settings** (automatic checks) for admins. The nav link only appears
+  for moderators and admins.
+- **`/moderation-log`** - every moderation decision with its reason,
+  public.
+- **`/docs`** - user guide, including the content policy.
+- **`/imprint`** · **`/privacy`** · **`/terms`** - legal pages.
 
 ### Infra
 
@@ -154,7 +212,7 @@
   on the site-access password gate, input-size caps on the batch-read
   endpoints, and a honeypot on the public disclosure form that silently
   drops bots.
-- **Open-source ready** - TS strict, ESLint clean, knip-clean, 330
+- **Open-source ready** - TS strict, ESLint clean, knip-clean, 487
   vitest tests, CI on every push.
 
 ---
@@ -163,13 +221,13 @@
 
 | | |
 |---|---|
-| TypeScript source files (excl. vendored shadcn) | **~218** |
+| TypeScript source files (excl. vendored shadcn) | **~260** |
 | Docs files | **6** |
-| Unit tests | **330** (29 files) |
+| Unit tests | **487** (45 files) |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
 | External indexer dependencies | **0 required** (Subscan optional, only for very old finalised refs) |
-| Off-chain stores | **Neon Postgres** (users, sessions, profiles, comments, proposals, attachments, security disclosures) · **Cloudflare R2** (avatars, proposal JSON, proposal media) |
+| Off-chain stores | **Neon Postgres** (users, sessions, profiles, comments, proposals, attachments, security disclosures, moderation) · **Cloudflare R2** (avatars, proposal JSON, proposal media) |
 
 ---
 
@@ -193,6 +251,9 @@ public RPC. For the full feature set:
 - `DATABASE_URL` (Neon pooled) enables sign-in, profiles, comments,
   proposal drafts.
 - `R2_*` enables avatar uploads, proposal JSON, proposal media.
+- `GOVERNANCE_ADMIN_PUBLIC_KEYS` makes your wallet an admin for
+  `/moderation`.
+- `LEGAL_*` fills the imprint and privacy policy.
 
 See **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** and
 **[`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md)** for the deploy and env setup.
@@ -209,11 +270,12 @@ See **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** and
 | Wallets | WalletConnect v2 + `@polkadot/extension-dapp` | Connector pattern in `lib/wallet/connectors/*` |
 | Auth | SIWE-style `signRaw` nonce → httpOnly session | `lib/auth/siwe.ts` + `/api/auth/*` |
 | Data | TanStack Query + chain archive RPC + CoinGecko | RPC is canonical (incl. archive endpoints for historical state); Subscan is an optional enrichment fallback; CoinGecko prices ENJ |
-| Off-chain DB | Neon Postgres | Users, sessions, profiles, comments, proposals, attachments, security disclosures |
+| Off-chain DB | Neon Postgres | Users, sessions, profiles, comments, proposals, attachments, security disclosures, moderation |
 | Object storage | Cloudflare R2 (S3-compatible) | Avatars, proposal JSON (`EGOV1` envelope), proposal media |
 | State | Zustand | Wallet session + active chain |
 | Validation | Zod + `@t3-oss/env-nextjs` | `lib/env.ts` is the single source of truth |
-| Tests | Vitest | Pallet + chain primitives + auth + format helpers |
+| Content checks | Anthropic API (optional) | Haiku 4.5 by default, chosen by admins; structured output, one request per item |
+| Tests | Vitest | Pallet + chain primitives + auth + format helpers + route security |
 | CI | GitHub Actions | typecheck + lint + knip + test + build on every push |
 
 ---
@@ -230,7 +292,7 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (330 tests)
+pnpm test         # Vitest (487 tests)
 pnpm test:watch   # Vitest watch
 ```
 
@@ -242,6 +304,11 @@ pnpm test:watch   # Vitest watch
 app/                   Next.js routes (live RPC reads via React Query)
   account/             Profile editor + drafts list with filters + actions
   create/              3-step proposer wizard (Create → Review → Submit)
+                       and /create/advanced (general + admin proposals)
+  moderation/          Review queue, roles and content-check settings
+  moderation-log/      Public log of moderation decisions
+  imprint/ privacy/ terms/   Legal pages (filled from LEGAL_* env vars)
+  docs/                User guide + content policy
   proposals/           List + detail page
   treasury/            Live balance + treasury-tier referenda
   unlock/              Conviction-lock claim flow
@@ -251,6 +318,9 @@ app/                   Next.js routes (live RPC reads via React Query)
                        comments, by-index, by-indices, by-proposer, media, json
   api/users/           me, by-address/[address], by-addresses, me/avatar
   api/security-disclosures/  Public report intake (rate-limited + honeypot)
+  api/moderation/      me, reports, queue, actions, state, media, roles,
+                       settings, log
+  r/[...key]/          Serves proposal media (respects moderation state)
   api/unlock/          Site-access password gate (rate-limited)
   api/subscan/         Server proxies (referendum / preimage / votes).
                        Honour Subscan's 5 req/s ceiling with CDN cache
@@ -262,7 +332,9 @@ components/
                        LifecycleProgress, ParticipationGraph, VotesList,
                        VoteDetailModal, TallyVotesSwiper, AddressLink,
                        BlockTime, skeletons
-  create/              CallCard, AttachmentDropzone, MyDraftsPanel
+  create/              CallCard, AttachmentDropzone, MyDraftsPanel, editor
+  moderation/          ReportDialog, moderation notes, ScanSettingsPanel
+  legal/               LegalPage layout
   wallet/              WalletModal (with account picker on connect),
                        SignRequestModal (unified for every signature),
                        BrandedQr (module-snapped logo cutout)
@@ -287,6 +359,9 @@ lib/
   auth/                SIWE-style nonce/verify, current-user cookie reader,
                        site-password gate
   security/            Disclosure schema + honeypot check + Telegram notify
+  moderation/          Policy (roles, actions, states), automatic checks
+                       (scan + auto-flag), check settings + usage
+  legal/               Operator details for the legal pages
   rate-limit.ts        Fixed-window limiter (pure core + in-process store)
   db/                  Neon client + users, sessions, profiles, comments,
                        proposals, attachments, security-disclosures
@@ -309,7 +384,7 @@ lib/
 docs/                  ARCHITECTURE · CHAIN_FLOW · GOVERNANCE_FLOW ·
                        WALLET_INTEGRATION · ENVIRONMENT · DEPLOYMENT ·
                        HANDOVER
-scripts/               SQL migrations (004-011) + run-migrations.mjs
+scripts/               SQL migrations (004-012) + run-migrations.mjs
 .github/workflows/     CI
 ```
 
@@ -353,6 +428,11 @@ back to remark-scanning for those.
 The off-chain JSON is the source of truth for the human-readable
 title / summary / body / attachments / preimage hash. The on-chain
 binding just pins it.
+
+Schema versions: **1.1.0** for treasury proposals; **1.2.0** adds the
+optional `call` (the call the referendum enacts) and `enactment` sections,
+written by `/create/advanced`. Everything else is unchanged, so 1.1.0
+readers keep working.
 
 ---
 
@@ -399,15 +479,80 @@ R2_PUBLIC_URL=<https://<your bucket>.r2.dev or custom domain>
 NEXT_PUBLIC_DEFAULT_NETWORK=canary-relay     # or "enjin-relay" for mainnet
 ```
 
+Moderation and legal pages:
+
+```
+GOVERNANCE_ADMIN_PUBLIC_KEYS=<your wallet>   # SS58 (any network) or 0x public key; comma separated
+LEGAL_OPERATOR_NAME=<your name>              # imprint + privacy policy
+LEGAL_OPERATOR_ADDRESS=<street | postcode city | country>
+LEGAL_CONTACT_EMAIL=<contact address>
+NEXT_PUBLIC_SITE_MAINTAINER=<name shown in the footer>
+NEXT_PUBLIC_SOURCE_URL=<public repository URL>   # AGPL source offer in the footer
+```
+
 Optional:
 
 ```
 SUBSCAN_API_KEY=<from pro.subscan.io>        # decodes call data for very old finalised refs
+ANTHROPIC_API_KEY=<from console.anthropic.com>   # automatic content checks (switched on in /moderation → Settings)
+LEGAL_CONTACT_PHONE=<phone>                  # imprint, if you want one
+LEGAL_VAT_ID=<VAT ID>                        # imprint, only if you have one
 ```
+
+The legal pages are rendered at build time: after changing a `LEGAL_*`
+variable, redeploy.
 
 In Reown Cloud → **Allowed Domains**: add your production domain.
 Apply `scripts/0*.sql` to the Neon project (or run `pnpm db:migrate`).
 Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+---
+
+## Moderation
+
+**Becoming admin.** Put your wallet address (SS58 on any Enjin network, or
+the 0x public key) into `GOVERNANCE_ADMIN_PUBLIC_KEYS`, apply the
+migrations (`pnpm db:migrate`, needs `011` and `012`), redeploy and sign
+in with that wallet. The **Moderation** link then appears in the nav.
+Admins from the environment can't be removed in the app; admins grant
+further moderators and admins under **Moderation → Roles**.
+
+**Who sees what.**
+
+| | Everyone | Moderator | Admin |
+|---|---|---|---|
+| Report content, read `/moderation-log` | ✓ | ✓ | ✓ |
+| Nav link and review queue | | ✓ | ✓ |
+| Keep / blur / hide / restore | | ✓ | ✓ |
+| Delete a file, pause posting for a wallet | | | ✓ |
+| Roles, content-check settings | | | ✓ |
+
+**Automatic checks.** Off until an admin switches them on in
+**Moderation → Settings** (and `ANTHROPIC_API_KEY` is set). Each upload,
+proposal text or comment goes to the chosen model in one request with a
+fixed policy prompt and a JSON schema for the answer (`allow` / `review`
+/ `block`, labels, a one-line reason):
+
+- **Uploads** are checked before they are stored. `block` (for example a
+  readable recovery phrase) rejects the file, or holds it if the admins
+  chose that; `review` or a model refusal stores it blurred and not
+  served until a moderator decides.
+- **Proposal text and comments** are checked after posting and can only
+  create a queue entry - never hide anything.
+- A failed check (timeout, API error, daily limit reached) never blocks
+  posting; the item is treated as unchecked and user reports still work.
+
+Typical cost per check at list prices (policy prompt plus the item and a
+short JSON answer):
+
+| Model | Image | PDF (≈5 pages) | Proposal | Comment |
+|---|---|---|---|---|
+| Haiku 4.5 (default) | ~$0.003 | ~$0.009 | ~$0.005 | ~$0.001 |
+| Sonnet 5 | ~$0.006 | ~$0.018 | ~$0.010 | ~$0.002 |
+| Opus 5 | ~$0.015 | ~$0.044 | ~$0.026 | ~$0.006 |
+
+The Settings tab shows the real usage and cost per month from the token
+counts the API reports.
 
 ---
 
@@ -444,6 +589,20 @@ the ecosystem.
 
 For substantial changes (new pallet, new write flow, new architecture layer),
 open an issue first to align on approach.
+
+---
+
+## Changelog
+
+| Version | What changed |
+|---|---|
+| **1.7** | Content-check settings for admins: on/off, model (Haiku 4.5 default, Sonnet 5, Opus 5), what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migration `012`. |
+| **1.6** | Imprint, privacy policy and terms (filled from `LEGAL_*`), footer with legal links, disclaimer and AGPL source link. |
+| **1.5** | Automatic checks of uploads, proposal text and comments; borderline items go to the review queue. |
+| **1.4** | Moderation: reports, review queue, roles by wallet, posting pauses, public moderation log. Migration `011`. |
+| **1.3** | Advanced proposals get a title, description and EGOV1 record (EGOV1 1.2.0 with `call` and `enactment`). |
+| **1.2** | Proposal text with Markdown, inline images, address chips and a live preview; image viewer and thumbnails. |
+| **1.1** | Wrong-network address check, drafts updated in place, resume and sign-in from the drafts panel, readable API errors, long-word wrapping. |
 
 ---
 
