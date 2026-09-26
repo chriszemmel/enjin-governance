@@ -336,7 +336,7 @@ export async function DELETE(
             { status: 502 },
           )
         }
-        const reason = "Removed by the proposer."
+        const reason = "The proposer removed their own file."
         await setState({
           targetType: "attachment",
           targetId: key,
