@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ownMediaKey, proposalJsonKey, proposalPrefix } from "@/lib/r2/paths"
+import { keyFromPublicUrl, ownMediaKey, proposalJsonKey, proposalPrefix } from "@/lib/r2/paths"
 
 const NET = "enjin-relay"
 const ID = "11111111-1111-4111-8111-111111111111"
@@ -56,5 +56,16 @@ describe("ownMediaKey", () => {
     for (const name of ["a b.png", "a%2fb.png", "..%2f..%2fx.json", "a\u0000.png", "ä.png", "a\nb.png", "a".repeat(121)]) {
       expect(ownMediaKey(`proposals/${NET}/${ID}/media/${name}`, NET, ID)).toBeNull()
     }
+  })
+})
+
+describe("keyFromPublicUrl", () => {
+  const key = `proposals/${NET}/${ID}/media/roadmap.png`
+  it("handles app-origin /r URLs and bucket URLs", () => {
+    expect(keyFromPublicUrl(`https://gov.enjin.cloud/r/${key}`)).toBe(key)
+    expect(keyFromPublicUrl(`https://pub-abc.r2.dev/${key}`)).toBe(key)
+  })
+  it("returns the input unchanged when it isn't a URL", () => {
+    expect(keyFromPublicUrl(key)).toBe(key)
   })
 })

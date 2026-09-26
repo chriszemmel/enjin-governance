@@ -60,6 +60,8 @@ import { useExtrinsic } from "@/lib/query/hooks/use-tx"
 import { useWallet } from "@/lib/wallet/use-wallet"
 import { walletDisplayFor } from "@/lib/wallet/connector-registry"
 import { formatError } from "@/lib/utils/format-error"
+import { confirmWithRetry } from "@/lib/governance/confirm-client"
+import { keyFromPublicUrl } from "@/lib/r2/paths"
 
 export default function CreatePage() {
   // useSearchParams() forces this subtree to opt out of static
@@ -70,57 +72,6 @@ export default function CreatePage() {
       <CreatePageInner />
     </Suspense>
   )
-}
-
-type ConfirmBody = {
-  referendum_index: number
-  tx_hash: string
-  block_hash: string
-  block_number: number
-}
-
-/** Backoff between confirm attempts. Short - the user is watching. */
-const CONFIRM_RETRY_DELAYS_MS = [1_000, 3_000, 6_000]
-
-/**
- * POST the confirm, retrying the failures that can clear on their own.
- *
- * The route verifies the on-chain metadata binding before it will attach the
- * index, and fails closed: an unreachable RPC (503) or a node that has not
- * caught up with our own setMetadata yet (409 + retryable) are both
- * transient. A hash mismatch is not - it means this row does not own that
- * referendum, and retrying would never change the answer.
- *
- * Returns null on success, or a message describing why the link failed.
- */
-async function confirmWithRetry(draftId: string, body: ConfirmBody): Promise<string | null> {
-  let lastError = "Could not reach the server."
-
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const res = await fetch(`/api/proposals/${draftId}/confirm`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (res.ok) return null
-
-      const payload = (await res.json().catch(() => null)) as {
-        error?: string
-        retryable?: boolean
-      } | null
-      lastError = payload?.error ?? `Server responded ${res.status}.`
-      // Absent flag: 4xx is a verdict, 5xx is worth another go.
-      const retryable = payload?.retryable ?? res.status >= 500
-      if (!retryable) return lastError
-    } catch (e) {
-      lastError = formatError(e)
-    }
-
-    const delay = CONFIRM_RETRY_DELAYS_MS[attempt]
-    if (delay == null) return lastError
-    await new Promise((r) => setTimeout(r, delay))
-  }
 }
 
 function CreatePageInner() {
@@ -139,7 +90,13 @@ function CreatePageInner() {
   // "Edit" on an existing draft we still mint a fresh id - the prior R2
   // blob stays addressable at its old URL, and the new submission gets a
   // clean DB row + remark.
-  const [proposalId] = useState(() => crypto.randomUUID())
+  const [proposalId, setProposalId] = useState(() => crypto.randomUUID())
+  // Resuming an unsigned draft re-stages it in place: the server needs the
+  // json_sha256 we last saw to accept the update.
+  const [resumedSha, setResumedSha] = useState<string | null>(null)
+  // Payload of the last successful stage - staging again with nothing
+  // changed just returns to Review instead of rewriting the draft.
+  const [stagedFingerprint, setStagedFingerprint] = useState<string | null>(null)
   const [title, setTitle] = useState("")
   const [summary, setSummary] = useState("")
   const [body, setBody] = useState("")
@@ -148,6 +105,8 @@ function CreatePageInner() {
   // Track whether we've already populated the form from an existing draft -
   // prevents the load effect from clobbering the user's edits if it re-runs.
   const [prefilled, setPrefilled] = useState(false)
+  // Only a draft that actually loaded may be auto-staged (?go=review).
+  const [prefillOk, setPrefillOk] = useState(false)
 
   const [walletOpen, setWalletOpen] = useState(false)
   const [draft, setDraft] = useState<DraftResponse | null>(null)
@@ -214,8 +173,9 @@ function CreatePageInner() {
 
   // Load an existing draft into the form when arriving via Edit/Submit.
   // We fetch the canonical JSON (proxied through /api/proposals/[id]/json
-  // so CORS doesn't bite) and pre-fill the fields. Attachments aren't
-  // re-loaded - the proposer can re-attach if they want to keep them.
+  // so CORS doesn't bite) and pre-fill the fields. An unsigned draft keeps
+  // its id, beneficiary and attachments, so staging it again updates the
+  // same draft instead of creating a duplicate.
   useEffect(() => {
     if (!fromDraftId || prefilled) return
     let cancelled = false
@@ -227,9 +187,37 @@ function CreatePageInner() {
           title?: string
           summary?: string | null
           body_markdown?: string
-          spend?: { amount_planck?: string } | null
+          proposer?: string
+          spend?: { amount_planck?: string; beneficiary?: string } | null
+          attachments?: {
+            name: string
+            url: string
+            sha256: string
+            content_type: string
+            size_bytes: number
+          }[]
         }
         if (cancelled) return
+        const resumable = res.headers.get("x-proposal-status") === "draft"
+        const sha = res.headers.get("x-proposal-sha256")
+        if (resumable && sha) {
+          setProposalId(fromDraftId)
+          setResumedSha(sha)
+          setAttachments(
+            (j.attachments ?? []).map((a) => ({
+              bucket_key: keyFromPublicUrl(a.url),
+              url: a.url,
+              sha256: a.sha256,
+              size_bytes: a.size_bytes,
+              content_type: a.content_type,
+              name: a.name,
+            })),
+          )
+        }
+        const savedBeneficiary = j.spend?.beneficiary
+        if (savedBeneficiary && savedBeneficiary !== j.proposer) {
+          setBeneficiaryInput(savedBeneficiary)
+        }
         setTitle(j.title ?? "")
         setSummary(j.summary ?? "")
         setBody(j.body_markdown ?? "")
@@ -248,8 +236,11 @@ function CreatePageInner() {
           }
         }
         setPrefilled(true)
+        setPrefillOk(true)
         toast.success("Loaded draft", {
-          description: "Edit anything, then stage to publish a fresh version.",
+          description: resumable
+            ? "Edit anything, then stage to update this draft."
+            : "Edit anything, then stage to save it as a new draft.",
         })
       } catch (e) {
         toast.error("Could not load draft", { description: formatError(e) })
@@ -489,6 +480,33 @@ function CreatePageInner() {
       toast.error("Form is incomplete")
       return
     }
+    const payload = {
+      proposal_id: proposalId,
+      network: chain.id,
+      proposer_address: proposerAddress,
+      title: title.trim(),
+      summary: summary.trim() || null,
+      body_markdown: body,
+      track: pickedTier.origin,
+      beneficiary,
+      amount_planck: parsedAmount.toString(),
+      preimage_hash: preimagePreview.preimageHash,
+      preimage_len: preimagePreview.preimageLen,
+      attachments: attachments.map((a) => ({
+        bucket_key: a.bucket_key,
+        name: a.name,
+        url: a.url,
+        sha256: a.sha256,
+        content_type: a.content_type,
+        size_bytes: a.size_bytes,
+      })),
+    }
+    // Back -> Stage with nothing changed: the saved draft is still current.
+    const fingerprint = JSON.stringify(payload)
+    if (draft && fingerprint === stagedFingerprint) {
+      setStep("review")
+      return
+    }
     // The draft endpoint requires an authenticated proposer - sign in
     // first and bail out of staging if that doesn't go through.
     if (!(await ensureSignedIn())) return
@@ -498,25 +516,10 @@ function CreatePageInner() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          proposal_id: proposalId,
-          network: chain.id,
-          proposer_address: proposerAddress,
-          title: title.trim(),
-          summary: summary.trim() || null,
-          body_markdown: body,
-          track: pickedTier.origin,
-          beneficiary,
-          amount_planck: parsedAmount.toString(),
-          preimage_hash: preimagePreview.preimageHash,
-          preimage_len: preimagePreview.preimageLen,
-          attachments: attachments.map((a) => ({
-            bucket_key: a.bucket_key,
-            name: a.name,
-            url: a.url,
-            sha256: a.sha256,
-            content_type: a.content_type,
-            size_bytes: a.size_bytes,
-          })),
+          ...payload,
+          // Re-staging updates the same draft in place; the server only
+          // accepts that from the version we last saw.
+          expected_sha256: draft?.json_sha256 ?? resumedSha,
         }),
       })
       const json = (await res.json()) as DraftResponse | { ok: false; error: string }
@@ -526,7 +529,14 @@ function CreatePageInner() {
         setStaging(false)
         return
       }
-      setDraft(json as DraftResponse)
+      const saved = json as DraftResponse
+      setDraft(saved)
+      setStagedFingerprint(fingerprint)
+      if (saved.updated) {
+        toast.success("Draft updated", {
+          description: "Same draft, new version.",
+        })
+      }
       setStep("review")
     } catch (e) {
       toast.error("Could not stage Proposal", {
@@ -541,11 +551,14 @@ function CreatePageInner() {
     proposerAddress,
     body,
     chain.id,
+    draft,
     ensureSignedIn,
     parsedAmount,
     pickedTier,
     preimagePreview,
     proposalId,
+    resumedSha,
+    stagedFingerprint,
     summary,
     title,
   ])
@@ -555,7 +568,7 @@ function CreatePageInner() {
   // on the Review screen - we just save the click.
   const [autoStaged, setAutoStaged] = useState(false)
   useEffect(() => {
-    if (!autoAdvance || autoStaged || !prefilled) return
+    if (!autoAdvance || autoStaged || !prefilled || !prefillOk) return
     if (!isConnected || !composeValid) return
     if (staging || step !== "create") return
     setAutoStaged(true)
@@ -564,6 +577,7 @@ function CreatePageInner() {
     autoAdvance,
     autoStaged,
     prefilled,
+    prefillOk,
     isConnected,
     composeValid,
     staging,
@@ -684,12 +698,18 @@ function CreatePageInner() {
               // best-effort
             }
           }
-          confirmError = await confirmWithRetry(draft.id, {
-            referendum_index: index,
-            tx_hash: txHash,
-            block_hash: blockHash,
-            block_number: blockNumber,
-          })
+          confirmError = await confirmWithRetry(
+            draft.id,
+            {
+              referendum_index: index,
+              tx_hash: txHash,
+              block_hash: blockHash,
+              block_number: blockNumber,
+            },
+            // The session can run out while the batch finalises; sign in
+            // again rather than leave a live referendum unlinked.
+            ensureSignedIn,
+          )
         } catch (err) {
           confirmError = formatError(err)
         } finally {
@@ -853,6 +873,7 @@ function CreatePageInner() {
             preimageAlreadyNoted={preimageAlreadyNoted}
             metadataHash={metadataHash}
             decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
+            enactmentText={enactmentLabel(enactment)}
             chainTicker={chain.ticker}
             chainDecimals={chain.decimals}
           />
@@ -879,7 +900,7 @@ function CreatePageInner() {
                 title: `File the referendum on ${formatTrackName(pickedTier.origin)}`,
                 pallet: "referenda",
                 method: "submit",
-                summary: `Opens voting on the ${formatTrackName(pickedTier.origin)} track. Enacts the moment it's approved.`,
+                summary: `Opens voting on the ${formatTrackName(pickedTier.origin)} track. Enactment: ${enactmentLabel(enactment)}.`,
                 details: [
                   { label: "Origin", value: `Origins.${pickedTier.origin}` },
                   { label: "Lookup hash", value: preimagePreview?.preimageHash ?? "-" },

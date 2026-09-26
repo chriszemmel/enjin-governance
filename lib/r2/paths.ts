@@ -70,6 +70,22 @@ export function ownMediaKey(
   return key
 }
 
+/**
+ * Bucket key behind a public object URL, for both `<app>/r/<key>` and
+ * `<bucket-host>/<key>` forms. Proposal JSON only carries attachment URLs,
+ * so resuming a draft re-derives the keys from them.
+ */
+export function keyFromPublicUrl(url: string): string {
+  let path: string
+  try {
+    path = new URL(url).pathname
+  } catch {
+    return url
+  }
+  path = path.replace(/^\/+/, "")
+  return path.startsWith("r/") ? path.slice(2) : path
+}
+
 export function proposalIndexRedirectKey(
   network: ChainId,
   referendumIndex: number,

@@ -9,6 +9,8 @@ export type WizardStep = "create" | "review" | "submit"
 export type DraftResponse = {
   ok: true
   id: string
+  /** True when an existing draft was re-staged in place. */
+  updated?: boolean
   json_url: string
   json_sha256: string
   json_size_bytes: number
