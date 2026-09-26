@@ -38,6 +38,7 @@ import {
   type ReplaceAttachmentItem,
 } from "@/lib/db/proposals"
 import { isR2Configured } from "@/lib/r2/client"
+import { ownMediaKey, proposalPrefix } from "@/lib/r2/paths"
 import { deleteObjects, putJson } from "@/lib/r2/upload"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
@@ -119,6 +120,15 @@ export async function DELETE(
   } catch {
     // attachment lookup is best-effort; the json key alone still gets cleaned
   }
+
+  // Only ever delete objects inside this proposal's own folder. Attachment
+  // keys were supplied by the client when the draft was staged, so a stored
+  // key pointing elsewhere (another proposal's JSON, an avatar) is skipped
+  // rather than trusted.
+  const ownPrefix = proposalPrefix(existing.network, existing.id)
+  r2Keys = r2Keys.filter(
+    (k) => k.startsWith(ownPrefix) && !k.split("/").includes(".."),
+  )
 
   await deleteProposalById(parsed.data)
 
@@ -250,6 +260,20 @@ export async function PATCH(
     )
   }
 
+  // Same rule as the draft route: every attachment key must sit in this
+  // proposal's own media folder. Checked before anything is written.
+  const attachmentKeys: string[] = []
+  for (const att of parsed.attachments) {
+    const ownKey = ownMediaKey(att.bucket_key, existing.network, existing.id)
+    if (!ownKey) {
+      return NextResponse.json(
+        { ok: false, error: `Attachment "${att.name}" doesn't belong to this proposal.` },
+        { status: 400 },
+      )
+    }
+    attachmentKeys.push(ownKey)
+  }
+
   const editedAt = new Date().toISOString()
 
   const proposalJson: ProposalJson = {
@@ -319,8 +343,8 @@ export async function PATCH(
   }
 
   const replacementItems: ReplaceAttachmentItem[] = parsed.attachments.map(
-    (a) => ({
-      bucketKey: a.bucket_key,
+    (a, i) => ({
+      bucketKey: attachmentKeys[i]!,
       url: a.url,
       filename: a.name,
       contentType: a.content_type,

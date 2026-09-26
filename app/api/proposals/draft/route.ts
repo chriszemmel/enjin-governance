@@ -20,6 +20,10 @@
  * is still not cryptographic proof of authorship - the JSON's optional
  * `signature` field isn't verified - but it can no longer be filed
  * anonymously or under someone else's address.
+ *
+ * The proposal id must be unused (an existing id is refused before anything
+ * is written to R2), and every attachment key must sit in the proposal's own
+ * media folder.
  */
 
 import { NextResponse, type NextRequest } from "next/server"
@@ -28,13 +32,14 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import {
+  getProposalById,
   insertProposalDraft,
   insertAttachment,
   type CreateProposalDraft,
 } from "@/lib/db/proposals"
 import { upsertUserByAddress } from "@/lib/db/users"
 import { isR2Configured } from "@/lib/r2/client"
-import { proposalJsonKey } from "@/lib/r2/paths"
+import { ownMediaKey, proposalJsonKey } from "@/lib/r2/paths"
 import { putJson } from "@/lib/r2/upload"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import {
@@ -131,6 +136,48 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { ok: false, error: "You can only file a proposal for your own wallet." },
       { status: 403 },
     )
+  }
+
+  // proposal_id is client-minted, and the JSON key is derived from it - so
+  // it must be checked BEFORE anything is written. An id that already has a
+  // row is someone's existing proposal (or this user's own, already-saved
+  // draft); writing to its key would replace that proposal's stored JSON
+  // even though the insert below then fails on the primary key.
+  let existingRow
+  try {
+    existingRow = await getProposalById(parsed.proposal_id)
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Could not check the proposal id - try again." },
+      { status: 503 },
+    )
+  }
+  if (existingRow) {
+    const own = samePublicKey(existingRow.proposer_address, me.address)
+    return NextResponse.json(
+      {
+        ok: false,
+        error: own
+          ? "This draft is already saved. Reload the page and resume it from your drafts."
+          : "This proposal id is already in use.",
+      },
+      { status: own ? 409 : 403 },
+    )
+  }
+
+  // Attachment keys come from the browser and are later deleted from the
+  // bucket together with the draft, so each one must live in this
+  // proposal's own media folder.
+  const attachments: { key: string; att: (typeof parsed.attachments)[number] }[] = []
+  for (const att of parsed.attachments) {
+    const ownKey = ownMediaKey(att.bucket_key, parsed.network, parsed.proposal_id)
+    if (!ownKey) {
+      return NextResponse.json(
+        { ok: false, error: `Attachment "${att.name}" doesn't belong to this proposal.` },
+        { status: 400 },
+      )
+    }
+    attachments.push({ key: ownKey, att })
   }
 
   const key = proposalJsonKey(parsed.network, parsed.proposal_id)
@@ -234,11 +281,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  for (const att of parsed.attachments) {
+  for (const { key: bucketKey, att } of attachments) {
     try {
       await insertAttachment({
         proposalId: row.id,
-        bucketKey: att.bucket_key,
+        bucketKey,
         url: att.url,
         filename: att.name,
         contentType: att.content_type,
