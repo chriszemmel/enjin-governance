@@ -15,7 +15,11 @@ vi.mock("@/lib/db/moderation", () => ({
   saveSetting: async (_: string, v: unknown) => {
     state.stored = v
   },
-  reserveScanCheck: async () => ++state.today,
+  reserveScanCheck: async (_m: string, _k: string, limit: number) => {
+    if (state.today >= limit) return false
+    state.today += 1
+    return true
+  },
   addScanTokens: async () => undefined,
 }))
 

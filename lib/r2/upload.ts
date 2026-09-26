@@ -67,18 +67,20 @@ export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
  * R2 objects (proposal.json + attachments) don't linger. Only deletable rows
  * (drafts / cancelled / failed) reach this - never an on-chain proposal whose
  * URL a finalised remark pins - so removing the objects is safe. De-dupes,
- * ignores empties, and tolerates up to 1000 keys per call (the S3 limit).
+ * ignores empties, and sends at most 1000 keys per request (the S3 limit).
  */
 export async function deleteObjects(keys: string[]): Promise<void> {
   const unique = [...new Set(keys.filter(Boolean))]
-  if (unique.length === 0) return
   const client = getR2Client()
-  await client.send(
-    new DeleteObjectsCommand({
-      Bucket: r2Bucket(),
-      Delete: { Objects: unique.map((Key) => ({ Key })), Quiet: true },
-    }),
-  )
+  // DeleteObjects takes at most 1000 keys per request.
+  for (let i = 0; i < unique.length; i += 1000) {
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: r2Bucket(),
+        Delete: { Objects: unique.slice(i, i + 1000).map((Key) => ({ Key })), Quiet: true },
+      }),
+    )
+  }
 }
 
 /** Every key under a prefix (a proposal's folder holds a handful). */

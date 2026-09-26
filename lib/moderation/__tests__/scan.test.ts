@@ -100,6 +100,17 @@ describe("scanImage", () => {
     expect(await scanImage(Buffer.from("x"), { model, client: down.client })).toEqual({
       kind: "unavailable",
       reason: "API 500",
+      cause: "outage",
+    })
+    const tooBig = fakeClient(() => {
+      throw new Anthropic.BadRequestError(400, undefined, "prompt is too long", new Headers())
+    })
+    expect(await scanImage(Buffer.from("x"), { model, client: tooBig.client })).toMatchObject({
+      reason: "API 400",
+      cause: "input",
+    })
+    expect(await scanImage(Buffer.from("x"), { model, client: garbled.client })).toMatchObject({
+      cause: "input",
     })
   })
 })

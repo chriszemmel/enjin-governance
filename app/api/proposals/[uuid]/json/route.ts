@@ -16,10 +16,15 @@
  *
  * External indexers don't need this - they can fetch the bucket URL
  * directly. Only browser callers go through here.
+ *
+ * Proposals that haven't reached the chain are private: only their
+ * proposer, signed in, can load them (to resume a draft).
  */
 
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
+import { getCurrentUser } from "@/lib/auth/current-user"
+import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById } from "@/lib/db/proposals"
 
@@ -53,6 +58,19 @@ export async function GET(
       { ok: false, error: "Not found" },
       { status: 404 },
     )
+  }
+  if (row.status !== "on_chain") {
+    const me = await getCurrentUser().catch(() => null)
+    await initializeWasm()
+    let own = false
+    try {
+      own = me != null && samePublicKey(me.address, row.proposer_address)
+    } catch {
+      own = false
+    }
+    if (!own) {
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 })
+    }
   }
 
   // Proposer edits overwrite the bucket bytes at the same key, so

@@ -25,7 +25,6 @@
  * referendum and can't be changed without filing a new proposal.
  */
 
-import { createHash } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
@@ -33,19 +32,17 @@ import { isDbConfigured } from "@/lib/db/client"
 import {
   deleteProposalById,
   getProposalById,
-  listAttachments,
   replaceAttachments,
   updateProposalContent,
   type ReplaceAttachmentItem,
 } from "@/lib/db/proposals"
 import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
 import { isProposalJsonKey, ownMediaKey, proposalPrefix, publicUrlFor } from "@/lib/r2/paths"
-import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import { flagText } from "@/lib/moderation/auto-flag"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import { deleteObjects, listObjectKeys, putJson, readObjectText } from "@/lib/r2/upload"
-import { isEnvelopeOnChain } from "@/lib/governance/envelope-status"
+import { anyVersionOnChain } from "@/lib/governance/draft-versions"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
 import { getApi } from "@/lib/chain/api"
@@ -119,34 +116,24 @@ export async function DELETE(
   }
 
   // Gather the R2 keys BEFORE the row (and its cascade-deleted attachment
-  // rows) are gone, so we can clean the bucket after: the whole folder when
-  // it can be listed (every staged JSON version and every upload, listed or
-  // not - a held or hidden file must not outlive its draft), else the
-  // current JSON plus the listed attachments.
+  // rows) are gone, so we can clean the bucket after: the whole folder -
+  // every staged JSON version and every upload, listed or not (a held or
+  // hidden file must not outlive its draft). If the folder can't be listed,
+  // nothing is deleted: an older version might be pinned on chain.
   const ownPrefix = proposalPrefix(existing.network, existing.id)
   let r2Keys: string[] = [existing.json_key]
-  let folderListed = false
   if (isR2Configured()) {
     try {
       r2Keys = r2Keys.concat(await listObjectKeys(ownPrefix))
-      folderListed = true
     } catch {
-      // fall back to the rows below
-    }
-  }
-  if (!folderListed) {
-    try {
-      const attachments = await listAttachments(existing.id)
-      r2Keys = r2Keys.concat(attachments.flatMap((a) => [a.bucket_key, thumbKeyFor(a.bucket_key)]))
-    } catch {
-      // attachment lookup is best-effort; the json key alone still gets cleaned
+      return NextResponse.json(
+        { ok: false, error: "Could not read this draft's files - try again." },
+        { status: 503 },
+      )
     }
   }
 
-  // Only ever delete objects inside this proposal's own folder. Attachment
-  // keys were supplied by the client when the draft was staged, so a stored
-  // key pointing elsewhere (another proposal's JSON, an avatar) is skipped
-  // rather than trusted.
+  // Only ever delete objects inside this proposal's own folder.
   r2Keys = [...new Set(r2Keys)].filter(
     (k) => k.startsWith(ownPrefix) && !k.split("/").includes(".."),
   )
@@ -191,26 +178,6 @@ export async function DELETE(
   }
 
   return NextResponse.json({ ok: true })
-}
-
-/** Whether any stored JSON version of a draft is pinned by an on-chain envelope. */
-async function anyVersionOnChain(
-  row: { network: string; json_url: string; json_key: string; json_sha256: string },
-  jsonKeys: string[],
-): Promise<boolean> {
-  if (row.json_url && row.json_sha256) {
-    if (await isEnvelopeOnChain(row.network, row.json_url, row.json_sha256)) return true
-  }
-  for (const key of jsonKeys) {
-    if (key === row.json_key) continue
-    const text = await readObjectText(key)
-    if (text == null) continue
-    const sha = createHash("sha256").update(text, "utf8").digest("hex")
-    if (await isEnvelopeOnChain(row.network, publicUrlFor(publicAssetBase(), key), sha)) {
-      return true
-    }
-  }
-  return false
 }
 
 /**

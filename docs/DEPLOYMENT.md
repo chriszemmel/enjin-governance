@@ -51,6 +51,7 @@ refuse to load metadata.
    psql "$DATABASE_URL_UNPOOLED" -f scripts/010_security_disclosures.sql
    psql "$DATABASE_URL_UNPOOLED" -f scripts/011_moderation.sql
    psql "$DATABASE_URL_UNPOOLED" -f scripts/012_moderation_settings.sql
+   psql "$DATABASE_URL_UNPOOLED" -f scripts/013_moderation_keep_state.sql
    ```
 
    (or `pnpm db:migrate`, which runs `scripts/run-migrations.mjs`.)

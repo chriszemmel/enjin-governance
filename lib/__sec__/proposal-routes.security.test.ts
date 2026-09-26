@@ -65,6 +65,7 @@ import { proposalJsonKey, proposalIndexRedirectKey, userAvatarKey } from "@/lib/
 import { POST } from "@/app/api/proposals/draft/route"
 import { DELETE, PATCH } from "@/app/api/proposals/[uuid]/route"
 import { DELETE as MEDIA_DELETE } from "@/app/api/proposals/[uuid]/media/route"
+import { GET as JSON_GET } from "@/app/api/proposals/[uuid]/json/route"
 
 const NET = "enjin-relay"
 const VICTIM_ID = "11111111-1111-4111-8111-111111111111"
@@ -426,5 +427,20 @@ describe("PATCH (edit)", () => {
     const res = await PATCH(req(`https://gov.test/api/proposals/${OWN_ONCHAIN_ID}`, "PATCH", patchBody([att(`r/${real}`, "pic.png")])), ctx(OWN_ONCHAIN_ID))
     expect(res.status).toBe(200)
     expect(db.attachments.filter((a) => a.proposal_id === OWN_ONCHAIN_ID).map((a) => a.bucket_key)).toEqual([real])
+  })
+})
+
+describe("proposal JSON", () => {
+  it("keeps drafts private to their proposer, and on-chain proposals public", async () => {
+    const draftId = "55555555-5555-4555-8555-555555555555"
+    db.seedProposal({ id: draftId, network: NET, proposer_address: VICTIM, status: "draft", json_key: proposalJsonKey(NET, draftId) })
+    const get = (id: string) => JSON_GET(req(`https://gov.test/api/proposals/${id}/json`, "GET"), ctx(id))
+    expect((await get(draftId)).status).toBe(404) // signed in as someone else
+    auth.user = null
+    expect((await get(draftId)).status).toBe(404) // signed out
+    auth.user = { id: "victim-user-id", address: VICTIM }
+    expect((await get(draftId)).status).not.toBe(404)
+    auth.user = null
+    expect((await get(VICTIM_ID)).status).not.toBe(404) // on chain: public
   })
 })

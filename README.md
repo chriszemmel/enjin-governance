@@ -514,7 +514,7 @@ Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 **Becoming admin.** Put your wallet address (SS58 on any Enjin network, or
 the 0x public key) into `GOVERNANCE_ADMIN_PUBLIC_KEYS`, apply the
-migrations (`pnpm db:migrate`, needs `011` and `012`), redeploy and sign
+migrations (`pnpm db:migrate`, needs `011`, `012` and `013`), redeploy and sign
 in with that wallet. The **Moderation** link then appears in the nav.
 Admins from the environment can't be removed in the app; admins grant
 further moderators and admins under **Moderation → Roles**.
@@ -603,7 +603,7 @@ open an issue first to align on approach.
 
 | Version | What changed |
 |---|---|
-| **1.7** | Content-check settings for admins: on/off, model (Haiku 4.5 default, Sonnet 5, Opus 5), what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migration `012`. New reports are posted to Telegram. |
+| **1.7** | Content-check settings for admins: on/off, model (Haiku 4.5 default, Sonnet 5, Opus 5), what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migrations `012` and `013`. New reports are posted to Telegram. |
 | **1.6** | Imprint, privacy policy and terms (filled from `LEGAL_*`), footer with legal links, disclaimer and AGPL source link. |
 | **1.5** | Automatic checks of uploads, proposal text and comments; borderline items go to the review queue. |
 | **1.4** | Moderation: reports, review queue, roles by wallet, posting pauses, public moderation log. Migration `011`. |

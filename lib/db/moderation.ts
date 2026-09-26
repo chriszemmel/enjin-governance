@@ -342,11 +342,17 @@ export async function saveSetting(key: string, value: unknown, by: string): Prom
 type ScanKindName = "images" | "pdfs" | "proposals" | "comments"
 
 /**
- * Count one check against today (UTC) before it is sent, and return how
- * many checks today now has. Counted up front, so concurrent checks can't
- * all slip under the limit, and a check that times out still counts.
+ * Count one check against today's limit (UTC) before it is sent. Counted up
+ * front, so concurrent checks can't all slip under the limit and a check
+ * that times out still counts; a refused reservation is taken back, so the
+ * count never runs past the limit. Proposal text and comments may use at
+ * most half of the limit, so uploads always keep the other half.
  */
-export async function reserveScanCheck(model: string, kind: ScanKindName): Promise<number> {
+export async function reserveScanCheck(
+  model: string,
+  kind: ScanKindName,
+  limit: number,
+): Promise<boolean> {
   const sql = getSql()
   await sql`
     INSERT INTO moderation_scan_usage (day, model, kind, checks)
@@ -354,7 +360,20 @@ export async function reserveScanCheck(model: string, kind: ScanKindName): Promi
     ON CONFLICT (day, model, kind) DO UPDATE
       SET checks = moderation_scan_usage.checks + 1
   `
-  return scanChecksToday()
+  const rows = (await sql`
+    SELECT COALESCE(SUM(checks), 0)::int AS total,
+           COALESCE(SUM(checks) FILTER (WHERE kind IN ('proposals', 'comments')), 0)::int AS text
+      FROM moderation_scan_usage
+     WHERE day = (NOW() AT TIME ZONE 'UTC')::date
+  `) as { total: number; text: number }[]
+  const { total, text } = rows[0] ?? { total: 0, text: 0 }
+  const isText = kind === "proposals" || kind === "comments"
+  if (total <= limit && (!isText || text <= Math.floor(limit / 2))) return true
+  await sql`
+    UPDATE moderation_scan_usage SET checks = GREATEST(checks - 1, 0)
+     WHERE day = (NOW() AT TIME ZONE 'UTC')::date AND model = ${model} AND kind = ${kind}
+  `
+  return false
 }
 
 /** Add the tokens a finished check used (its check is already counted). */

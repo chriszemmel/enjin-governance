@@ -55,7 +55,17 @@ export type ScanUsage = { inputTokens: number; outputTokens: number }
 export type ScanOutcome =
   | { kind: "verdict"; verdict: ScanVerdict; usage?: ScanUsage }
   | { kind: "refused"; usage?: ScanUsage }
-  | { kind: "unavailable"; reason: string; usage?: ScanUsage }
+  | {
+      kind: "unavailable"
+      reason: string
+      /**
+       * "outage": the service failed (timeout, 5xx, rate limit, bad config).
+       * "input": this item couldn't be checked - rejected as input, or an
+       * answer that isn't a verdict, which the item's content can provoke.
+       */
+      cause: "outage" | "input"
+      usage?: ScanUsage
+    }
 
 // JSON schema for output_config.format (structured outputs).
 const OUTPUT_SCHEMA = {
@@ -136,19 +146,40 @@ async function classify(
       : undefined
     if (res.stop_reason === "refusal") return { kind: "refused", usage }
     if (res.stop_reason !== "end_turn") {
-      return { kind: "unavailable", reason: `stop_reason ${res.stop_reason}`, usage }
+      return {
+        kind: "unavailable",
+        reason: `stop_reason ${res.stop_reason}`,
+        cause: "input",
+        usage,
+      }
     }
     const text = res.content.find((b) => b.type === "text")
     if (!text || text.type !== "text")
-      return { kind: "unavailable", reason: "no text block", usage }
+      return { kind: "unavailable", reason: "no text block", cause: "input", usage }
     const parsed = verdictSchema.safeParse(JSON.parse(text.text))
-    if (!parsed.success) return { kind: "unavailable", reason: "unexpected output", usage }
+    if (!parsed.success) {
+      return { kind: "unavailable", reason: "unexpected output", cause: "input", usage }
+    }
     return { kind: "verdict", verdict: parsed.data, usage }
   } catch (e) {
     if (e instanceof Anthropic.APIError) {
-      return { kind: "unavailable", reason: `API ${e.status ?? "error"}` }
+      // Only these say "this input can't be processed"; 401/403/404 are a
+      // bad key or model name, which must not hold every upload.
+      const input = [400, 413, 415, 422].includes(e.status ?? 0)
+      return {
+        kind: "unavailable",
+        reason: `API ${e.status ?? "error"}`,
+        cause: input ? "input" : "outage",
+      }
     }
-    return { kind: "unavailable", reason: e instanceof Error ? e.message : String(e) }
+    if (e instanceof SyntaxError) {
+      return { kind: "unavailable", reason: "answer is not JSON", cause: "input" }
+    }
+    return {
+      kind: "unavailable",
+      reason: e instanceof Error ? e.message : String(e),
+      cause: "outage",
+    }
   }
 }
 

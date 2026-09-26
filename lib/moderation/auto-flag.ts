@@ -44,14 +44,12 @@ export function pdfPageEstimate(bytes: Buffer): number {
 
 const hold = (reason: string): UploadDecision => ({
   action: "store_blurred",
-  outcome: { kind: "unavailable", reason },
+  outcome: { kind: "unavailable", reason, cause: "input" },
 })
 
-/** A rejected request (not an outage): the input itself couldn't be checked. */
+/** Not an outage: this item itself couldn't be checked. */
 function inputRejected(outcome: ScanOutcome): boolean {
-  if (outcome.kind !== "unavailable") return false
-  const status = /^API (\d{3})$/.exec(outcome.reason)?.[1]
-  return status != null && status.startsWith("4") && !["408", "409", "429"].includes(status)
+  return outcome.kind === "unavailable" && outcome.cause === "input"
 }
 
 export async function checkUpload(

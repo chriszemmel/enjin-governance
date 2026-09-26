@@ -103,9 +103,12 @@ describe("checkUpload", () => {
     expect((await checkUpload({ kind: "pdf", bytes: longPdf }, "long.pdf")).action).toBe(
       "store_blurred",
     )
-    scan.next = { kind: "unavailable", reason: "API 400" }
+    scan.next = { kind: "unavailable", reason: "API 400", cause: "input" }
     expect((await checkUpload(image, "huge.png")).action).toBe("store_blurred")
-    expect(scan.models).toHaveLength(1) // the animation and the long PDF were never sent
+    // An answer the image provoked (cut off, not JSON) is held too.
+    scan.next = { kind: "unavailable", reason: "stop_reason max_tokens", cause: "input" }
+    expect((await checkUpload(image, "huge.png")).action).toBe("store_blurred")
+    expect(scan.models).toHaveLength(2) // the animation and the long PDF were never sent
   })
 
   it("holds uploads once the daily limit is reached", async () => {
@@ -116,11 +119,13 @@ describe("checkUpload", () => {
   })
 
   it("never blocks an upload because the check itself failed", async () => {
-    scan.next = { kind: "unavailable", reason: "timeout" }
+    scan.next = { kind: "unavailable", reason: "timeout", cause: "outage" }
     expect((await checkUpload(image, "a.png")).action).toBe("store")
-    scan.next = { kind: "unavailable", reason: "API 529" }
+    scan.next = { kind: "unavailable", reason: "API 529", cause: "outage" }
     expect((await checkUpload(image, "a.png")).action).toBe("store")
-    scan.next = { kind: "unavailable", reason: "API 429" }
+    scan.next = { kind: "unavailable", reason: "API 429", cause: "outage" }
+    expect((await checkUpload(image, "a.png")).action).toBe("store")
+    scan.next = { kind: "unavailable", reason: "API 401", cause: "outage" }
     expect((await checkUpload(image, "a.png")).action).toBe("store")
     scan.next = verdict("allow")
     expect((await checkUpload(image, "a.png")).action).toBe("store")

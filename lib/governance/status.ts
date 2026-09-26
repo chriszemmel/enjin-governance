@@ -145,7 +145,8 @@ function decodeProposal(raw: unknown): OngoingStatus["proposal"] {
     }
   }
   if (p.isInline) {
-    const bytes = (p.asInline as { toU8a: () => Uint8Array }).toU8a()
+    // Bare call bytes: `Bytes.toU8a()` would prefix the SCALE length.
+    const bytes = (p.asInline as { toU8a: (isBare?: boolean) => Uint8Array }).toU8a(true)
     return { type: "Inline", bytes }
   }
   throw new Error(`Unknown proposal variant: ${String(raw)}`)

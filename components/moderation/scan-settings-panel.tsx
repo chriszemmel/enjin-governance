@@ -233,8 +233,8 @@ export function ScanSettingsPanel() {
               />
               <span className="text-xs text-muted-foreground">
                 checks a day (UTC); past it, uploads wait for a moderator and text isn&apos;t
-                checked until the next day. {draft.dailyLimit} image checks cost about{" "}
-                {usd(worstDay)}.
+                checked until the next day. Text uses at most half of the limit. {draft.dailyLimit}{" "}
+                image checks cost about {usd(worstDay)}.
               </span>
             </div>
           </div>

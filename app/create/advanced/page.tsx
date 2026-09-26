@@ -625,8 +625,11 @@ export default function AdvancedCreatePage() {
       } catch {
         // build throws if the ref is still empty
       }
+      await envelopeNoted.refresh()
     }
-    await envelopeNoted.refresh()
+    // "existing" signs straight from the tap (no network wait, so mobile
+    // wallets still open by themselves); it uses the envelope status read
+    // on load, and an AlreadyNoted error re-reads it for the retry.
     setStep("submit")
     sign.open()
     void tx.submit()

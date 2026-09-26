@@ -42,7 +42,7 @@ import {
   updateProposalDraft,
   type CreateProposalDraft,
 } from "@/lib/db/proposals"
-import { isEnvelopeOnChain } from "@/lib/governance/envelope-status"
+import { anyVersionOnChain, listVersionKeys } from "@/lib/governance/draft-versions"
 import { upsertUserByAddress } from "@/lib/db/users"
 import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
 import { stringifyStable } from "@/lib/r2/json"
@@ -233,15 +233,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 409 },
       )
     }
-    // Rewriting the JSON is only safe while nothing on chain points at the
-    // current bytes. Fails closed: if the chain can't be read, don't write.
+    // Once a batch signed from any stored version landed, the draft must
+    // be linked to its referendum, not staged again. Fails closed: if the
+    // folder or the chain can't be read, don't write.
     let anchored: boolean
     try {
-      anchored = await isEnvelopeOnChain(
-        existingRow.network,
-        existingRow.json_url,
-        existingRow.json_sha256,
-      )
+      anchored = await anyVersionOnChain(existingRow, await listVersionKeys(existingRow))
     } catch {
       return NextResponse.json(
         { ok: false, error: "Could not reach the chain to check this draft - try again." },
