@@ -21,7 +21,8 @@ import { FoundABugModal } from "@/components/layout/found-a-bug-modal"
 import { CHAINS } from "@/lib/chain/chains"
 
 export const metadata = {
-  title: "Docs - Enjin Governance",
+  title: "Docs",
+  alternates: { canonical: "/docs" },
   description:
     "How the Enjin Governance client works, the EGOV1 metadata standard, and integration notes for indexers and wallets.",
 }
@@ -370,10 +371,10 @@ export default function DocsPage() {
               Votes carry a conviction multiplier between 1x and 6x. Higher
               conviction multiplies the vote&apos;s tally weight but locks
               the underlying balance for a period after the referendum
-              resolves. The lock grows with conviction, roughly doubling each
-              step: 1x = 1, 2x = 2, 3x = 4, 4x = 8, 5x = 16, 6x = 32 lock
-              periods. Lock duration is per track-class - the same conviction
-              on BigSpender is much longer than on SmallTipper.
+              resolves. The lock grows with conviction, doubling each step:
+              1x = 1, 2x = 2, 3x = 4, 4x = 8, 5x = 16, 6x = 32 lock periods.
+              One period is set by the runtime (7 days on Enjin and Canary)
+              and is the same on every track, so 6x locks for 224 days.
             </p>
 
             <h3 className="text-base font-semibold text-foreground pt-2">
@@ -665,6 +666,15 @@ export default function DocsPage() {
               <Code>0x</Code>-hex forms).
             </p>
             <p>
+              Sign-in uses the address in the format of the network
+              you&apos;re on: Enjin Relaychain (<Code>en…</Code>) or Canary Relaychain
+              (<Code>cn…</Code>). The client converts whatever the wallet
+              shows - a generic <Code>5…</Code>{" "}address, say - before it
+              asks for a nonce, and the server refuses other formats, so
+              every account belongs to one network and its handle is unique
+              there.
+            </p>
+            <p>
               On success the server returns a 32-byte opaque bearer token in
               the <Code>enjin-governance:session</Code> cookie
               (<Code>HttpOnly</Code>, <Code>Secure</Code> in production,{" "}
@@ -688,7 +698,9 @@ export default function DocsPage() {
               </li>
               <li>
                 <strong>Display name</strong> - up to 80 chars, free
-                text.
+                text. Invisible and text-direction characters are removed
+                and odd spaces become plain ones before it&apos;s checked
+                and stored.
               </li>
               <li>
                 <strong>Bio</strong> - up to 500 chars.
@@ -728,15 +740,26 @@ export default function DocsPage() {
               <Code>author_is_verified</Code> for the UI.
             </p>
             <p>
+              Authors can edit their own comment for 15 minutes after
+              posting via <Code>PATCH /api/comments/&#123;id&#125;</Code>{" "}
+              - same 1-10,000 character limit, not once it&apos;s deleted or
+              hidden by moderators, and not while their posting is paused.
+              The new text replaces the old one (no history is kept),{" "}
+              <Code>edited_at</Code>{" "}is set so the thread shows
+              &quot;edited&quot;, and the automatic text check runs again on
+              the new text.
+            </p>
+            <p>
               Authors can soft-delete their own comments via{" "}
               <Code>DELETE /api/comments/&#123;id&#125;</Code> - the
               row stays with <Code>is_deleted = true</Code> and the body
-              replaced by <Code>[deleted]</Code>. There is no edit endpoint,
-              no moderator delete, no flag/report flow, and no reaction or
-              upvote UI. The <Code>parent_id</Code> column on{" "}
-              <Code>comments</Code> reserves space for threading, but the
-              current UI renders the thread flat by{" "}
-              <Code>created_at</Code>.
+              replaced by <Code>[deleted]</Code>. Moderators don&apos;t
+              delete comments; they can hide them (see{" "}
+              <A href="#content-policy">Content policy &amp; moderation</A>
+              ). There is no reaction or upvote UI. The{" "}
+              <Code>parent_id</Code>{" "}column on <Code>comments</Code>{" "}
+              reserves space for threading, but the current UI renders the
+              thread flat by <Code>created_at</Code>.
             </p>
 
             <h3 className="text-base font-semibold text-foreground pt-2">
@@ -757,8 +780,8 @@ export default function DocsPage() {
             </h3>
             <p>
               No direct messages, no upvotes or reactions, no
-              proposal-agnostic forum, no threaded reply UI, no moderation
-              tools, no comment edit history. The social layer exists to give
+              proposal-agnostic forum, no threaded reply UI, no comment
+              edit history. The social layer exists to give
               voters context and let proposers respond - if the conversation
               outgrows what a flat per-referendum thread can carry, that&apos;s
               the signal to move the discussion to a dedicated venue, not to
