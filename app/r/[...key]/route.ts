@@ -39,13 +39,23 @@ export async function GET(
   }
 
   const { key: segments } = await context.params
-  const key = (segments ?? []).map((s) => decodeURIComponent(s)).join("/")
+  let parts: string[]
+  try {
+    parts = (segments ?? []).map((s) => decodeURIComponent(s))
+  } catch {
+    return notFound() // malformed %-escape
+  }
+  // "." or empty segments would name the same object under a key that
+  // skips the moderation lookup below.
+  if (parts.some((p) => p === "" || p === "." || p.includes("/"))) return notFound()
+  const key = parts.join("/")
   if (!isPublicReadableKey(key)) return notFound()
 
   // Proposal media (and its thumbnail) can be withheld by moderators. The
   // state lives in the DB; the proposal JSON itself is never withheld.
   // Both the key and, for thumbnails, the file it belongs to are checked.
   const isMedia = parseMediaKey(key) != null
+  if (!isMedia && key.includes("/media/")) return notFound()
   if (isMedia && isDbConfigured()) {
     const candidates = key.endsWith(".thumb.webp") ? [key, key.slice(0, -".thumb.webp".length)] : [key]
     for (const candidate of candidates) {

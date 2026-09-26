@@ -11,6 +11,7 @@ import { listStatesForProposal } from "@/lib/db/moderation"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { flagText } from "@/lib/moderation/auto-flag"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { isMissingTable } from "@/lib/db/errors"
 
 export const runtime = "nodejs"
 
@@ -40,11 +41,22 @@ export async function GET(
   }
   const rows = await listCommentsForProposalWithAuthors(parsed.data)
   // Moderated comments: hidden ones lose their text here, on the server;
-  // blurred ones keep it behind a tap in the UI.
+  // blurred ones keep it behind a tap in the UI. If the states can't be
+  // read, nothing is shown rather than something hidden.
+  let stateRows: Awaited<ReturnType<typeof listStatesForProposal>>
+  try {
+    stateRows = await listStatesForProposal(parsed.data)
+  } catch (err) {
+    if (!isMissingTable(err)) {
+      return NextResponse.json(
+        { ok: false, error: "Comments are unavailable right now - try again." },
+        { status: 503 },
+      )
+    }
+    stateRows = [] // migration 011 not applied yet: nothing is moderated
+  }
   const states = new Map(
-    (await listStatesForProposal(parsed.data).catch(() => []))
-      .filter((s) => s.target_type === "comment")
-      .map((s) => [s.target_id, s]),
+    stateRows.filter((s) => s.target_type === "comment").map((s) => [s.target_id, s]),
   )
   return NextResponse.json({
     ok: true,

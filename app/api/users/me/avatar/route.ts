@@ -6,6 +6,7 @@ import { userAvatarKey } from "@/lib/r2/paths"
 import { putObject } from "@/lib/r2/upload"
 import { transcodeAvatar } from "@/lib/r2/avatar"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 
 export const runtime = "nodejs"
 
@@ -21,6 +22,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ ok: false }, { status: 401 })
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.avatarUpload, identity: me.id })
   if (!rl.allowed) {

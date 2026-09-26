@@ -33,7 +33,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         target_type: r.target_type,
         target_id: r.target_id,
         state: r.state,
-        reason: r.reason,
+        // Only a moderator's reason is public; an automatic hold's
+        // explanation is written for moderators.
+        reason: r.source === "automatic" ? null : r.reason,
         source: r.source,
         updated_at: r.updated_at,
       })),

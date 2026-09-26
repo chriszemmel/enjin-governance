@@ -26,6 +26,7 @@ const mod = vi.hoisted(() => ({
   settings: new Map<string, unknown>(),
   notices: [] as Record<string, unknown>[],
   reportCreated: true,
+  failSetState: false,
 }))
 
 vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: async () => auth.user }))
@@ -62,12 +63,21 @@ vi.mock("@/lib/db/moderation", () => ({
     state: string
     reason: string
     source: string
-  }) =>
-    void mod.states.set(`${a.targetType}:${a.targetId}`, {
+  }) => {
+    if (mod.failSetState) throw new Error("db down")
+    mod.states.set(`${a.targetType}:${a.targetId}`, {
       state: a.state,
       reason: a.reason,
       source: a.source,
-    }),
+    })
+  },
+  listStatesForProposal: async () =>
+    [...mod.states.entries()].map(([k, v]) => ({
+      target_type: k.split(":")[0],
+      target_id: k.slice(k.indexOf(":") + 1),
+      ...v,
+      updated_at: new Date(0),
+    })),
   getState: async (t: string, id: string) => mod.states.get(`${t}:${id}`) ?? null,
   insertAction: async (a: Record<string, unknown>) => void mod.actions.push(a),
   insertReport: async (a: Record<string, unknown>) => {
@@ -105,6 +115,7 @@ import { POST as REPORT } from "@/app/api/moderation/reports/route"
 import { POST as ACT } from "@/app/api/moderation/actions/route"
 import { GET as READ } from "@/app/r/[...key]/route"
 import { GET as SETTINGS, PUT as SAVE_SETTINGS } from "@/app/api/moderation/settings/route"
+import { GET as STATES } from "@/app/api/moderation/state/route"
 import { DEFAULT_SCAN_SETTINGS } from "@/lib/moderation/scan-settings"
 
 const NET = "enjin-relay"
@@ -131,6 +142,7 @@ beforeEach(() => {
   mod.reports.length = 0
   mod.notices.length = 0
   mod.reportCreated = true
+  mod.failSetState = false
   mod.suspensions.clear()
   mod.roles.set(`0x${publicKeyOf(MOD)}`, "moderator")
   db.seedProposal({
@@ -173,6 +185,7 @@ describe("reports", () => {
     await REPORT(post("https://gov.test/api/moderation/reports", body))
     expect(mod.notices).toEqual([
       {
+        targetId: FILE,
         targetType: "attachment",
         category: "personal_data",
         severity: "medium",
@@ -427,5 +440,67 @@ describe("content-check settings", () => {
     // 92k in at $1 + 6k out at $5 per million tokens.
     expect(body.month[0]!.cost_usd).toBeCloseTo(0.122)
     expect(JSON.stringify(body)).not.toContain("ANTHROPIC")
+  })
+})
+
+describe("hardening", () => {
+  it("refuses reports on files that don't exist", async () => {
+    signIn(USER)
+    const ghost = `proposals/${NET}/${PID}/media/ffff0000-ghost.png`
+    const res = await REPORT(
+      post("https://gov.test/api/moderation/reports", {
+        target_type: "attachment",
+        target_id: ghost,
+        category: "secrets",
+      }),
+    )
+    expect(res.status).toBe(404)
+    expect(mod.reports).toHaveLength(0)
+    expect(mod.notices).toHaveLength(0)
+  })
+
+  it("never publishes the automatic check's explanation", async () => {
+    mod.states.set(`attachment:${FILE}`, {
+      state: "blurred",
+      reason: "Photo of a passport for Jane Doe",
+      source: "automatic",
+    })
+    const res = await STATES(
+      new NextRequest(`https://gov.test/api/moderation/state?proposal=${PID}`),
+    )
+    const body = (await res.json()) as { items: { reason: string | null }[] }
+    expect(body.items[0]!.reason).toBeNull()
+    expect(JSON.stringify(body)).not.toContain("Jane")
+  })
+
+  it("keeps a file when its removal can't be recorded", async () => {
+    signIn(ADMIN)
+    mod.failSetState = true
+    const res = await act({
+      target_type: "attachment",
+      target_id: FILE,
+      action: "delete_file",
+      reason: "Takedown",
+    }).catch(() => null)
+    expect(res === null || res.status >= 500).toBe(true)
+    expect(bucketMod.bucket.has(FILE)).toBe(true)
+  })
+
+  it("serves nothing for dot segments or malformed escapes", async () => {
+    mod.states.set(`attachment:${FILE}`, { state: "hidden", reason: "secret", source: "moderator" })
+    const [dir, name] = [
+      FILE.slice(0, FILE.lastIndexOf("/")),
+      FILE.slice(FILE.lastIndexOf("/") + 1),
+    ]
+    for (const segs of [
+      [...dir.split("/"), ".", name],
+      [...dir.split("/"), "", name],
+      [...dir.split("/"), "%E0%A4%A"],
+    ]) {
+      const res = await READ(new NextRequest(`https://gov.test/r/${segs.join("/")}`), {
+        params: Promise.resolve({ key: segs }),
+      })
+      expect(res.status).toBe(404)
+    }
   })
 })

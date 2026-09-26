@@ -189,6 +189,18 @@ export async function insertReport(a: {
   return rows.length > 0
 }
 
+/** Open reports on one item (1 means the one just filed is the first). */
+export async function openReportCount(
+  targetType: ModerationTarget,
+  targetId: string,
+): Promise<number> {
+  const rows = (await getSql()`
+    SELECT COUNT(*)::int AS n FROM moderation_reports
+     WHERE target_type = ${targetType} AND target_id = ${targetId} AND status = 'open'
+  `) as { n: number }[]
+  return rows[0]?.n ?? 0
+}
+
 export async function closeReports(
   targetType: ModerationTarget,
   targetId: string,

@@ -8,6 +8,7 @@ import {
   validateHandle,
 } from "@/lib/auth/handle-blocklist"
 import { updateProfile } from "@/lib/db/users"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 
 export const runtime = "nodejs"
 
@@ -39,6 +40,8 @@ export async function GET(): Promise<NextResponse> {
 export async function PATCH(request: NextRequest): Promise<NextResponse> {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ ok: false }, { status: 401 })
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   let parsed
   try {

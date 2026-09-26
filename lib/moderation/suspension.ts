@@ -6,17 +6,29 @@
 import "server-only"
 import { NextResponse } from "next/server"
 import { publicKeyHex } from "@/lib/auth/roles"
+import { isMissingTable } from "@/lib/db/errors"
 import { getSuspension } from "@/lib/db/moderation"
 
 /** The 403 to send back, or null when the account may post. */
 export async function postingSuspendedResponse(user: {
   address: string
 }): Promise<NextResponse | null> {
+  let key: string
+  try {
+    key = publicKeyHex(user.address)
+  } catch {
+    return null // not a wallet address; nothing can be paused
+  }
   let until: Date | null
   try {
-    until = await getSuspension(publicKeyHex(user.address))
-  } catch {
-    return null // migration 011 not applied yet, or an undecodable address
+    until = await getSuspension(key)
+  } catch (err) {
+    if (isMissingTable(err)) return null // migration 011 not applied yet
+    // Can't tell whether the account is paused: don't let it post.
+    return NextResponse.json(
+      { ok: false, error: "Posting is unavailable right now - try again in a moment." },
+      { status: 503 },
+    )
   }
   if (!until) return null
   return NextResponse.json(

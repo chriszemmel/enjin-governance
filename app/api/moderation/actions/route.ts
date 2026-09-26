@@ -125,6 +125,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "That item doesn't exist." }, { status: 404 })
   }
 
+  // The decision is saved first: if that fails, nothing is deleted, and a
+  // deleted file always has its "removed" entry.
+  await setState({
+    targetType: target.type,
+    targetId: target.id,
+    proposalId: target.proposal?.id ?? null,
+    state: stateAfter(action),
+    reason: parsed.reason,
+    source: "moderator",
+  })
+
   if (action === "delete_file") {
     try {
       await deleteObjects([target.id, thumbKeyFor(target.id)])
@@ -135,15 +146,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       )
     }
   }
-
-  await setState({
-    targetType: target.type,
-    targetId: target.id,
-    proposalId: target.proposal?.id ?? null,
-    state: stateAfter(action),
-    reason: parsed.reason,
-    source: "moderator",
-  })
   await closeReports(target.type, target.id, reportStatusAfter(action))
   await insertAction({
     targetType: target.type,

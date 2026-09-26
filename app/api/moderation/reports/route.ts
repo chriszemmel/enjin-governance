@@ -10,11 +10,13 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { isDbConfigured } from "@/lib/db/client"
+import { isMissingTable } from "@/lib/db/errors"
 import { insertReport } from "@/lib/db/moderation"
 import { notifyNewReport } from "@/lib/moderation/notify"
 import { REPORT_CATEGORIES } from "@/lib/moderation/policy"
 import { resolveTarget } from "@/lib/moderation/targets"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { objectExists } from "@/lib/r2/upload"
 
 export const runtime = "nodejs"
 
@@ -51,25 +53,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const target = await resolveTarget(parsed.target_type, parsed.target_id)
-  if (!target) {
+  // A file must exist to be reported; made-up keys would only fill the queue.
+  const missingFile =
+    target?.type === "attachment" && !(await objectExists(target.id).catch(() => false))
+  if (!target || missingFile) {
     return NextResponse.json({ ok: false, error: "That item doesn't exist." }, { status: 404 })
   }
 
   const severity =
     parsed.category === "secrets" || parsed.category === "illegal" ? "high" : "medium"
-  const created = await insertReport({
-    targetType: target.type,
-    targetId: target.id,
-    proposalId: target.proposal?.id ?? null,
-    source: "user",
-    reporterUserId: me.id,
-    category: parsed.category,
-    severity,
-    note: parsed.note?.trim() || null,
-    details: null,
-  })
+  let created: boolean
+  try {
+    created = await insertReport({
+      targetType: target.type,
+      targetId: target.id,
+      proposalId: target.proposal?.id ?? null,
+      source: "user",
+      reporterUserId: me.id,
+      category: parsed.category,
+      severity,
+      note: parsed.note?.trim() || null,
+      details: null,
+    })
+  } catch (err) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: isMissingTable(err)
+          ? "Reporting isn't available yet."
+          : "The report couldn't be saved - try again.",
+      },
+      { status: 503 },
+    )
+  }
   if (created) {
     await notifyNewReport({
+      targetId: target.id,
       targetType: target.type,
       category: parsed.category,
       severity,

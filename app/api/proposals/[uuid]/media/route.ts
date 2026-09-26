@@ -37,7 +37,7 @@ import {
   processProposalImage,
   scanCopy,
 } from "@/lib/r2/media-processing"
-import { checkUpload, queueBlurredUpload } from "@/lib/moderation/auto-flag"
+import { checkUpload, holdUpload, reportHeldUpload } from "@/lib/moderation/auto-flag"
 import { ownMediaKey, proposalMediaKey, uniqueMediaName } from "@/lib/r2/paths"
 import { sniffMediaMime } from "@/lib/r2/sniff"
 import { deleteObjects, putObject, sha256Hex } from "@/lib/r2/upload"
@@ -220,6 +220,26 @@ export async function POST(
   const storedName = uniqueMediaName(file.name || "file", randomUUID().slice(0, 8))
   const key = proposalMediaKey(network, proposalUuid, storedName)
 
+  // A file the check wants a person to see first is held before it is
+  // stored, so it is never served; if the hold can't be saved, refuse it.
+  const heldFor =
+    check.action === "store_blurred"
+      ? { proposalId: (await getProposalById(proposalUuid).catch(() => null))?.id ?? null }
+      : null
+  if (heldFor) {
+    try {
+      await holdUpload(key, heldFor.proposalId)
+    } catch {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "This file needs a moderator's review but couldn't be queued. Try again.",
+        },
+        { status: 503 },
+      )
+    }
+  }
+
   try {
     const result = await putObject({
       key,
@@ -236,9 +256,8 @@ export async function POST(
         cacheControl: "public, max-age=31536000, immutable",
       }).catch(() => null)
     }
-    if (check.action === "store_blurred") {
-      const existing = isDbConfigured() ? await getProposalById(proposalUuid).catch(() => null) : null
-      await queueBlurredUpload(result.key, existing?.id ?? null, check.outcome).catch(() => null)
+    if (heldFor && check.action === "store_blurred") {
+      await reportHeldUpload(result.key, heldFor.proposalId, check.outcome).catch(() => null)
     }
     return NextResponse.json({
       ok: true,

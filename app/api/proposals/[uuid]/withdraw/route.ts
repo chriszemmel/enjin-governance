@@ -20,6 +20,7 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById, setProposalWithdrawn } from "@/lib/db/proposals"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 
 export const runtime = "nodejs"
 
@@ -58,6 +59,8 @@ export async function POST(
       { status: 401 },
     )
   }
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   const existing = await getProposalById(idParse.data)
   if (!existing) {

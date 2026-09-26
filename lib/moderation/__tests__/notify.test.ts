@@ -7,10 +7,17 @@ const env = vi.hoisted(() => ({
   TELEGRAM_MODERATION_CHAT_ID: undefined as string | undefined,
 }))
 vi.mock("@/lib/env", () => ({ env }))
+const gate = vi.hoisted(() => ({ open: 1, allowed: true }))
+vi.mock("@/lib/db/moderation", () => ({ openReportCount: async () => gate.open }))
+vi.mock("@/lib/rate-limit", () => ({
+  RATE_LIMITS: { moderationNotice: {} },
+  enforceRateLimit: async () => ({ allowed: gate.allowed }),
+}))
 
 import { formatReportNotice, notifyNewReport } from "@/lib/moderation/notify"
 
 const notice = {
+  targetId: "c1",
   targetType: "comment" as const,
   category: "scam" as const,
   severity: "medium" as const,
@@ -27,6 +34,8 @@ describe("moderation Telegram notice", () => {
     env.TELEGRAM_BOT_TOKEN = "bot-token"
     env.TELEGRAM_CHAT_ID = "-100security"
     env.TELEGRAM_MODERATION_CHAT_ID = undefined
+    gate.open = 1
+    gate.allowed = true
     vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
       sent.push({ url, body: JSON.parse(init.body) })
       return new Response("{}", { status: 200 })
@@ -60,6 +69,15 @@ describe("moderation Telegram notice", () => {
     env.TELEGRAM_MODERATION_CHAT_ID = "-100mods"
     await notifyNewReport(notice)
     expect(sent[1]!.body.chat_id).toBe("-100mods")
+  })
+
+  it("sends one notice per item, and stops at the hourly ceiling", async () => {
+    gate.open = 2 // someone already reported this item
+    await notifyNewReport(notice)
+    gate.open = 1
+    gate.allowed = false
+    await notifyNewReport(notice)
+    expect(sent).toHaveLength(0)
   })
 
   it("stays quiet when switched off or not configured, and never throws", async () => {

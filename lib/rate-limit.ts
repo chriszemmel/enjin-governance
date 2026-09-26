@@ -219,6 +219,9 @@ export const RATE_LIMITS = {
   // Reports are cheap to send and each lands in a human queue.
   moderationReport: { scope: "moderation-report", limit: 10, windowMs: 600_000 },
   moderationAction: { scope: "moderation-action", limit: 60, windowMs: 60_000 },
+  // Telegram notices about new reports, across all users: a flood of
+  // reports must not flood the moderators' chat.
+  moderationNotice: { scope: "moderation-notice", limit: 20, windowMs: 3_600_000 },
   // Public, unauthenticated - keyed on IP. A handful per 10 min is plenty for
   // a genuine reporter while stopping a flood of the disclosures table.
   securityDisclosure: { scope: "security-disclosure", limit: 5, windowMs: 600_000 },

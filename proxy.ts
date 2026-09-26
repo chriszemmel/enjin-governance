@@ -60,7 +60,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (
     pathname === "/unlock" ||
     pathname === "/api/unlock" ||
-    pathname.startsWith("/brand/")
+    pathname.startsWith("/brand/") ||
+    // Who runs the site and how data is handled must stay readable.
+    pathname === "/imprint" ||
+    pathname === "/privacy" ||
+    pathname === "/terms"
   ) {
     return NextResponse.next()
   }

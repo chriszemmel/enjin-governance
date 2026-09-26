@@ -3,12 +3,16 @@
  * watch the queue. Goes to TELEGRAM_MODERATION_CHAT_ID, or TELEGRAM_CHAT_ID
  * when that is unset; "OFF" turns it off.
  *
- * The notice only says where to look - never who reported, their note or
- * the content itself.
+ * One notice per item: further reports on an item that is already in
+ * the queue add nothing new. A global ceiling keeps a flood of reports
+ * from flooding the chat. The notice only says where to look - never who
+ * reported, their note or the content itself.
  */
 
 import "server-only"
+import { openReportCount } from "@/lib/db/moderation"
 import { env } from "@/lib/env"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import { sendTelegramMessage } from "@/lib/telegram/send"
 import { REPORT_CATEGORY_LABELS, type ModerationTarget, type ReportCategory } from "./policy"
 
@@ -44,8 +48,15 @@ export function formatReportNotice(n: ReportNotice, appUrl: string): string {
 }
 
 /** Best-effort; never throws. */
-export async function notifyNewReport(n: ReportNotice): Promise<void> {
+export async function notifyNewReport(n: ReportNotice & { targetId: string }): Promise<void> {
   const chat = env.TELEGRAM_MODERATION_CHAT_ID ?? env.TELEGRAM_CHAT_ID
-  if (!chat || chat.trim().toUpperCase() === "OFF") return
+  if (!chat || chat.trim().toUpperCase() === "OFF" || !env.TELEGRAM_BOT_TOKEN) return
+  try {
+    if ((await openReportCount(n.targetType, n.targetId)) > 1) return
+    const rl = await enforceRateLimit({ ...RATE_LIMITS.moderationNotice, identity: "all" })
+    if (!rl.allowed) return
+  } catch {
+    return
+  }
   await sendTelegramMessage(chat, formatReportNotice(n, env.NEXT_PUBLIC_APP_URL))
 }

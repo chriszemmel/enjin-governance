@@ -73,22 +73,33 @@ function detailsOf(outcome: ScanOutcome) {
       }
 }
 
-/** Blur a just-stored upload and queue it for a moderator. */
-export async function queueBlurredUpload(
+const HELD_REASON = "Held for a moderator by the automatic check."
+
+/**
+ * Hold an upload for a moderator. Called before the file is stored, so it
+ * is never served, not even for a moment; throws if the hold can't be
+ * saved, and the upload must then be refused.
+ */
+export async function holdUpload(key: string, proposalId: string | null) {
+  await setState({
+    targetType: "attachment",
+    targetId: key,
+    proposalId,
+    state: "blurred",
+    // Public; the model's explanation stays in the report for moderators.
+    reason: HELD_REASON,
+    source: "automatic",
+  })
+}
+
+/** Log a held upload publicly and put it in the moderators' queue. */
+export async function reportHeldUpload(
   key: string,
   proposalId: string | null,
   outcome: ScanOutcome,
 ) {
   const details = detailsOf(outcome)
   const verdict = outcome.kind === "verdict" ? outcome.verdict : null
-  await setState({
-    targetType: "attachment",
-    targetId: key,
-    proposalId,
-    state: "blurred",
-    reason: details.explanation,
-    source: "automatic",
-  })
   // On the public log too, like every other state change.
   await insertAction({
     targetType: "attachment",
@@ -97,7 +108,7 @@ export async function queueBlurredUpload(
     network: key.split("/")[1] ?? null,
     referendumIndex: null,
     action: "blur",
-    reason: "Held for a moderator by the automatic check.",
+    reason: HELD_REASON,
     source: "automatic",
     actorPublicKey: null,
     actorLabel: "automatic check",
@@ -117,6 +128,7 @@ export async function queueBlurredUpload(
   })
   if (created) {
     await notifyNewReport({
+      targetId: key,
       targetType: "attachment",
       category,
       severity,
@@ -161,6 +173,7 @@ export function flagText(a: {
     }).catch(() => false)
     if (created) {
       await notifyNewReport({
+        targetId: a.targetId,
         targetType: a.targetType,
         category,
         severity,
