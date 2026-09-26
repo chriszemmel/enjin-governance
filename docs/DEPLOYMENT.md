@@ -88,10 +88,12 @@ if migration count exceeds ~20.
 1. Create an R2 bucket at <https://dash.cloudflare.com> (default name
    in env is `enjin-governance`).
 2. Create an R2 API token with read + write on the bucket.
-3. Either enable the bucket's public `r2.dev` URL or attach a custom
-   domain. Both work; the custom domain is faster and survives
-   rate-limited public dev URLs.
-4. Paste the credentials + the public base URL into Vercel.
+3. Public access to the bucket is not needed: the app serves every file
+   through its own `/r` route (see below). Keep it off unless older
+   proposals depend on it (see "Hidden files and the bucket's own URL").
+4. Paste the credentials into Vercel. `R2_PUBLIC_URL` is still required
+   by the config check; set it to the bucket's public URL if it has one,
+   otherwise to any placeholder `https://` URL.
 
 CORS isn't required - every R2 write goes through our API routes
 server-side.
@@ -112,6 +114,22 @@ the link still resolves), and off the rate-limited `r2.dev` URL.
 origin is configured. Because the EGOV1 `u` is baked in at submit time,
 make sure `NEXT_PUBLIC_APP_URL` is the canonical production domain before
 any mainnet proposal is filed.
+
+### Hidden files and the bucket's own URL
+
+Moderation (blurring, hiding, holds by the automatic check) is enforced
+by `/r`. A file stays reachable through the bucket's own public URL
+(`r2.dev` or a custom domain) if one is enabled, because Cloudflare
+serves it directly. So:
+
+- If no proposal links to the bucket URL, turn public access off.
+- Proposals filed before 28 June 2026 pinned the bucket URL in their
+  EGOV1 record, so turning it off breaks their verification. In that
+  case keep a custom domain (not `r2.dev`) and add a Cloudflare WAF rule
+  on it that blocks `/proposals/*/media/*`, so only the JSON stays
+  public there. `/r` keeps serving media with moderation applied.
+- Legal takedowns use "Delete file", which removes the object itself and
+  works either way.
 
 ## Reown (WalletConnect Cloud)
 
