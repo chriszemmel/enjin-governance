@@ -42,6 +42,7 @@ import { flagText } from "@/lib/moderation/auto-flag"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import { deleteObjects, listObjectKeys, putJson, readObjectText } from "@/lib/r2/upload"
+import { checkAttachments, listedAttachments } from "@/lib/governance/attachment-check"
 import { anyVersionOnChain } from "@/lib/governance/draft-versions"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
@@ -335,17 +336,44 @@ export async function PATCH(
 
   // The JSON is rebuilt from the DB row plus the edited text. The 1.2.0
   // call / enactment sections only live in the JSON, so carry them over
-  // from the current version (only this server writes that object).
+  // from the current version (only this server writes that object). If it
+  // can't be read, don't save: the edit would drop those sections.
+  let current: string | null
+  try {
+    current = await readObjectText(existing.json_key)
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Could not read the current proposal - try again." },
+      { status: 503 },
+    )
+  }
   let carried: Pick<ProposalJson, "call" | "enactment"> | null = null
   try {
-    const current = await readObjectText(existing.json_key)
     const prev = current ? (JSON.parse(current) as Partial<ProposalJson>) : null
     if (prev && (prev.call != null || prev.enactment != null)) {
       carried = { call: prev.call ?? null, enactment: prev.enactment ?? null }
     }
   } catch {
-    // Unreadable current JSON: the edit still saves, without the section.
+    // Not JSON: nothing to carry over.
   }
+
+  // Same check as the draft route: size, type and hash must be the stored
+  // file's own. A file removed since (by its proposer or a moderator) stays
+  // listed with the details the current version saved.
+  const checked = await checkAttachments(
+    parsed.attachments.map((a, i) => ({
+      key: attachmentKeys[i]!,
+      name: a.name,
+      sha256: a.sha256,
+      content_type: a.content_type,
+      size_bytes: a.size_bytes,
+    })),
+    listedAttachments(current),
+  )
+  if (!checked.ok) {
+    return NextResponse.json({ ok: false, error: checked.error }, { status: checked.status })
+  }
+  const names = checked.attachments.map((a) => a.name)
 
   const proposalJson: ProposalJson = {
     schema: PROPOSAL_SCHEMA,
@@ -365,7 +393,7 @@ export async function PATCH(
         : null,
     attachments: parsed.attachments.map(
       (a, i): ProposalAttachmentMeta => ({
-        name: a.name,
+        name: names[i]!,
         url: attachmentUrls[i]!,
         sha256: a.sha256,
         content_type: a.content_type,
@@ -418,7 +446,7 @@ export async function PATCH(
     (a, i) => ({
       bucketKey: attachmentKeys[i]!,
       url: attachmentUrls[i]!,
-      filename: a.name,
+      filename: names[i]!,
       contentType: a.content_type,
       sizeBytes: a.size_bytes,
       sha256: a.sha256,

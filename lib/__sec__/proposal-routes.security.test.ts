@@ -94,9 +94,17 @@ function draftBody(over: Record<string, unknown>) {
     ...over,
   }
 }
+/** An attachment as the upload route described it: the stored file's own details. */
 function att(bucket_key: string, name = "x.png") {
-  return { bucket_key, name, url: "https://fake.local/r/" + bucket_key, sha256: "a".repeat(64), content_type: "image/png", size_bytes: 100 }
+  const stored = bucketMod.bucket.get(bucket_key.replace(/^r\//, ""))
+  if (!stored) {
+    return { bucket_key, name, url: "https://fake.local/r/" + bucket_key, sha256: "a".repeat(64), content_type: "image/png", size_bytes: 100 }
+  }
+  const body = Buffer.from(stored.body, "utf8")
+  return { bucket_key, name, url: "https://fake.local/r/" + bucket_key, sha256: bucketMod.sha256Hex(stored.body), content_type: stored.contentType, size_bytes: body.length }
 }
+/** Store an uploaded image, as the media route would. */
+const upload = (key: string, body = "IMG") => bucketMod.bucket.set(key, { body, contentType: "image/png" })
 function req(url: string, method: string, body?: unknown) {
   return new NextRequest(url, {
     method,
@@ -244,6 +252,7 @@ describe("draft POST", () => {
 
   it("still saves a normal draft with its own attachment", async () => {
     const mediaKey = `proposals/${NET}/${OWN_ID}/media/roadmap.png`
+    upload(mediaKey)
     const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [att(mediaKey, "roadmap.png")] })))
     expect(res.status).toBe(200)
     expect(db.attachments.map((a) => a.bucket_key)).toContain(mediaKey)
@@ -251,6 +260,7 @@ describe("draft POST", () => {
 
   it("writes attachment URLs built from the key, never the browser's URL", async () => {
     const mediaKey = `proposals/${NET}/${OWN_ID}/media/ab12cd34-roadmap.png`
+    upload(mediaKey)
     const sneaky = { ...att(mediaKey, "roadmap.png"), url: "https://tracker.example/pixel.png" }
     const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [sneaky] })))
     expect(res.status).toBe(200)
@@ -447,9 +457,89 @@ describe("PATCH (edit)", () => {
 
   it("accepts the edit page's r/-prefixed key and stores the real key", async () => {
     const real = `proposals/${NET}/${OWN_ONCHAIN_ID}/media/pic.png`
+    upload(real)
     const res = await PATCH(req(`https://gov.test/api/proposals/${OWN_ONCHAIN_ID}`, "PATCH", patchBody([att(`r/${real}`, "pic.png")])), ctx(OWN_ONCHAIN_ID))
     expect(res.status).toBe(200)
     expect(db.attachments.filter((a) => a.proposal_id === OWN_ONCHAIN_ID).map((a) => a.bucket_key)).toEqual([real])
+  })
+})
+
+describe("attachment details", () => {
+  const media = (id: string, name: string) => `proposals/${NET}/${id}/media/${name}`
+  const stage = (attachments: unknown[], over: Record<string, unknown> = {}) =>
+    POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments, ...over })))
+  const errorOf = async (res: Response) => ((await res.json()) as { error: string }).error
+
+  it("refuses size, type or hash the stored file doesn't have, writing nothing", async () => {
+    const key = media(OWN_ID, "ab12cd34-chart.png")
+    upload(key)
+    for (const lie of [{ size_bytes: 99 }, { content_type: "application/pdf" }, { sha256: "f".repeat(64) }]) {
+      const res = await stage([{ ...att(key, "chart.png"), ...lie }])
+      expect(res.status).toBe(400)
+      expect(await errorOf(res)).toContain("don't match the uploaded file")
+    }
+    expect(folderKeys(OWN_ID)).toEqual([key])
+    expect(db.proposals.has(OWN_ID)).toBe(false)
+  })
+
+  it("refuses a file that isn't stored, unless the saved version already lists it", async () => {
+    const gone = media(OWN_ID, "ab12cd34-gone.png")
+    const res = await stage([att(gone, "gone.png")])
+    expect(res.status).toBe(400)
+    expect(await errorOf(res)).toContain("no longer stored")
+
+    // Saved with the file, which a moderator removed since: re-staging keeps listing it.
+    upload(gone)
+    const listed = att(gone, "gone.png")
+    expect((await stage([listed])).status).toBe(200)
+    bucketMod.bucket.delete(gone)
+    const again = await stage([listed], { expected_sha256: db.proposals.get(OWN_ID)!.json_sha256 })
+    expect(again.status).toBe(200)
+    expect(savedJson(OWN_ID).attachments[0]).toMatchObject({ name: "gone.png", sha256: listed.sha256 })
+  })
+
+  it("hashes a file stored before hashes were recorded, and trusts the hash a saved version gave it", async () => {
+    const old = media(OWN_ID, "ab12cd34-old.png")
+    bucketMod.bucket.set(old, { body: "OLD", contentType: "image/png", sha256: null })
+    const right = att(old, "old.png")
+    expect((await stage([{ ...right, sha256: "f".repeat(64) }])).status).toBe(400)
+    expect((await stage([right])).status).toBe(200)
+    // Once saved, later saves take that hash instead of downloading the file again.
+    bucketMod.bucket.set(old, { body: "NEW", contentType: "image/png", sha256: null })
+    expect((await stage([right], { expected_sha256: db.proposals.get(OWN_ID)!.json_sha256 })).status).toBe(200)
+  })
+
+  it("cleans names of characters that disguise them", async () => {
+    const key = media(OWN_ID, "ab12cd34-invoice.png")
+    upload(key)
+    expect((await stage([att(key, "invoice\u202Egnp.exe\u0000 ")])).status).toBe(200)
+    expect(savedJson(OWN_ID).attachments[0].name).toBe("invoicegnp.exe")
+    expect(db.attachments.find((a) => a.bucket_key === key)?.filename).toBe("invoicegnp.exe")
+  })
+
+  it("fails closed when storage can't be read", async () => {
+    const key = media(OWN_ID, "ab12cd34-chart.png")
+    upload(key)
+    bucketMod.faults.stat = true
+    expect((await stage([att(key)])).status).toBe(503)
+    expect(db.proposals.has(OWN_ID)).toBe(false)
+  })
+
+  it("lets an edit keep listing a file removed from a published proposal", async () => {
+    const key = proposalJsonKey(NET, OWN_ONCHAIN_ID)
+    db.seedProposal({ id: OWN_ONCHAIN_ID, network: NET, proposer_address: ATTACKER, status: "on_chain", referendum_index: 7, json_key: key })
+    const removed = media(OWN_ONCHAIN_ID, "ab12cd34-removed.png")
+    upload(removed)
+    const listed = att(removed, "removed.png")
+    bucketMod.bucket.delete(removed)
+    bucketMod.bucket.set(key, {
+      body: JSON.stringify({ attachments: [{ ...listed, url: `https://fake.local/r/${removed}` }] }),
+      contentType: "application/json",
+    })
+    const patch = (attachments: unknown[]) =>
+      PATCH(req(`https://gov.test/api/proposals/${OWN_ONCHAIN_ID}`, "PATCH", { title: "Edited", summary: null, body_markdown: "x", attachments }), ctx(OWN_ONCHAIN_ID))
+    expect((await patch([listed])).status).toBe(200)
+    expect((await patch([{ ...listed, size_bytes: 5 }])).status).toBe(400)
   })
 })
 

@@ -52,6 +52,9 @@ export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
       ContentType: args.contentType,
       CacheControl: args.cacheControl ?? "public, max-age=31536000, immutable",
       ChecksumSHA256: Buffer.from(sha256, "hex").toString("base64"),
+      // Kept with the object so a later save can check the hash a
+      // proposal claims for it without downloading it (statObject).
+      Metadata: { sha256 },
     }),
   )
   return {
@@ -124,6 +127,42 @@ export async function readObjectText(key: string): Promise<string | null> {
   try {
     const res = await getR2Client().send(new GetObjectCommand({ Bucket: r2Bucket(), Key: key }))
     return res.Body ? await res.Body.transformToString("utf-8") : null
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    if (name === "NoSuchKey" || name === "NotFound") return null
+    throw err
+  }
+}
+
+export type StoredObjectInfo = {
+  sizeBytes: number
+  contentType: string | null
+  /** Recorded at upload; null for files stored before that was done. */
+  sha256: string | null
+}
+
+/** Size, type and recorded hash of an object (HEAD), or null if it doesn't exist. */
+export async function statObject(key: string): Promise<StoredObjectInfo | null> {
+  try {
+    const res = await getR2Client().send(new HeadObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    const sha256 = res.Metadata?.sha256
+    return {
+      sizeBytes: res.ContentLength ?? 0,
+      contentType: res.ContentType ?? null,
+      sha256: sha256 && /^[0-9a-f]{64}$/.test(sha256) ? sha256 : null,
+    }
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    if (name === "NotFound" || name === "NoSuchKey") return null
+    throw err
+  }
+}
+
+/** Read a stored object's bytes, or null when it doesn't exist. */
+export async function readObjectBytes(key: string): Promise<Buffer | null> {
+  try {
+    const res = await getR2Client().send(new GetObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    return res.Body ? Buffer.from(await res.Body.transformToByteArray()) : null
   } catch (err) {
     const name = (err as { name?: string } | null)?.name
     if (name === "NoSuchKey" || name === "NotFound") return null

@@ -5,14 +5,22 @@
  */
 import { createHash } from "node:crypto"
 
-export type BucketEntry = { body: string; contentType: string }
+/**
+ * `sha256` is the hash recorded at upload (object metadata): computed from
+ * the body when absent, and null for a file stored before hashes were
+ * recorded.
+ */
+export type BucketEntry = { body: string; contentType: string; sha256?: string | null }
 
 export const bucket = new Map<string, BucketEntry>()
 export const deleteCalls: string[][] = []
+/** Make HEAD requests fail, as when storage can't be reached. */
+export const faults = { stat: false }
 
 export function resetBucket(): void {
   bucket.clear()
   deleteCalls.length = 0
+  faults.stat = false
 }
 
 function sha256Hex(s: string): string {
@@ -84,3 +92,23 @@ export async function listObjectKeys(prefix: string): Promise<string[]> {
 export async function objectExists(key: string): Promise<boolean> {
   return bucket.has(key)
 }
+
+export async function statObject(
+  key: string,
+): Promise<{ sizeBytes: number; contentType: string | null; sha256: string | null } | null> {
+  if (faults.stat) throw new Error("storage unreachable")
+  const entry = bucket.get(key)
+  if (!entry) return null
+  return {
+    sizeBytes: Buffer.byteLength(entry.body, "utf8"),
+    contentType: entry.contentType,
+    sha256: entry.sha256 === undefined ? sha256Hex(entry.body) : entry.sha256,
+  }
+}
+
+export async function readObjectBytes(key: string): Promise<Buffer | null> {
+  const entry = bucket.get(key)
+  return entry ? Buffer.from(entry.body, "utf8") : null
+}
+
+export { sha256Hex }

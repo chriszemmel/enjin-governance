@@ -42,12 +42,13 @@ import {
   updateProposalDraft,
   type CreateProposalDraft,
 } from "@/lib/db/proposals"
+import { checkAttachments, listedAttachments } from "@/lib/governance/attachment-check"
 import { anyVersionOnChain, listVersionKeys } from "@/lib/governance/draft-versions"
 import { upsertUserByAddress } from "@/lib/db/users"
 import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
 import { stringifyStable } from "@/lib/r2/json"
 import { ownMediaKey, proposalJsonVersionKey, publicUrlFor } from "@/lib/r2/paths"
-import { putJson } from "@/lib/r2/upload"
+import { putJson, readObjectText } from "@/lib/r2/upload"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import {
@@ -262,7 +263,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // proposal's own media folder. The URL written into the JSON is built from
   // that key, never taken from the browser, so a proposal can only ever
   // point at its own files.
-  const attachments: { key: string; att: (typeof parsed.attachments)[number] }[] = []
+  const claimed: { key: string; att: (typeof parsed.attachments)[number] }[] = []
   for (const att of parsed.attachments) {
     const ownKey = ownMediaKey(att.bucket_key, parsed.network, parsed.proposal_id)
     if (!ownKey) {
@@ -271,8 +272,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 400 },
       )
     }
-    attachments.push({ key: ownKey, att: { ...att, url: publicUrlFor(publicAssetBase(), ownKey) } })
+    claimed.push({ key: ownKey, att: { ...att, url: publicUrlFor(publicAssetBase(), ownKey) } })
   }
+
+  // Size, type and hash must be the stored file's own, not just what the
+  // browser says. Compared with the version being replaced, so a file
+  // removed since it was saved can stay listed.
+  let savedJson: string | null = null
+  if (existingRow) {
+    try {
+      savedJson = await readObjectText(existingRow.json_key)
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Could not check the attachments - try again." },
+        { status: 503 },
+      )
+    }
+  }
+  const checked = await checkAttachments(
+    claimed.map(({ key, att }) => ({
+      key,
+      name: att.name,
+      sha256: att.sha256,
+      content_type: att.content_type,
+      size_bytes: att.size_bytes,
+    })),
+    listedAttachments(savedJson),
+  )
+  if (!checked.ok) {
+    return NextResponse.json({ ok: false, error: checked.error }, { status: checked.status })
+  }
+  const attachments = claimed.map(({ key, att }, i) => ({
+    key,
+    att: { ...att, name: checked.attachments[i]!.name },
+  }))
 
   // The call section describes what the referendum enacts, so it must agree
   // with the preimage the draft records.

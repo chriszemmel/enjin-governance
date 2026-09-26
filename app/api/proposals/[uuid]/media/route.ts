@@ -31,6 +31,7 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById, listAttachments } from "@/lib/db/proposals"
+import { cleanAttachmentName } from "@/lib/governance/attachment-check"
 import { anyVersionListsFile, listVersionKeys } from "@/lib/governance/draft-versions"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import { isR2Configured } from "@/lib/r2/client"
@@ -274,7 +275,7 @@ export async function POST(
       sha256: result.sha256,
       size_bytes: result.sizeBytes,
       content_type: sniffed,
-      name: file.name || "file",
+      name: cleanAttachmentName(file.name || "file"),
       precomputed_sha256_matches: result.sha256 === sha256Hex(body),
     })
   } catch (e) {
