@@ -216,6 +216,9 @@ export const RATE_LIMITS = {
   proposalDraft: { scope: "proposal-draft", limit: 10, windowMs: 60_000 },
   mediaUpload: { scope: "media-upload", limit: 30, windowMs: 300_000 },
   avatarUpload: { scope: "avatar-upload", limit: 10, windowMs: 300_000 },
+  // Reports are cheap to send and each lands in a human queue.
+  moderationReport: { scope: "moderation-report", limit: 10, windowMs: 600_000 },
+  moderationAction: { scope: "moderation-action", limit: 60, windowMs: 60_000 },
   // Public, unauthenticated - keyed on IP. A handful per 10 min is plenty for
   // a genuine reporter while stopping a flood of the disclosures table.
   securityDisclosure: { scope: "security-disclosure", limit: 5, windowMs: 600_000 },

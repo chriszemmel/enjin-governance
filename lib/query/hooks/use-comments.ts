@@ -16,6 +16,8 @@ export type Comment = {
   is_deleted: boolean
   edited_at: string | null
   created_at: string
+  /** Set when moderators blurred or hid the comment. */
+  moderation?: { state: "visible" | "blurred" | "hidden" | "removed"; reason: string | null } | null
 }
 
 export function useComments(proposalUuid: string | null | undefined) {

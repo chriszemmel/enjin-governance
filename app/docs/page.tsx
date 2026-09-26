@@ -848,6 +848,50 @@ export default function DocsPage() {
             </ul>
           </Section>
 
+          <Section id="content-policy" title="Content policy & moderation" icon={<ShieldCheck />}>
+            <p>
+              Proposals, images and comments are public. These aren&apos;t allowed:
+            </p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                <strong>Secrets:</strong> wallet recovery phrases, private keys or
+                screenshots showing them - anyone could take the funds.
+              </li>
+              <li>
+                <strong>Personal data</strong> of others: ID documents, home addresses,
+                phone numbers, private photos.
+              </li>
+              <li>
+                <strong>Scams and phishing:</strong> fake airdrops, impersonation, links
+                that ask for a wallet signature or seed.
+              </li>
+              <li>
+                <strong>Sexual or violent</strong> content, and harassment or hate.
+              </li>
+              <li>Illegal content and spam.</li>
+            </ul>
+            <p>
+              <strong>How it works.</strong> Anyone signed in can report a proposal
+              (the &quot;…&quot; menu on its About card), an image (in the image
+              viewer) or a comment. Moderators review reports in one queue and can
+              keep, blur, hide or restore content; only admins can delete a file, for
+              legal takedowns, or pause someone&apos;s posting. Every decision needs a
+              reason and appears in the{" "}
+              <Link href="/moderation-log" className="text-primary hover:text-purple-dim">
+                public moderation log
+              </Link>
+              . Proposers can remove their own attachments at any time.
+            </p>
+            <p>
+              <strong>What moderation never does:</strong> nobody can rewrite someone
+              else&apos;s text, and referenda, votes and on-chain records are never
+              touched. A proposal&apos;s <Code>proposal.json</Code> stays byte-identical,
+              so its EGOV1 verification keeps working even when an image is hidden or
+              removed. Hidden images are no longer served by this site; deleted files
+              are removed from storage itself.
+            </p>
+          </Section>
+
           <Section id="links" title="Links">
             <ul className="space-y-2">
               <li>

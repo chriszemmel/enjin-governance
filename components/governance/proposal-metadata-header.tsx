@@ -2,8 +2,18 @@
 
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { FileJson } from "lucide-react"
+import { FileJson, Flag, MoreHorizontal } from "lucide-react"
 import { ProposalBody } from "@/components/governance/proposal-body"
+import { ReportDialog } from "@/components/moderation/report-dialog"
+import { HiddenProposalBanner } from "@/components/moderation/moderation-notes"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { useProposalModeration } from "@/lib/query/hooks/use-moderation"
+import type { ModerationTarget } from "@/lib/moderation/policy"
 import { ProposalSourceModal } from "@/components/governance/proposal-source-modal"
 import type { ChainConfig } from "@/lib/chain/chains"
 import type { ProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
@@ -77,6 +87,12 @@ export function ProposalMetadataHeader({ metadata, chain }: Props) {
     () => resolveProposalMedia(json?.attachments ?? [], metadata.network, metadata.id),
     [json?.attachments, metadata.network, metadata.id],
   )
+  const moderationQuery = useProposalModeration(metadata.id)
+  const moderation = moderationQuery.data
+  const hiddenInfo = moderation?.proposal?.state === "hidden" ? moderation.proposal : null
+  const [showHidden, setShowHidden] = useState(false)
+  const [reporting, setReporting] = useState<{ type: ModerationTarget; id: string } | null>(null)
+
   const hasBody = Boolean(json?.body_markdown)
   const hasAttachments = media.length > 0
   // The hero card now owns title + summary. If the JSON brings nothing
@@ -90,14 +106,39 @@ export function ProposalMetadataHeader({ metadata, chain }: Props) {
     <div className="rounded-2xl bg-card border border-border p-6 space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-semibold text-foreground">About</h2>
-        <SourceBadge
-          verified={verified}
-          edited={edited}
-          loading={jsonQuery.isLoading}
-          error={jsonQuery.isError}
-          onClick={() => setSourceOpen(true)}
-        />
+        <div className="flex items-center gap-1.5">
+          <SourceBadge
+            verified={verified}
+            edited={edited}
+            loading={jsonQuery.isLoading}
+            error={jsonQuery.isError}
+            onClick={() => setSourceOpen(true)}
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground"
+              aria-label="More"
+            >
+              <MoreHorizontal className="w-3.5 h-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setReporting({ type: "proposal", id: metadata.id })}>
+                <Flag className="w-3.5 h-3.5" />
+                Report this proposal
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
+
+      {hiddenInfo && (
+        <HiddenProposalBanner
+          info={hiddenInfo}
+          shown={showHidden}
+          onShow={() => setShowHidden(true)}
+        />
+      )}
+      <ReportDialog target={reporting} onClose={() => setReporting(null)} />
 
       <ProposalSourceModal
         open={sourceOpen}
@@ -109,7 +150,14 @@ export function ProposalMetadataHeader({ metadata, chain }: Props) {
         error={jsonQuery.isError}
       />
 
-      {json && <ProposalBody body={json.body_markdown ?? ""} media={media} />}
+      {json && (!hiddenInfo || showHidden) && (
+        <ProposalBody
+          body={json.body_markdown ?? ""}
+          media={media}
+          moderation={moderation?.attachments}
+          onReportImage={(m) => setReporting({ type: "attachment", id: m.key })}
+        />
+      )}
     </div>
   )
 }

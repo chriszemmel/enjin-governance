@@ -82,6 +82,13 @@ export async function listCommentsForProposalWithAuthors(
   `) as CommentWithAuthor[]
 }
 
+export async function getCommentById(id: string): Promise<CommentRow | null> {
+  const rows = (await getSql()`
+    SELECT * FROM comments WHERE id = ${id} LIMIT 1
+  `) as CommentRow[]
+  return rows[0] ?? null
+}
+
 export async function findCommentOwnership(
   commentId: string,
 ): Promise<{ userId: string } | null> {

@@ -7,6 +7,8 @@ import {
   listCommentsForProposalWithAuthors,
 } from "@/lib/db/comments"
 import { getProposalById } from "@/lib/db/proposals"
+import { listStatesForProposal } from "@/lib/db/moderation"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
@@ -36,6 +38,13 @@ export async function GET(
     )
   }
   const rows = await listCommentsForProposalWithAuthors(parsed.data)
+  // Moderated comments: hidden ones lose their text here, on the server;
+  // blurred ones keep it behind a tap in the UI.
+  const states = new Map(
+    (await listStatesForProposal(parsed.data).catch(() => []))
+      .filter((s) => s.target_type === "comment")
+      .map((s) => [s.target_id, s]),
+  )
   return NextResponse.json({
     ok: true,
     items: rows.map((r) => ({
@@ -48,8 +57,14 @@ export async function GET(
       author_display_name: r.author_display_name,
       author_avatar_url: r.author_avatar_url,
       author_is_verified: r.author_is_verified,
-      body_markdown: r.is_deleted ? "" : r.body_markdown,
+      body_markdown:
+        r.is_deleted || ["hidden", "removed"].includes(states.get(r.id)?.state ?? "")
+          ? ""
+          : r.body_markdown,
       is_deleted: r.is_deleted,
+      moderation: states.get(r.id)
+        ? { state: states.get(r.id)!.state, reason: states.get(r.id)!.reason }
+        : null,
       edited_at: r.edited_at,
       created_at: r.created_at,
     })),
@@ -73,6 +88,9 @@ export async function POST(
       { status: 401 },
     )
   }
+
+  const suspended = postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.commentCreate, identity: me.id })
   if (!rl.allowed) {

@@ -5,6 +5,12 @@ import { AddressChip } from "@/components/governance/address-chip"
 import { parseMarkdownBlocks } from "@/lib/governance/markdown-lite"
 import { isSafeUrl, parseInline, type InlineNode } from "@/lib/governance/markdown-inline"
 import { findProposalImage, type ProposalMedia } from "@/lib/governance/proposal-media"
+import {
+  SensitiveCover,
+  WithheldMedia,
+  isWithheld,
+} from "@/components/moderation/moderation-notes"
+import type { ModerationInfo } from "@/lib/query/hooks/use-moderation"
 
 type Props = {
   source: string
@@ -14,6 +20,11 @@ type Props = {
    */
   media?: readonly ProposalMedia[]
   onOpenImage?: (m: ProposalMedia) => void
+  /** Moderation state per attachment key (blurred / hidden / removed). */
+  moderation?: Readonly<Record<string, ModerationInfo>>
+  /** Blurred images the reader chose to see. */
+  revealed?: ReadonlySet<string>
+  onReveal?: (key: string) => void
 }
 
 /**
@@ -29,9 +40,17 @@ type Props = {
  * All output goes through React children (never dangerouslySetInnerHTML),
  * so user content can't inject markup.
  */
-export function MarkdownView({ source, media = [], onOpenImage }: Props) {
+export function MarkdownView({
+  source,
+  media = [],
+  onOpenImage,
+  moderation = {},
+  revealed,
+  onReveal,
+}: Props) {
   const blocks = parseMarkdownBlocks(source)
-  const inline = (text: string) => renderNodes(parseInline(text), { media, onOpenImage })
+  const ctx: Ctx = { media, onOpenImage, moderation, revealed, onReveal }
+  const inline = (text: string) => renderNodes(parseInline(text), ctx)
 
   return (
     <div className="space-y-3 text-sm leading-relaxed [overflow-wrap:anywhere]">
@@ -123,7 +142,7 @@ export function MarkdownView({ source, media = [], onOpenImage }: Props) {
           )
         }
         const nodes = parseInline(b.text)
-        const rendered = renderNodes(nodes, { media, onOpenImage })
+        const rendered = renderNodes(nodes, ctx)
         // A paragraph holding an image renders as a <div>: the image is a
         // block-level <figure>, which isn't allowed inside <p>.
         return nodes.some((n) => n.kind === "image") ? (
@@ -143,6 +162,9 @@ export function MarkdownView({ source, media = [], onOpenImage }: Props) {
 type Ctx = {
   media: readonly ProposalMedia[]
   onOpenImage?: (m: ProposalMedia) => void
+  moderation: Readonly<Record<string, ModerationInfo>>
+  revealed?: ReadonlySet<string>
+  onReveal?: (key: string) => void
 }
 
 const linkClass = "text-primary hover:text-purple-dim underline-offset-2 hover:underline"
@@ -198,7 +220,20 @@ function renderNodes(nodes: InlineNode[], ctx: Ctx): ReactNode[] {
         return <AddressChip key={key} address={n.address} />
       case "image": {
         const m = findProposalImage(ctx.media, n.target)
-        if (m) return <InlineImage key={key} media={m} alt={n.alt} onOpen={ctx.onOpenImage} />
+        if (m) {
+          const info = ctx.moderation[m.key]
+          if (isWithheld(info)) return <WithheldMedia key={key} info={info!} className="py-6" />
+          return (
+            <InlineImage
+              key={key}
+              media={m}
+              alt={n.alt}
+              onOpen={ctx.onOpenImage}
+              covered={info?.state === "blurred" && !ctx.revealed?.has(m.key)}
+              onReveal={() => ctx.onReveal?.(m.key)}
+            />
+          )
+        }
         // Not one of this proposal's files: never load it, show a link.
         const label = n.alt || n.target
         return isSafeUrl(n.target) ? (
@@ -223,10 +258,14 @@ function InlineImage({
   media,
   alt,
   onOpen,
+  covered,
+  onReveal,
 }: {
   media: ProposalMedia
   alt: string
   onOpen?: (m: ProposalMedia) => void
+  covered: boolean
+  onReveal: () => void
 }) {
   const img = (
     <img
@@ -238,13 +277,16 @@ function InlineImage({
   )
   return (
     <figure className="space-y-1.5">
-      {onOpen ? (
-        <button type="button" onClick={() => onOpen(media)} className="block w-full cursor-zoom-in">
-          {img}
-        </button>
-      ) : (
-        img
-      )}
+      <div className="relative overflow-hidden rounded-xl">
+        {onOpen && !covered ? (
+          <button type="button" onClick={() => onOpen(media)} className="block w-full cursor-zoom-in">
+            {img}
+          </button>
+        ) : (
+          img
+        )}
+        {covered && <SensitiveCover onReveal={onReveal} />}
+      </div>
       {alt && <figcaption className="text-center text-xs text-muted-foreground">{alt}</figcaption>}
     </figure>
   )

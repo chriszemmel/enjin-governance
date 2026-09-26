@@ -46,6 +46,13 @@ vi.mock("@/lib/governance/envelope-status", () => ({
     return chainState.mode === "anchored"
   },
 }))
+const modLog = vi.hoisted(() => ({ states: [] as unknown[], actions: [] as unknown[] }))
+vi.mock("@/lib/db/moderation", () => ({
+  setState: async (a: unknown) => void modLog.states.push(a),
+  insertAction: async (a: unknown) => void modLog.actions.push(a),
+  listStatesForProposal: async () => [],
+  getState: async () => null,
+}))
 vi.mock("@/lib/r2/upload", async () => await import("./fake-bucket"))
 vi.mock("@/lib/db/proposals", async () => await import("./fake-db"))
 
@@ -267,16 +274,34 @@ describe("media DELETE", () => {
     put(victimFile)
     expect((await del(VICTIM_ID, victimFile)).status).toBe(403)
 
-    db.seedProposal({ id: OWN_ONCHAIN_ID, network: NET, proposer_address: ATTACKER, status: "on_chain", referendum_index: 7, json_key: proposalJsonKey(NET, OWN_ONCHAIN_ID) })
-    const onChainFile = mediaKey(OWN_ONCHAIN_ID)
-    put(onChainFile)
-    expect((await del(OWN_ONCHAIN_ID, onChainFile)).status).toBe(409)
+    const submittedId = "44444444-4444-4444-8444-444444444444"
+    db.seedProposal({ id: submittedId, network: NET, proposer_address: ATTACKER, status: "submitted", json_key: proposalJsonKey(NET, submittedId) })
+    const submittedFile = mediaKey(submittedId)
+    put(submittedFile)
+    expect((await del(submittedId, submittedFile)).status).toBe(409)
 
     expect((await del(OWN_ID, victimFile)).status).toBe(400)
     expect((await del(OWN_ID, victimJsonKey)).status).toBe(400)
     expect(bucketMod.bucket.has(victimFile)).toBe(true)
-    expect(bucketMod.bucket.has(onChainFile)).toBe(true)
+    expect(bucketMod.bucket.has(submittedFile)).toBe(true)
     expect(bodyOf(victimJsonKey)).toBe(`REAL:${victimJsonKey}`)
+  })
+
+  it("lets the proposer remove their own file from a published proposal, on the record", async () => {
+    modLog.states.length = 0
+    modLog.actions.length = 0
+    db.seedProposal({ id: OWN_ONCHAIN_ID, network: NET, proposer_address: ATTACKER, status: "on_chain", referendum_index: 7, json_key: proposalJsonKey(NET, OWN_ONCHAIN_ID) })
+    const jsonKey = proposalJsonKey(NET, OWN_ONCHAIN_ID)
+    bucketMod.bucket.set(jsonKey, { body: "PINNED", contentType: "application/json" })
+    const k = mediaKey(OWN_ONCHAIN_ID)
+    put(k)
+    const res = await del(OWN_ONCHAIN_ID, k)
+    expect(res.status).toBe(200)
+    expect(bucketMod.bucket.has(k)).toBe(false)
+    // The JSON (and so its EGOV1 verification) is untouched.
+    expect(bodyOf(jsonKey)).toBe("PINNED")
+    expect(modLog.states).toMatchObject([{ targetId: k, state: "removed", source: "proposer" }])
+    expect(modLog.actions).toMatchObject([{ targetId: k, action: "delete_file", referendumIndex: 7 }])
   })
 
   it("requires a session", async () => {

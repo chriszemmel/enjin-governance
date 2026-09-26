@@ -22,6 +22,8 @@ export type UserRow = {
   avatar_url: string | null
   avatar_key: string | null
   avatar_updated_at: Date | null
+  /** Set by admins (scripts/011_moderation.sql); absent before that migration. */
+  posting_suspended_until?: Date | null
   created_at: Date
   updated_at: Date
 }

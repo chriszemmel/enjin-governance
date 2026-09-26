@@ -452,6 +452,8 @@ function EditForm({
               attachments={attachments}
               onChange={setAttachments}
               disabled={edit.isPending}
+              deleteOnRemove
+              confirmRemove="Delete this file from storage? The proposal page will say you removed it. This can't be undone."
               onInsert={(att) =>
                 editorRef.current?.insert(markdownForAttachment(att), {
                   block: att.content_type.startsWith("image/"),

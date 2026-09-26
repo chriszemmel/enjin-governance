@@ -17,9 +17,10 @@
  *
  * DELETE /api/proposals/[uuid]/media?network=…&key=…
  *
- * Removes an uploaded file (and its thumbnail) while the proposal is still
- * an unsigned draft. Files of submitted proposals stay: the proposal JSON
- * pinned on chain may list them.
+ * Removes an uploaded file (and its thumbnail). For an unsigned draft it
+ * simply goes away. For a published proposal the proposer may remove their
+ * own file too: the JSON keeps listing it (so its EGOV1 record still
+ * verifies) and the page and public log say it was removed.
  */
 
 import { randomUUID } from "node:crypto"
@@ -35,6 +36,8 @@ import { ImageProcessingError, processProposalImage } from "@/lib/r2/media-proce
 import { ownMediaKey, proposalMediaKey, uniqueMediaName } from "@/lib/r2/paths"
 import { sniffMediaMime } from "@/lib/r2/sniff"
 import { deleteObjects, putObject, sha256Hex } from "@/lib/r2/upload"
+import { insertAction, setState } from "@/lib/db/moderation"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
@@ -98,6 +101,9 @@ export async function POST(
       { status: 401 },
     )
   }
+
+  const suspended = postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.mediaUpload, identity: me.id })
   if (!rl.allowed) {
@@ -285,12 +291,50 @@ export async function DELETE(
           { status: 403 },
         )
       }
+      if (existing.status === "submitted") {
+        return NextResponse.json(
+          { ok: false, error: "Wait until the submission is confirmed, then remove the file." },
+          { status: 409 },
+        )
+      }
+      if (existing.status === "on_chain") {
+        // A published proposal's JSON keeps listing the file (so its EGOV1
+        // record still verifies); the file goes, and the page and the
+        // public log say the proposer removed it.
+        try {
+          await deleteObjects([key, thumbKeyFor(key)])
+        } catch {
+          return NextResponse.json(
+            { ok: false, error: "Storage error - the file was not removed." },
+            { status: 502 },
+          )
+        }
+        const reason = "Removed by the proposer."
+        await setState({
+          targetType: "attachment",
+          targetId: key,
+          proposalId: proposalUuid,
+          state: "removed",
+          reason,
+          source: "proposer",
+        }).catch(() => null)
+        await insertAction({
+          targetType: "attachment",
+          targetId: key,
+          proposalId: proposalUuid,
+          network: existing.network,
+          referendumIndex: existing.referendum_index,
+          action: "delete_file",
+          reason,
+          source: "proposer",
+          actorPublicKey: null,
+          actorLabel: "proposer",
+        }).catch(() => null)
+        return NextResponse.json({ ok: true, deleted: true })
+      }
       if (existing.status !== "draft") {
         return NextResponse.json(
-          {
-            ok: false,
-            error: "Files of a submitted proposal stay available; the on-chain record may point at them.",
-          },
+          { ok: false, error: "This proposal was cancelled; its files are cleaned up with it." },
           { status: 409 },
         )
       }

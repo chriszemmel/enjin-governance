@@ -15,6 +15,9 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { GetObjectCommand } from "@aws-sdk/client-s3"
+import { isDbConfigured } from "@/lib/db/client"
+import { getState } from "@/lib/db/moderation"
+import { mediaServable, parseMediaKey } from "@/lib/moderation/policy"
 import { getR2Client, isR2Configured, r2Bucket } from "@/lib/r2/client"
 import { isPublicReadableKey } from "@/lib/r2/paths"
 
@@ -39,6 +42,20 @@ export async function GET(
   const key = (segments ?? []).map((s) => decodeURIComponent(s)).join("/")
   if (!isPublicReadableKey(key)) return notFound()
 
+  // Proposal media (and its thumbnail) can be hidden by moderators. The
+  // state lives in the DB; the proposal JSON itself is never withheld.
+  const mediaKey = key.endsWith(".thumb.webp") ? key.slice(0, -".thumb.webp".length) : key
+  const isMedia = parseMediaKey(mediaKey) != null
+  if (isMedia && isDbConfigured()) {
+    const state = await getState("attachment", mediaKey).catch(() => null)
+    if (!mediaServable(state?.state)) {
+      return NextResponse.json(
+        { ok: false, error: "Removed by moderators" },
+        { status: 404, headers: { "Cache-Control": "no-store" } },
+      )
+    }
+  }
+
   try {
     const res = await getR2Client().send(
       new GetObjectCommand({ Bucket: r2Bucket(), Key: key }),
@@ -52,7 +69,11 @@ export async function GET(
     // editable proposal.json, immutable for media/avatars).
     headers.set(
       "Cache-Control",
-      res.CacheControl ?? "public, max-age=30, must-revalidate",
+      // Media is stored as immutable, but a moderator may hide it later, so
+      // browsers and CDNs only keep it for a few minutes.
+      isMedia
+        ? "public, max-age=300"
+        : (res.CacheControl ?? "public, max-age=30, must-revalidate"),
     )
     // Public, read-only bytes: allow cross-origin fetch + sha256 verify.
     headers.set("Access-Control-Allow-Origin", "*")

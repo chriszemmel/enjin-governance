@@ -38,6 +38,8 @@ type Props = {
    * unsigned drafts - a submitted proposal's JSON on chain may list it.
    */
   deleteOnRemove?: boolean
+  /** Ask before removing (used where removal deletes a published file). */
+  confirmRemove?: string
 }
 
 const MAX_FILES = 8
@@ -51,6 +53,7 @@ export function AttachmentDropzone({
   beforeUpload,
   onInsert,
   deleteOnRemove,
+  confirmRemove,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -112,6 +115,7 @@ export function AttachmentDropzone({
   )
 
   const remove = (key: string) => {
+    if (confirmRemove && !window.confirm(confirmRemove)) return
     onChange(attachments.filter((a) => a.bucket_key !== key))
     if (!deleteOnRemove) return
     const url = `/api/proposals/${proposalId}/media?network=${network}&key=${encodeURIComponent(key)}`

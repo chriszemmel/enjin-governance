@@ -1,11 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { CheckCircle2, Loader2, MessageCircle, Send, Trash2 } from "lucide-react"
+import Link from "next/link"
+import { CheckCircle2, Flag, Loader2, MessageCircle, Send, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Avatar } from "@/components/account/avatar"
 import { UserChip } from "@/components/profile/user-chip"
 import { SignRequestModal } from "@/components/wallet/sign-request-modal"
+import { ReportDialog } from "@/components/moderation/report-dialog"
 import {
   type Comment,
   useComments,
@@ -35,6 +37,7 @@ export function CommentsSection({ proposalUuid }: Props) {
   const create = useCreateComment(proposalUuid)
   const remove = useDeleteComment(proposalUuid)
   const [draft, setDraft] = useState("")
+  const [reporting, setReporting] = useState<string | null>(null)
   const [signModalOpen, setSignModalOpen] = useState(false)
   const [signError, setSignError] = useState<string | null>(null)
   const signDeepLinkUrl = buildSignRequestDeepLink({
@@ -120,6 +123,7 @@ export function CommentsSection({ proposalUuid }: Props) {
                 key={c.id}
                 comment={c}
                 isMine={me?.id === c.user_id}
+                onReport={() => setReporting(c.id)}
                 onDelete={async () => {
                   try {
                     await remove.mutateAsync(c.id)
@@ -133,6 +137,10 @@ export function CommentsSection({ proposalUuid }: Props) {
             ))}
           </ul>
         )}
+        <ReportDialog
+          target={reporting ? { type: "comment", id: reporting } : null}
+          onClose={() => setReporting(null)}
+        />
       </div>
 
       <div className="pt-3 border-t border-border">
@@ -216,11 +224,16 @@ function CommentItem({
   comment,
   isMine,
   onDelete,
+  onReport,
 }: {
   comment: Comment
   isMine: boolean
   onDelete: () => Promise<void>
+  onReport: () => void
 }) {
+  const [shown, setShown] = useState(false)
+  const mod = comment.moderation
+  const withheld = mod?.state === "hidden" || mod?.state === "removed"
   const fallbackName =
     comment.author_display_name ??
     (comment.author_handle ? `@${comment.author_handle}` : null) ??
@@ -254,21 +267,48 @@ function CommentItem({
             <span className="italic text-muted-foreground">
               [comment deleted]
             </span>
+          ) : withheld ? (
+            <span className="italic text-muted-foreground">
+              [hidden by moderators{mod?.reason ? `: ${mod.reason}` : ""}] ·{" "}
+              <Link href="/moderation-log" className="not-italic text-primary hover:text-purple-dim">
+                log
+              </Link>
+            </span>
+          ) : mod?.state === "blurred" && !shown ? (
+            <button
+              type="button"
+              onClick={() => setShown(true)}
+              className="italic text-muted-foreground hover:text-foreground"
+            >
+              [marked sensitive by moderators · show]
+            </button>
           ) : (
             comment.body_markdown
           )}
         </div>
-        {isMine && !comment.is_deleted && (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="mt-1 inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-destructive"
-            title="Delete (soft)"
-          >
-            <Trash2 className="w-3 h-3" />
-            Delete
-          </button>
-        )}
+        <div className="mt-1 flex items-center gap-3">
+          {isMine && !comment.is_deleted && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-destructive"
+              title="Delete (soft)"
+            >
+              <Trash2 className="w-3 h-3" />
+              Delete
+            </button>
+          )}
+          {!isMine && !comment.is_deleted && !withheld && (
+            <button
+              type="button"
+              onClick={onReport}
+              className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+            >
+              <Flag className="w-3 h-3" />
+              Report
+            </button>
+          )}
+        </div>
       </div>
     </li>
   )

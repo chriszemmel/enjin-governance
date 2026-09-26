@@ -22,6 +22,11 @@ export const env = createEnv({
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     TELEGRAM_CHAT_ID: z.string().optional(),
 
+    // Moderation: comma-separated wallets (SS58 on any network, or 0x public
+    // keys) that are always admins. Admins grant moderator / admin roles to
+    // others from /moderation; those grants live in the database.
+    GOVERNANCE_ADMIN_PUBLIC_KEYS: z.string().optional(),
+
     // Cloudflare R2 - bucket `enjin-governance` holds:
     //   proposals/{network}/{uuid}/proposal.json
     //   proposals/{network}/{uuid}/media/{filename}
@@ -75,6 +80,7 @@ export const env = createEnv({
     SITE_PASSWORD_STATUS: process.env.SITE_PASSWORD_STATUS,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+    GOVERNANCE_ADMIN_PUBLIC_KEYS: process.env.GOVERNANCE_ADMIN_PUBLIC_KEYS,
 
     R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
     R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,

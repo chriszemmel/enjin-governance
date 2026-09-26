@@ -48,6 +48,7 @@ import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
 import { ownMediaKey, proposalJsonKey, publicUrlFor } from "@/lib/r2/paths"
 import { deleteObjects, putJson } from "@/lib/r2/upload"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import {
   buildRemarkPayload,
@@ -158,6 +159,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 401 },
     )
   }
+  const suspended = postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalDraft, identity: me.id })
   if (!rl.allowed) {

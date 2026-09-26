@@ -1,9 +1,15 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ChevronLeft, ChevronRight, Download, ExternalLink, FileText, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Flag, X } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import type { ProposalMedia } from "@/lib/governance/proposal-media"
+import {
+  SensitiveCover,
+  WithheldMedia,
+  isWithheld,
+} from "@/components/moderation/moderation-notes"
+import type { ModerationInfo } from "@/lib/query/hooks/use-moderation"
 import { cn } from "@/lib/utils"
 
 export function formatBytes(n: number): string {
@@ -38,9 +44,15 @@ export function MediaThumb({ media, className }: { media: ProposalMedia; classNa
 export function AttachmentGallery({
   media,
   onOpenImage,
+  moderation = {},
+  revealed,
+  onReveal,
 }: {
   media: readonly ProposalMedia[]
   onOpenImage: (m: ProposalMedia) => void
+  moderation?: Readonly<Record<string, ModerationInfo>>
+  revealed?: ReadonlySet<string>
+  onReveal?: (key: string) => void
 }) {
   if (media.length === 0) return null
   return (
@@ -48,8 +60,10 @@ export function AttachmentGallery({
       <p className="text-xs font-medium text-muted-foreground mb-2">Attachments ({media.length})</p>
       <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2">
         {media.map((m) => (
-          <li key={m.key}>
-            {m.isImage ? (
+          <li key={m.key} className="relative">
+            {isWithheld(moderation[m.key]) ? (
+              <WithheldMedia info={moderation[m.key]!} className="aspect-square" />
+            ) : m.isImage ? (
               <button
                 type="button"
                 onClick={() => onOpenImage(m)}
@@ -77,6 +91,11 @@ export function AttachmentGallery({
                 </span>
               </a>
             )}
+            {m.isImage &&
+              moderation[m.key]?.state === "blurred" &&
+              !revealed?.has(m.key) && (
+                <SensitiveCover className="rounded-xl" onReveal={() => onReveal?.(m.key)} />
+              )}
           </li>
         ))}
       </ul>
@@ -92,10 +111,12 @@ export function ImageLightbox({
   images,
   current,
   onChange,
+  onReport,
 }: {
   images: readonly ProposalMedia[]
   current: ProposalMedia | null
   onChange: (m: ProposalMedia | null) => void
+  onReport?: (m: ProposalMedia) => void
 }) {
   const index = current ? images.findIndex((m) => m.key === current.key) : -1
   const touchX = useRef<number | null>(null)
@@ -218,6 +239,19 @@ export function ImageLightbox({
                   Download
                 </a>
               </div>
+              {onReport && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(null)
+                    onReport(m)
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs text-white/60 hover:text-white"
+                >
+                  <Flag className="w-3.5 h-3.5" />
+                  Report this image
+                </button>
+              )}
             </div>
           </>
         )}

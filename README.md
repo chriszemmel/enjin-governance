@@ -309,7 +309,7 @@ lib/
 docs/                  ARCHITECTURE · CHAIN_FLOW · GOVERNANCE_FLOW ·
                        WALLET_INTEGRATION · ENVIRONMENT · DEPLOYMENT ·
                        HANDOVER
-scripts/               SQL migrations (004-010) + run-migrations.mjs
+scripts/               SQL migrations (004-011) + run-migrations.mjs
 .github/workflows/     CI
 ```
 
