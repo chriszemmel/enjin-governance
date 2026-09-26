@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
+  DEFAULT_SCAN_MODEL,
   DEFAULT_SCAN_SETTINGS,
+  SCAN_MODEL_IDS,
+  SCAN_MODELS,
   costUsd,
   parseStoredSettings,
   scanSettingsSchema,
@@ -25,6 +28,18 @@ describe("scan settings", () => {
     expect(parseStoredSettings({ model: "gpt-9" })).toEqual(DEFAULT_SCAN_SETTINGS)
     expect(parseStoredSettings(null)).toEqual(DEFAULT_SCAN_SETTINGS)
     expect(scanSettingsSchema.safeParse({ ...DEFAULT_SCAN_SETTINGS, extra: 1 }).success).toBe(false)
+  })
+
+  it("offer exactly one recommended model, which is the default", () => {
+    const recommended = SCAN_MODEL_IDS.filter((id) => SCAN_MODELS[id].recommended)
+    expect(recommended).toEqual([DEFAULT_SCAN_MODEL])
+    expect(DEFAULT_SCAN_SETTINGS.model).toBe(DEFAULT_SCAN_MODEL)
+  })
+
+  it("move a model that is no longer offered to the recommended one, keeping the rest", () => {
+    expect(
+      parseStoredSettings({ enabled: true, model: "claude-haiku-3", dailyLimit: 50, pdfs: false }),
+    ).toEqual({ ...DEFAULT_SCAN_SETTINGS, enabled: true, dailyLimit: 50, pdfs: false })
   })
 
   it("price tokens per model", () => {

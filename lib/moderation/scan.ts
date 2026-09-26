@@ -24,7 +24,7 @@ import { z } from "zod"
 import { env } from "@/lib/env"
 import { sanitiseFilename } from "@/lib/r2/paths"
 import type { ReportCategory } from "./policy"
-import type { ScanModel } from "./scan-settings"
+import { SCAN_MODELS, type ScanModel } from "./scan-settings"
 
 const SCAN_LABELS = [
   "recovery_phrase",
@@ -109,21 +109,15 @@ export function buildScanRequest(
     system: POLICY,
     messages: [{ role: "user" as const, content }],
   }
-  switch (model) {
-    case "claude-opus-5":
-      return {
-        ...base,
-        // A declined request is re-run on Anthropic's recommended fallback
-        // model for that refusal category instead of failing.
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
-        output_config: { effort: "low", format },
-      }
-    case "claude-sonnet-5":
-      return { ...base, output_config: { effort: "low", format } }
-    case "claude-haiku-4-5":
-      // Haiku 4.5 has no effort setting.
-      return { ...base, output_config: { format } }
+  const m = SCAN_MODELS[model]
+  return {
+    ...base,
+    // A declined request is re-run on Anthropic's recommended fallback
+    // model for that refusal category instead of failing.
+    ...(m.refusalFallback
+      ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
+      : {}),
+    output_config: m.effort ? { effort: "low", format } : { format },
   }
 }
 

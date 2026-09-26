@@ -130,7 +130,7 @@ export function ScanSettingsPanel() {
                         )}
                       />
                       <span className="text-sm font-medium text-foreground">{m.label}</span>
-                      {id === "claude-haiku-4-5" && (
+                      {m.recommended && (
                         <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
                           recommended
                         </span>
