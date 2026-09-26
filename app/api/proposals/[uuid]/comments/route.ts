@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import { isDbConfigured } from "@/lib/db/client"
 import {
   createComment,
+  getCommentById,
   listCommentsForProposalWithAuthors,
 } from "@/lib/db/comments"
 import { getProposalById } from "@/lib/db/proposals"
@@ -121,8 +122,11 @@ export async function POST(
       { status: 400 },
     )
   }
+  // Only published proposals take comments. A draft or a cancelled row
+  // gets the same answer as a missing one, so the route doesn't reveal
+  // that it exists.
   const proposal = await getProposalById(uid.data)
-  if (!proposal) {
+  if (!proposal || proposal.status !== "on_chain") {
     return NextResponse.json(
       { ok: false, error: "Proposal not found" },
       { status: 404 },
@@ -137,6 +141,17 @@ export async function POST(
       { ok: false, error: e instanceof Error ? e.message : "Invalid body" },
       { status: 400 },
     )
+  }
+
+  // A reply must answer a comment on the same proposal.
+  if (parsed.parent_id) {
+    const parent = await getCommentById(parsed.parent_id)
+    if (!parent || parent.proposal_id !== proposal.id) {
+      return NextResponse.json(
+        { ok: false, error: "The comment you are replying to doesn't exist." },
+        { status: 400 },
+      )
+    }
   }
 
   const row = await createComment({

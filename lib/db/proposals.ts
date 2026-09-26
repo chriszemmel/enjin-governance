@@ -167,7 +167,10 @@ export async function attachReferendumIndex(
       tx_hash          = ${a.txHash},
       block_hash       = ${a.blockHash},
       block_number     = ${a.blockNumber},
-      status           = 'on_chain'
+      status           = 'on_chain',
+      -- A withdrawal flag only means something once published.
+      withdrawn_at     = NULL,
+      withdrawn_reason = NULL
     WHERE id = ${a.proposalId}
     RETURNING *
   `) as ProposalRow[]
