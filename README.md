@@ -233,8 +233,8 @@
 ## Quick start
 
 ```bash
-git clone https://github.com/chriszemmel/enjin-governance-closed.git
-cd enjin-governance-closed
+git clone https://github.com/chriszemmel/enjin-governance.git
+cd enjin-governance
 nvm use            # Node 22 (or check .nvmrc)
 pnpm install
 cp .env.example .env.local
@@ -494,6 +494,9 @@ Optional:
 ```
 SUBSCAN_API_KEY=<from pro.subscan.io>        # decodes call data for very old finalised refs
 ANTHROPIC_API_KEY=<from console.anthropic.com>   # automatic content checks (switched on in /moderation → Settings)
+TELEGRAM_BOT_TOKEN=<from @BotFather>         # security reports + new moderation reports to Telegram
+TELEGRAM_CHAT_ID=<chat id>
+TELEGRAM_MODERATION_CHAT_ID=<chat id | OFF>  # optional separate chat for moderation (default: TELEGRAM_CHAT_ID)
 LEGAL_CONTACT_PHONE=<phone>                  # imprint, if you want one
 LEGAL_VAT_ID=<VAT ID>                        # imprint, only if you have one
 ```
@@ -521,6 +524,7 @@ further moderators and admins under **Moderation → Roles**.
 | | Everyone | Moderator | Admin |
 |---|---|---|---|
 | Report content, read `/moderation-log` | ✓ | ✓ | ✓ |
+| Telegram notice for each new report (when configured) | | ✓ | ✓ |
 | Nav link and review queue | | ✓ | ✓ |
 | Keep / blur / hide / restore | | ✓ | ✓ |
 | Delete a file, pause posting for a wallet | | | ✓ |
@@ -595,7 +599,7 @@ open an issue first to align on approach.
 
 | Version | What changed |
 |---|---|
-| **1.7** | Content-check settings for admins: on/off, model (Haiku 4.5 default, Sonnet 5, Opus 5), what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migration `012`. |
+| **1.7** | Content-check settings for admins: on/off, model (Haiku 4.5 default, Sonnet 5, Opus 5), what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migration `012`. New reports are posted to Telegram. |
 | **1.6** | Imprint, privacy policy and terms (filled from `LEGAL_*`), footer with legal links, disclaimer and AGPL source link. |
 | **1.5** | Automatic checks of uploads, proposal text and comments; borderline items go to the review queue. |
 | **1.4** | Moderation: reports, review queue, roles by wallet, posting pauses, public moderation log. Migration `011`. |

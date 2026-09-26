@@ -62,7 +62,7 @@ export default function ImprintPage() {
           Enjin Blockchain. It is developed and maintained by {op.name}. The domain is provided by
           Enjin. The Enjin Blockchain itself is developed by Atlas Development Services, a core
           contributor to the Enjin Blockchain, whose developers occasionally contribute to this
-          project.
+          project. The Enjin name and logo are used with Enjin&apos;s permission.
         </p>
         <p>
           Proposals, attachments and comments are published by their authors, who are responsible

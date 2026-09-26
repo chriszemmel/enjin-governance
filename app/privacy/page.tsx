@@ -20,20 +20,20 @@ const PROCESSORS: { name: string; purpose: string; where: string; when: string }
   {
     name: "Neon Inc.",
     purpose: "Database (profiles, comments, proposal records, sessions)",
-    where: "Region of the deployment",
+    where: "USA",
     when: "Always",
   },
   {
     name: "Cloudflare, Inc. (R2)",
     purpose: "File storage (proposal texts, attachments, avatars)",
-    where: "Region of the bucket",
+    where: "USA",
     when: "Always",
   },
   {
     name: "Upstash, Inc.",
     purpose: "Rate limiting (short-lived counters)",
-    where: "Region of the database",
-    when: "If configured",
+    where: "USA",
+    when: "Always",
   },
   {
     name: "Enjin Blockchain RPC nodes",
@@ -67,9 +67,9 @@ const PROCESSORS: { name: string; purpose: string; where: string; when: string }
   },
   {
     name: "Telegram",
-    purpose: "Notifying maintainers of new security reports",
+    purpose: "Notifying maintainers of new security reports and moderators of new content reports",
     where: "Global",
-    when: "If configured",
+    when: "Always",
   },
 ]
 
@@ -165,11 +165,13 @@ export default function PrivacyPage() {
         <h2>8. Reports and moderation</h2>
         <p>
           When you report content we store your account, the item, the category and your optional
-          note, so moderators can review it. Your identity is never shown publicly. Moderation
-          decisions are listed in the public <Link href="/moderation-log">moderation log</Link> with
-          their reason and the moderator&apos;s name. If posting is paused for an account, we store
-          the wallet&apos;s public key and the end date. Legal basis: Art. 6(1)(f) GDPR (a safe
-          platform) and Art. 6(1)(c) GDPR where the law requires us to act on reports.
+          note, so moderators can review it. Moderators get a short Telegram message about each new
+          report with the kind of item, the category and a link to the queue - never your identity,
+          your note or the content. Your identity is never shown publicly. Moderation decisions are
+          listed in the public <Link href="/moderation-log">moderation log</Link> with their reason
+          and the moderator’s name. If posting is paused for an account, we store the wallet’s
+          public key and the end date. Legal basis: Art. 6(1)(f) GDPR (a safe platform) and Art.
+          6(1)(c) GDPR where the law requires us to act on reports.
         </p>
       </section>
 
@@ -191,8 +193,8 @@ export default function PrivacyPage() {
         <h2>10. Security reports and rate limits</h2>
         <p>
           The <Link href="/security">security form</Link> stores what you enter plus a one-way hash
-          of your IP address to spot abuse; maintainers may be notified via Telegram. To stop abuse,
-          we count requests per IP address or account for a few minutes.
+          of your IP address to spot abuse; maintainers are notified via Telegram. To stop abuse, we
+          count requests per IP address or account for a few minutes (Upstash).
         </p>
       </section>
 
@@ -216,9 +218,10 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2>12. Service providers and transfers</h2>
         <p>
-          We use the following providers. Where data is processed outside the EU/EEA, the transfer
-          is based on an adequacy decision (such as the EU-US Data Privacy Framework) or the EU
-          standard contractual clauses.
+          We use the following providers. The site, its database, file storage and rate limiter run
+          in the USA. Where data is processed outside the EU/EEA, the transfer is based on an
+          adequacy decision (such as the EU-US Data Privacy Framework) or the EU standard
+          contractual clauses.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs">
@@ -257,6 +260,7 @@ export default function PrivacyPage() {
           <li>Profiles, comments and files: until you or we delete them.</li>
           <li>Reports: until they are decided, then as part of the moderation record.</li>
           <li>Rate-limit counters: minutes.</li>
+          <li>Telegram notices: until they are deleted from the chat.</li>
           <li>On-chain data: permanently, outside our control.</li>
         </ul>
       </section>
