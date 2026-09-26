@@ -5,7 +5,7 @@
  * of prose.
  *
  * Pure and dependency-free so it can be unit tested; the rendering half
- * lives in components/governance/proposal-metadata-header.tsx and turns
+ * lives in components/governance/markdown-view.tsx and turns
  * these blocks into React children (never dangerouslySetInnerHTML), so user
  * content can't inject markup.
  *

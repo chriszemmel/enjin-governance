@@ -2,8 +2,9 @@
  * POST /api/proposals/[uuid]/media
  *
  * Multipart upload. Body: a single `file` field. Stores the file under
- * `proposals/{network}/{uuid}/media/{safe-filename}` and returns the URL +
- * sha256.
+ * `proposals/{network}/{uuid}/media/{random}-{safe-filename}` and returns
+ * the URL + sha256. Images are cleaned first (metadata dropped, scaled to
+ * fit 2560 px) and get a WebP thumbnail next to them.
  *
  * Called BEFORE the proposal draft is finalised so the client can
  * include the URLs in proposal.json. The DB row for the proposal might
@@ -13,18 +14,27 @@
  * Hard limits:
  *   - 20 MB per file (matches the DB CHECK constraint)
  *   - image/png, image/jpeg, image/webp, image/gif, application/pdf
+ *
+ * DELETE /api/proposals/[uuid]/media?network=…&key=…
+ *
+ * Removes an uploaded file (and its thumbnail) while the proposal is still
+ * an unsigned draft. Files of submitted proposals stay: the proposal JSON
+ * pinned on chain may list them.
  */
 
+import { randomUUID } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
-import { getProposalById } from "@/lib/db/proposals"
+import { getProposalById, listAttachments } from "@/lib/db/proposals"
+import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import { isR2Configured } from "@/lib/r2/client"
-import { proposalMediaKey } from "@/lib/r2/paths"
+import { ImageProcessingError, processProposalImage } from "@/lib/r2/media-processing"
+import { ownMediaKey, proposalMediaKey, uniqueMediaName } from "@/lib/r2/paths"
 import { sniffMediaMime } from "@/lib/r2/sniff"
-import { putObject, sha256Hex } from "@/lib/r2/upload"
+import { deleteObjects, putObject, sha256Hex } from "@/lib/r2/upload"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
@@ -162,15 +172,43 @@ export async function POST(
     )
   }
 
-  const key = proposalMediaKey(network, proposalUuid, file.name || "file")
+  // Images: drop metadata (GPS etc.), scale down, make a thumbnail. What's
+  // stored - and hashed into the proposal - is the cleaned file.
+  let body: Buffer = buffer
+  let thumbnail: Buffer | null = null
+  if (sniffed !== "application/pdf") {
+    try {
+      const processed = await processProposalImage(buffer, sniffed)
+      body = processed.body
+      thumbnail = processed.thumbnail
+    } catch (e) {
+      if (!(e instanceof ImageProcessingError)) throw e
+      return NextResponse.json(
+        { ok: false, error: "This image could not be read. Try exporting it again as PNG or JPEG." },
+        { status: 415 },
+      )
+    }
+  }
+
+  const storedName = uniqueMediaName(file.name || "file", randomUUID().slice(0, 8))
+  const key = proposalMediaKey(network, proposalUuid, storedName)
 
   try {
     const result = await putObject({
       key,
-      body: buffer,
+      body,
       contentType: sniffed,
       cacheControl: "public, max-age=31536000, immutable",
     })
+    if (thumbnail) {
+      // Best-effort: galleries fall back to the full image without it.
+      await putObject({
+        key: thumbKeyFor(key),
+        body: thumbnail,
+        contentType: "image/webp",
+        cacheControl: "public, max-age=31536000, immutable",
+      }).catch(() => null)
+    }
     return NextResponse.json({
       ok: true,
       bucket_key: result.key,
@@ -179,7 +217,7 @@ export async function POST(
       size_bytes: result.sizeBytes,
       content_type: sniffed,
       name: file.name || "file",
-      precomputed_sha256_matches: result.sha256 === sha256Hex(buffer),
+      precomputed_sha256_matches: result.sha256 === sha256Hex(body),
     })
   } catch (e) {
     return NextResponse.json(
@@ -190,4 +228,88 @@ export async function POST(
       { status: 502 },
     )
   }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ uuid: string }> },
+): Promise<NextResponse> {
+  if (!isR2Configured()) {
+    return NextResponse.json(
+      { ok: false, error: "Storage is not configured" },
+      { status: 503 },
+    )
+  }
+
+  const { uuid: rawUuid } = await context.params
+  const uuidParse = uuidSchema.safeParse(rawUuid)
+  const url = new URL(request.url)
+  const networkParse = networkSchema.safeParse(url.searchParams.get("network"))
+  if (!uuidParse.success || !networkParse.success) {
+    return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 })
+  }
+  const proposalUuid = uuidParse.data
+  const key = ownMediaKey(url.searchParams.get("key") ?? "", networkParse.data, proposalUuid)
+  if (!key) {
+    return NextResponse.json(
+      { ok: false, error: "That file doesn't belong to this proposal." },
+      { status: 400 },
+    )
+  }
+
+  const me = await getCurrentUser()
+  if (!me) {
+    return NextResponse.json(
+      { ok: false, error: "Sign in to remove files." },
+      { status: 401 },
+    )
+  }
+
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.mediaUpload, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests - please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    )
+  }
+
+  // Same ownership rule as uploads. Once a draft exists, only its proposer
+  // may remove files, and only while nothing has been signed.
+  if (isDbConfigured()) {
+    const existing = await getProposalById(proposalUuid)
+    if (existing) {
+      await initializeWasm()
+      if (!samePublicKey(existing.proposer_address, me.address)) {
+        return NextResponse.json(
+          { ok: false, error: "Only the proposer can remove files from this proposal." },
+          { status: 403 },
+        )
+      }
+      if (existing.status !== "draft") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Files of a submitted proposal stay available; the on-chain record may point at them.",
+          },
+          { status: 409 },
+        )
+      }
+      // Still listed in the saved draft: keep it until the draft is saved
+      // without it (re-staging cleans up files it no longer lists).
+      const saved = await listAttachments(proposalUuid)
+      if (saved.some((a) => a.bucket_key === key)) {
+        return NextResponse.json({ ok: true, deleted: false })
+      }
+    }
+  }
+
+  try {
+    await deleteObjects([key, thumbKeyFor(key)])
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Storage error - the file was not removed." },
+      { status: 502 },
+    )
+  }
+  return NextResponse.json({ ok: true, deleted: true })
 }

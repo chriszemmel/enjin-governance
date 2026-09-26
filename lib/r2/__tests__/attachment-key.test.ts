@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { keyFromPublicUrl, ownMediaKey, proposalJsonKey, proposalPrefix } from "@/lib/r2/paths"
+import {
+  keyFromPublicUrl,
+  ownMediaKey,
+  proposalJsonKey,
+  proposalMediaKey,
+  proposalPrefix,
+  uniqueMediaName,
+} from "@/lib/r2/paths"
 
 const NET = "enjin-relay"
 const ID = "11111111-1111-4111-8111-111111111111"
@@ -67,5 +74,20 @@ describe("keyFromPublicUrl", () => {
   })
   it("returns the input unchanged when it isn't a URL", () => {
     expect(keyFromPublicUrl(key)).toBe(key)
+  })
+})
+
+describe("uniqueMediaName", () => {
+  it("prefixes the sanitised name so same-name uploads don't collide", () => {
+    expect(uniqueMediaName("My Photo (1).JPG", "ab12cd34")).toBe("ab12cd34-My_Photo_1_.JPG")
+    expect(uniqueMediaName("image.png", "ab12cd34")).not.toBe(uniqueMediaName("image.png", "ef56ab78"))
+  })
+
+  it("falls back to 'file' and stays a valid media key with room for a thumbnail", () => {
+    expect(uniqueMediaName("???", "ab12cd34")).toBe("ab12cd34-file")
+    const name = uniqueMediaName("x".repeat(500) + ".png", "ab12cd34")
+    expect(name.length).toBeLessThanOrEqual(100)
+    const key = proposalMediaKey(NET, ID, name)
+    expect(ownMediaKey(key, NET, ID)).toBe(key)
   })
 })

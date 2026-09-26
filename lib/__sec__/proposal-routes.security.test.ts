@@ -54,6 +54,7 @@ import * as db from "./fake-db"
 import { proposalJsonKey, proposalIndexRedirectKey, userAvatarKey } from "@/lib/r2/paths"
 import { POST } from "@/app/api/proposals/draft/route"
 import { DELETE, PATCH } from "@/app/api/proposals/[uuid]/route"
+import { DELETE as MEDIA_DELETE } from "@/app/api/proposals/[uuid]/media/route"
 
 const NET = "enjin-relay"
 const VICTIM_ID = "11111111-1111-4111-8111-111111111111"
@@ -180,6 +181,87 @@ describe("draft POST", () => {
     const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [att(mediaKey, "roadmap.png")] })))
     expect(res.status).toBe(200)
     expect(db.attachments.map((a) => a.bucket_key)).toContain(mediaKey)
+  })
+
+  it("writes attachment URLs built from the key, never the browser's URL", async () => {
+    const mediaKey = `proposals/${NET}/${OWN_ID}/media/ab12cd34-roadmap.png`
+    const sneaky = { ...att(mediaKey, "roadmap.png"), url: "https://tracker.example/pixel.png" }
+    const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [sneaky] })))
+    expect(res.status).toBe(200)
+    const saved = JSON.parse(bodyOf(proposalJsonKey(NET, OWN_ID))!)
+    expect(saved.attachments[0].url).toBe(`https://fake.local/r/${mediaKey}`)
+    expect(db.attachments.find((a) => a.bucket_key === mediaKey)?.url).toBe(`https://fake.local/r/${mediaKey}`)
+  })
+
+  it("re-staging without an attachment removes its file and thumbnail", async () => {
+    const ownKey = proposalJsonKey(NET, OWN_ID)
+    const keep = `proposals/${NET}/${OWN_ID}/media/aaaa1111-keep.png`
+    const drop = `proposals/${NET}/${OWN_ID}/media/bbbb2222-drop.png`
+    db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: ownKey, json_sha256: "b".repeat(64) })
+    db.seedAttachment({ proposal_id: OWN_ID, bucket_key: keep })
+    db.seedAttachment({ proposal_id: OWN_ID, bucket_key: drop })
+    for (const k of [keep, drop, `${drop}.thumb.webp`]) bucketMod.bucket.set(k, { body: "IMG", contentType: "image/png" })
+    const res = await POST(
+      req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [att(keep, "keep.png")], expected_sha256: "b".repeat(64) })),
+    )
+    expect(res.status).toBe(200)
+    expect(bucketMod.bucket.has(keep)).toBe(true)
+    expect(bucketMod.bucket.has(drop)).toBe(false)
+    expect(bucketMod.bucket.has(`${drop}.thumb.webp`)).toBe(false)
+  })
+})
+
+describe("media DELETE", () => {
+  const mediaKey = (id: string, name = "cccc3333-pic.png") => `proposals/${NET}/${id}/media/${name}`
+  const del = (id: string, key: string) =>
+    MEDIA_DELETE(
+      req(`https://gov.test/api/proposals/${id}/media?network=${NET}&key=${encodeURIComponent(key)}`, "DELETE"),
+      ctx(id),
+    )
+  const put = (k: string) => bucketMod.bucket.set(k, { body: "IMG", contentType: "image/png" })
+
+  it("removes an upload (and its thumbnail) before the draft exists", async () => {
+    const k = mediaKey(OWN_ID)
+    put(k)
+    put(`${k}.thumb.webp`)
+    const res = await del(OWN_ID, k)
+    expect(res.status).toBe(200)
+    expect((await res.json()).deleted).toBe(true)
+    expect(bucketMod.bucket.has(k)).toBe(false)
+    expect(bucketMod.bucket.has(`${k}.thumb.webp`)).toBe(false)
+  })
+
+  it("keeps a file the saved draft still lists until it is re-staged", async () => {
+    const k = mediaKey(OWN_ID)
+    db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: proposalJsonKey(NET, OWN_ID) })
+    db.seedAttachment({ proposal_id: OWN_ID, bucket_key: k })
+    put(k)
+    const res = await del(OWN_ID, k)
+    expect(res.status).toBe(200)
+    expect((await res.json()).deleted).toBe(false)
+    expect(bucketMod.bucket.has(k)).toBe(true)
+  })
+
+  it("never removes files of submitted or foreign proposals, or keys outside the folder", async () => {
+    const victimFile = mediaKey(VICTIM_ID)
+    put(victimFile)
+    expect((await del(VICTIM_ID, victimFile)).status).toBe(403)
+
+    db.seedProposal({ id: OWN_ONCHAIN_ID, network: NET, proposer_address: ATTACKER, status: "on_chain", referendum_index: 7, json_key: proposalJsonKey(NET, OWN_ONCHAIN_ID) })
+    const onChainFile = mediaKey(OWN_ONCHAIN_ID)
+    put(onChainFile)
+    expect((await del(OWN_ONCHAIN_ID, onChainFile)).status).toBe(409)
+
+    expect((await del(OWN_ID, victimFile)).status).toBe(400)
+    expect((await del(OWN_ID, victimJsonKey)).status).toBe(400)
+    expect(bucketMod.bucket.has(victimFile)).toBe(true)
+    expect(bucketMod.bucket.has(onChainFile)).toBe(true)
+    expect(bodyOf(victimJsonKey)).toBe(`REAL:${victimJsonKey}`)
+  })
+
+  it("requires a session", async () => {
+    auth.user = null
+    expect((await del(OWN_ID, mediaKey(OWN_ID))).status).toBe(401)
   })
 })
 

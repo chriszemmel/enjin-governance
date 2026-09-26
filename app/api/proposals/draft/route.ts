@@ -37,15 +37,17 @@ import {
   getProposalById,
   insertProposalDraft,
   insertAttachment,
+  listAttachments,
   replaceAttachments,
   updateProposalDraft,
   type CreateProposalDraft,
 } from "@/lib/db/proposals"
 import { isEnvelopeOnChain } from "@/lib/governance/envelope-status"
 import { upsertUserByAddress } from "@/lib/db/users"
-import { isR2Configured } from "@/lib/r2/client"
-import { ownMediaKey, proposalJsonKey } from "@/lib/r2/paths"
-import { putJson } from "@/lib/r2/upload"
+import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
+import { ownMediaKey, proposalJsonKey, publicUrlFor } from "@/lib/r2/paths"
+import { deleteObjects, putJson } from "@/lib/r2/upload"
+import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import {
   buildRemarkPayload,
@@ -233,7 +235,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Attachment keys come from the browser and are later deleted from the
   // bucket together with the draft, so each one must live in this
-  // proposal's own media folder.
+  // proposal's own media folder. The URL written into the JSON is built from
+  // that key, never taken from the browser, so a proposal can only ever
+  // point at its own files.
   const attachments: { key: string; att: (typeof parsed.attachments)[number] }[] = []
   for (const att of parsed.attachments) {
     const ownKey = ownMediaKey(att.bucket_key, parsed.network, parsed.proposal_id)
@@ -243,7 +247,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 400 },
       )
     }
-    attachments.push({ key: ownKey, att })
+    attachments.push({ key: ownKey, att: { ...att, url: publicUrlFor(publicAssetBase(), ownKey) } })
   }
 
   const key = proposalJsonKey(parsed.network, parsed.proposal_id)
@@ -264,8 +268,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             amount_planck: parsed.amount_planck,
           }
         : null,
-    attachments: parsed.attachments.map(
-      (a): ProposalAttachmentMeta => ({
+    attachments: attachments.map(
+      ({ att: a }): ProposalAttachmentMeta => ({
         name: a.name,
         url: a.url,
         sha256: a.sha256,
@@ -348,6 +352,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 409 },
       )
     }
+    // Files the saved draft listed but this version no longer does were
+    // removed in the editor; they were never signed, so clean them up.
+    const keep = new Set(attachments.map((a) => a.key))
+    const previous = await listAttachments(updated.id).catch(() => [])
     try {
       await replaceAttachments(
         updated.id,
@@ -363,6 +371,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       )
     } catch {
       // Best-effort - the JSON already carries the authoritative list.
+    }
+    const dropped = previous
+      .map((a) => ownMediaKey(a.bucket_key, parsed.network, parsed.proposal_id))
+      .filter((k): k is string => k != null && !keep.has(k))
+    if (dropped.length > 0) {
+      await deleteObjects(dropped.flatMap((k) => [k, thumbKeyFor(k)])).catch(() => null)
     }
     return NextResponse.json({
       ok: true,

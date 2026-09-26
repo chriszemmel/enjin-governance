@@ -56,6 +56,8 @@ export async function GET(
     )
     // Public, read-only bytes: allow cross-origin fetch + sha256 verify.
     headers.set("Access-Control-Allow-Origin", "*")
+    // Serve exactly the stored type; never let the browser guess another.
+    headers.set("X-Content-Type-Options", "nosniff")
     if (res.ETag) headers.set("ETag", res.ETag)
 
     return new NextResponse(bytes, { status: 200, headers })

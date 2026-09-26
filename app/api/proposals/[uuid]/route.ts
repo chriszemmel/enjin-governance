@@ -37,8 +37,9 @@ import {
   updateProposalContent,
   type ReplaceAttachmentItem,
 } from "@/lib/db/proposals"
-import { isR2Configured } from "@/lib/r2/client"
-import { ownMediaKey, proposalPrefix } from "@/lib/r2/paths"
+import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
+import { ownMediaKey, proposalPrefix, publicUrlFor } from "@/lib/r2/paths"
+import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import { deleteObjects, putJson } from "@/lib/r2/upload"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
@@ -116,7 +117,7 @@ export async function DELETE(
   let r2Keys: string[] = [existing.json_key]
   try {
     const attachments = await listAttachments(existing.id)
-    r2Keys = r2Keys.concat(attachments.map((a) => a.bucket_key))
+    r2Keys = r2Keys.concat(attachments.flatMap((a) => [a.bucket_key, thumbKeyFor(a.bucket_key)]))
   } catch {
     // attachment lookup is best-effort; the json key alone still gets cleaned
   }
@@ -261,8 +262,11 @@ export async function PATCH(
   }
 
   // Same rule as the draft route: every attachment key must sit in this
-  // proposal's own media folder. Checked before anything is written.
+  // proposal's own media folder, and the URL written into the JSON is built
+  // from that key rather than taken from the browser. Checked before
+  // anything is written.
   const attachmentKeys: string[] = []
+  const attachmentUrls: string[] = []
   for (const att of parsed.attachments) {
     const ownKey = ownMediaKey(att.bucket_key, existing.network, existing.id)
     if (!ownKey) {
@@ -272,6 +276,7 @@ export async function PATCH(
       )
     }
     attachmentKeys.push(ownKey)
+    attachmentUrls.push(publicUrlFor(publicAssetBase(), ownKey))
   }
 
   const editedAt = new Date().toISOString()
@@ -293,9 +298,9 @@ export async function PATCH(
           }
         : null,
     attachments: parsed.attachments.map(
-      (a): ProposalAttachmentMeta => ({
+      (a, i): ProposalAttachmentMeta => ({
         name: a.name,
-        url: a.url,
+        url: attachmentUrls[i]!,
         sha256: a.sha256,
         content_type: a.content_type,
         size_bytes: a.size_bytes,
@@ -345,7 +350,7 @@ export async function PATCH(
   const replacementItems: ReplaceAttachmentItem[] = parsed.attachments.map(
     (a, i) => ({
       bucketKey: attachmentKeys[i]!,
-      url: a.url,
+      url: attachmentUrls[i]!,
       filename: a.name,
       contentType: a.content_type,
       sizeBytes: a.size_bytes,

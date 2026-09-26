@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { Suspense, useEffect, useRef, useState } from "react"
+import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -13,10 +13,19 @@ import {
   AttachmentDropzone,
   type UploadedAttachment,
 } from "@/components/create/attachment-dropzone"
+import {
+  MarkdownEditor,
+  type MarkdownEditorHandle,
+} from "@/components/create/markdown-editor"
 import { type ChainId, CHAINS } from "@/lib/chain/chains"
 import { samePublicKey } from "@/lib/chain/ss58"
 import { useActiveChain, useSetActiveChain } from "@/lib/chain/use-chain"
 import type { ProposalJson } from "@/lib/governance/proposal-metadata"
+import {
+  markdownForAttachment,
+  resolveProposalMedia,
+} from "@/lib/governance/proposal-media"
+import { keyFromPublicUrl } from "@/lib/r2/paths"
 import { useEditProposal } from "@/lib/query/hooks/use-edit-proposal"
 import { useProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
 import { useReferendum } from "@/lib/query/hooks/use-referendum"
@@ -163,7 +172,7 @@ function EditProposalPageInner() {
                 the Account page.
               </p>
               <Link
-                href="/account"
+                href={`/account?next=${encodeURIComponent(`/proposals/${metadata.referendum_index}/edit?network=${metadata.network}`)}`}
                 className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-purple-dim"
               >
                 Go to Account
@@ -276,7 +285,7 @@ function EditForm({
     setBodyMarkdown(json.body_markdown ?? metadata.body_markdown)
     setAttachments(
       (json.attachments ?? []).map((a) => ({
-        bucket_key: keyFromUrl(a.url),
+        bucket_key: keyFromPublicUrl(a.url),
         url: a.url,
         sha256: a.sha256,
         size_bytes: a.size_bytes,
@@ -288,6 +297,11 @@ function EditForm({
   }, [seeded, jsonQuery.data, metadata])
 
   const edit = useEditProposal()
+  const editorRef = useRef<MarkdownEditorHandle>(null)
+  const media = useMemo(
+    () => resolveProposalMedia(attachments, metadata.network, metadata.id),
+    [attachments, metadata.network, metadata.id],
+  )
 
   const titleTrimmed = title.trim()
   const summaryTrimmed = summary.trim()
@@ -417,24 +431,18 @@ function EditForm({
             />
           </Field>
 
-          <Field
-            label="Body (markdown)"
-            hint={`${bodyMarkdown.length}/100000`}
+          <MarkdownEditor
+            ref={editorRef}
+            label="Full proposal"
+            value={bodyMarkdown}
+            onChange={setBodyMarkdown}
+            rows={12}
+            maxLength={100_000}
+            placeholder={`Full body (≥ ${BODY_MIN} chars, or blank)`}
+            hint={`${bodyMarkdown.length.toLocaleString("en-US")}/100,000 · markdown`}
             error={bodyError}
-          >
-            <textarea
-              value={bodyMarkdown}
-              onChange={(e) => setBodyMarkdown(e.target.value)}
-              rows={12}
-              maxLength={100_000}
-              placeholder={`Full body (≥ ${BODY_MIN} chars, or blank)`}
-              className={cn(
-                inputClass,
-                "font-mono text-[13px] resize-y",
-                bodyError && inputErrorClass,
-              )}
-            />
-          </Field>
+            media={media}
+          />
 
           <div className="space-y-2">
             <p className="text-xs font-medium text-foreground">Attachments</p>
@@ -444,6 +452,11 @@ function EditForm({
               attachments={attachments}
               onChange={setAttachments}
               disabled={edit.isPending}
+              onInsert={(att) =>
+                editorRef.current?.insert(markdownForAttachment(att), {
+                  block: att.content_type.startsWith("image/"),
+                })
+              }
             />
           </div>
         </div>
@@ -538,17 +551,6 @@ function Field({
       )}
     </div>
   )
-}
-
-/**
- * R2 bucket keys aren't returned in the JSON's attachments - only the
- * public URL is. Re-derive the key from the URL by stripping the
- * public base. Falls back to the full URL if the layout ever changes;
- * the server-side replace endpoint deletes-then-inserts so a
- * synthetic key would still be inserted cleanly.
- */
-function keyFromUrl(url: string): string {
-  return url.replace(/^https?:\/\/[^/]+\//, "")
 }
 
 function attachmentsChanged(

@@ -1,14 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { FileJson, Paperclip } from "lucide-react"
+import { FileJson } from "lucide-react"
+import { ProposalBody } from "@/components/governance/proposal-body"
 import { ProposalSourceModal } from "@/components/governance/proposal-source-modal"
 import type { ChainConfig } from "@/lib/chain/chains"
 import type { ProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
 import { stringifyStable } from "@/lib/r2/json"
-import { parseMarkdownBlocks } from "@/lib/governance/markdown-lite"
 import type { ProposalJson } from "@/lib/governance/proposal-metadata"
+import { resolveProposalMedia } from "@/lib/governance/proposal-media"
 
 type Props = {
   metadata: ProposalMetadata
@@ -71,8 +72,13 @@ export function ProposalMetadataHeader({ metadata, chain }: Props) {
   const edited = Boolean(metadata.edited_at)
   const [sourceOpen, setSourceOpen] = useState(false)
 
+  // Only files in this proposal's own folder are shown, loaded through /r.
+  const media = useMemo(
+    () => resolveProposalMedia(json?.attachments ?? [], metadata.network, metadata.id),
+    [json?.attachments, metadata.network, metadata.id],
+  )
   const hasBody = Boolean(json?.body_markdown)
-  const hasAttachments = (json?.attachments?.length ?? 0) > 0
+  const hasAttachments = media.length > 0
   // The hero card now owns title + summary. If the JSON brings nothing
   // additional, drop the card entirely so we don't render an empty
   // "About" panel with just a verification badge.
@@ -103,40 +109,7 @@ export function ProposalMetadataHeader({ metadata, chain }: Props) {
         error={jsonQuery.isError}
       />
 
-      {json?.body_markdown && (
-        <div className="text-foreground">
-          <MarkdownLite source={json.body_markdown} />
-        </div>
-      )}
-
-      {json && json.attachments.length > 0 && (
-        <div className="pt-3 border-t border-border">
-          <p className="text-xs font-medium text-muted-foreground mb-2">
-            Attachments ({json.attachments.length})
-          </p>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {json.attachments.map((att) => (
-              <li
-                key={att.url}
-                className="flex items-center gap-2 p-2 rounded-lg bg-surface-1 border border-border"
-              >
-                <Paperclip className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                <a
-                  href={att.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-foreground hover:text-primary truncate flex-1 min-w-0"
-                >
-                  {att.name}
-                </a>
-                <span className="text-[10px] text-muted-foreground font-mono">
-                  {(att.size_bytes / 1024).toFixed(0)} KB
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {json && <ProposalBody body={json.body_markdown ?? ""} media={media} />}
     </div>
   )
 }
@@ -233,250 +206,4 @@ function sourceBadgeState({
     tone: "border-red-500/40 text-red-400 bg-red-500/5",
     label: "EGOV1 · Unverified",
   }
-}
-
-/**
- * Tiny markdown renderer that handles enough for proposal bodies:
- *
- *   block-level: paragraphs (blank-line separated), unordered lists
- *     (- or *), ordered lists (1. 2. …), ATX headings (# / ## / ###),
- *     fenced code blocks (```), GFM pipe tables.
- *   inline:      **bold**, *italic*, `code`, [label](url), <url>.
- *
- * Avoids pulling a full markdown lib into the bundle for what are
- * usually a few hundred lines of prose. Block parsing lives in
- * lib/governance/markdown-lite.ts so it can be unit tested; this half is
- * purely presentational. All output goes through React children (never
- * dangerouslySetInnerHTML) so user content can't inject markup.
- */
-function MarkdownLite({ source }: { source: string }) {
-  const blocks = parseMarkdownBlocks(source)
-
-  return (
-    <div className="space-y-3 text-sm leading-relaxed [overflow-wrap:anywhere]">
-      {blocks.map((b, i) => {
-        if (b.kind === "code") {
-          return (
-            <pre
-              key={i}
-              className="p-3 rounded-lg bg-surface-2 border border-border text-xs font-mono overflow-x-auto whitespace-pre"
-            >
-              {b.text}
-            </pre>
-          )
-        }
-        if (b.kind === "table") {
-          return (
-            // Proposal tables run wide (the GP stage ladder is 5 columns), so
-            // the table scrolls inside its own box rather than forcing the
-            // whole card to scroll.
-            <div key={i} className="overflow-x-auto">
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr>
-                    {b.head.map((cell, j) => (
-                      <th
-                        key={j}
-                        className="border border-border bg-surface-2 px-2 py-1.5 text-left font-semibold text-foreground"
-                      >
-                        {renderInline(cell)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {b.rows.map((row, r) => (
-                    <tr key={r}>
-                      {row.map((cell, j) => (
-                        <td
-                          key={j}
-                          className="border border-border px-2 py-1.5 align-top text-foreground/90"
-                        >
-                          {renderInline(cell)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        }
-        if (b.kind === "ul") {
-          return (
-            <ul key={i} className="list-disc pl-5 space-y-1">
-              {b.items.map((item, j) => (
-                <li key={j}>{renderInline(item)}</li>
-              ))}
-            </ul>
-          )
-        }
-        if (b.kind === "ol") {
-          return (
-            <ol key={i} className="list-decimal pl-5 space-y-1">
-              {b.items.map((item, j) => (
-                <li key={j}>{renderInline(item)}</li>
-              ))}
-            </ol>
-          )
-        }
-        if (b.kind === "h1") {
-          return (
-            <h2 key={i} className="text-lg font-semibold text-foreground pt-3">
-              {renderInline(b.text)}
-            </h2>
-          )
-        }
-        if (b.kind === "h2") {
-          return (
-            <h3 key={i} className="text-base font-semibold text-foreground pt-3">
-              {renderInline(b.text)}
-            </h3>
-          )
-        }
-        if (b.kind === "h3") {
-          return (
-            <h4 key={i} className="text-sm font-semibold text-foreground pt-2">
-              {renderInline(b.text)}
-            </h4>
-          )
-        }
-        return (
-          <p key={i} className="text-foreground/90">
-            {renderInline(b.text)}
-          </p>
-        )
-      })}
-    </div>
-  )
-}
-
-/**
- * Inline-token renderer: walks the string left-to-right, peeling off
- * the first matching span (code → links → bold → italic) and
- * recursing into nested marks (bold can contain italics, etc).
- *
- * Outputs React nodes directly - no string concatenation, no
- * dangerouslySetInnerHTML - so any user-supplied chars are escaped
- * automatically by React.
- */
-function renderInline(text: string): React.ReactNode[] {
-  const out: React.ReactNode[] = []
-  let buf = ""
-  let i = 0
-  let key = 0
-  const flushBuf = () => {
-    if (buf) {
-      out.push(buf)
-      buf = ""
-    }
-  }
-
-  while (i < text.length) {
-    const c = text[i]!
-
-    if (c === "`") {
-      const end = text.indexOf("`", i + 1)
-      if (end > i) {
-        flushBuf()
-        out.push(
-          <code
-            key={key++}
-            className="px-1 py-0.5 rounded bg-surface-2 text-[0.9em] font-mono"
-          >
-            {text.slice(i + 1, end)}
-          </code>,
-        )
-        i = end + 1
-        continue
-      }
-    }
-
-    if (c === "[") {
-      const closeBracket = text.indexOf("]", i + 1)
-      if (closeBracket > i && text[closeBracket + 1] === "(") {
-        const closeParen = text.indexOf(")", closeBracket + 2)
-        if (closeParen > closeBracket + 1) {
-          const label = text.slice(i + 1, closeBracket)
-          const href = text.slice(closeBracket + 2, closeParen)
-          if (isSafeUrl(href)) {
-            flushBuf()
-            out.push(
-              <a
-                key={key++}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:text-purple-dim underline-offset-2 hover:underline break-words"
-              >
-                {renderInline(label)}
-              </a>,
-            )
-            i = closeParen + 1
-            continue
-          }
-        }
-      }
-    }
-
-    if (c === "<") {
-      const end = text.indexOf(">", i + 1)
-      if (end > i) {
-        const inner = text.slice(i + 1, end)
-        if (isSafeUrl(inner)) {
-          flushBuf()
-          out.push(
-            <a
-              key={key++}
-              href={inner}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:text-purple-dim underline-offset-2 hover:underline break-all"
-            >
-              {inner}
-            </a>,
-          )
-          i = end + 1
-          continue
-        }
-      }
-    }
-
-    if (c === "*" && text[i + 1] === "*") {
-      const end = text.indexOf("**", i + 2)
-      if (end > i + 1) {
-        flushBuf()
-        out.push(
-          <strong key={key++} className="font-semibold text-foreground">
-            {renderInline(text.slice(i + 2, end))}
-          </strong>,
-        )
-        i = end + 2
-        continue
-      }
-    }
-
-    if (c === "*") {
-      const end = text.indexOf("*", i + 1)
-      if (end > i) {
-        flushBuf()
-        out.push(
-          <em key={key++} className="italic">
-            {renderInline(text.slice(i + 1, end))}
-          </em>,
-        )
-        i = end + 1
-        continue
-      }
-    }
-
-    buf += c
-    i++
-  }
-  flushBuf()
-  return out
-}
-
-function isSafeUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url) || url.startsWith("/")
 }

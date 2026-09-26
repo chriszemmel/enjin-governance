@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo, useRef } from "react"
 import { Hash } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTrackName } from "@/lib/governance/display"
@@ -14,6 +15,14 @@ import {
 import type { EnactmentChoice } from "@/lib/governance/enactment"
 import type { AddressInspection } from "@/lib/chain/ss58"
 import { MyDraftsPanel } from "@/components/create/my-drafts-panel"
+import {
+  MarkdownEditor,
+  type MarkdownEditorHandle,
+} from "@/components/create/markdown-editor"
+import {
+  markdownForAttachment,
+  resolveProposalMedia,
+} from "@/lib/governance/proposal-media"
 import { BeneficiaryCard } from "./beneficiary-card"
 import { EnactmentField } from "./enactment-field"
 import { Field } from "./create-ui"
@@ -62,6 +71,11 @@ type ComposeProps = {
 }
 
 export function Compose(p: ComposeProps) {
+  const editorRef = useRef<MarkdownEditorHandle>(null)
+  const media = useMemo(
+    () => resolveProposalMedia(p.attachments, p.network, p.proposalId),
+    [p.attachments, p.network, p.proposalId],
+  )
   return (
     <div className="space-y-5">
       <MyDraftsPanel
@@ -169,18 +183,18 @@ export function Compose(p: ComposeProps) {
         )}
       </div>
 
-      <Field
-        label="Full proposal (markdown)"
+      <MarkdownEditor
+        ref={editorRef}
+        label="Full proposal"
         required
         value={p.body}
         onChange={p.onBody}
         placeholder="Motivation, specification, milestones, risks, reporting cadence. Markdown supported."
-        multiline
         rows={12}
         maxLength={100_000}
-        hint={`${p.body.length}/100,000 · ≥ 50 chars required · markdown`}
-        mono
+        hint={`${p.body.length.toLocaleString("en-US")}/100,000 · ≥ 50 chars required · markdown`}
         disabled={!p.isConnected}
+        media={media}
       />
 
       <EnactmentField
@@ -203,6 +217,12 @@ export function Compose(p: ComposeProps) {
           onChange={p.onAttachmentsChange}
           beforeUpload={p.beforeUpload}
           disabled={!p.isConnected}
+          deleteOnRemove
+          onInsert={(att) =>
+            editorRef.current?.insert(markdownForAttachment(att), {
+              block: att.content_type.startsWith("image/"),
+            })
+          }
         />
       </div>
 

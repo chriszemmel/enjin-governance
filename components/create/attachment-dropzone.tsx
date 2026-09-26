@@ -1,10 +1,13 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import { Loader2, Paperclip, Trash2, Upload } from "lucide-react"
+import { FileText, Loader2, Plus, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
+import { MediaThumb, formatBytes } from "@/components/governance/attachment-gallery"
 import type { ChainId } from "@/lib/chain/chains"
+import { resolveProposalMedia } from "@/lib/governance/proposal-media"
 import { cn } from "@/lib/utils"
+import { readApiError } from "@/lib/utils/api-error"
 import { formatError } from "@/lib/utils/format-error"
 
 export type UploadedAttachment = {
@@ -28,6 +31,13 @@ type Props = {
    * upload) if the user cancels or fails the sign-in prompt.
    */
   beforeUpload?: () => Promise<boolean>
+  /** "Insert into text" / "Insert link": adds the file to the proposal text. */
+  onInsert?: (att: UploadedAttachment) => void
+  /**
+   * Also delete the stored file when it is removed from the list. Only for
+   * unsigned drafts - a submitted proposal's JSON on chain may list it.
+   */
+  deleteOnRemove?: boolean
 }
 
 const MAX_FILES = 8
@@ -39,6 +49,8 @@ export function AttachmentDropzone({
   onChange,
   disabled,
   beforeUpload,
+  onInsert,
+  deleteOnRemove,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -99,8 +111,24 @@ export function AttachmentDropzone({
     [attachments, beforeUpload, disabled, network, onChange, proposalId],
   )
 
-  const remove = (key: string) =>
+  const remove = (key: string) => {
     onChange(attachments.filter((a) => a.bucket_key !== key))
+    if (!deleteOnRemove) return
+    const url = `/api/proposals/${proposalId}/media?network=${network}&key=${encodeURIComponent(key)}`
+    void fetch(url, { method: "DELETE" })
+      .then(async (res) => {
+        // 409: already submitted - the file stays on purpose.
+        if (!res.ok && res.status !== 409) {
+          toast.error("Removed from the proposal, but the file couldn't be deleted", {
+            description: await readApiError(res),
+          })
+        }
+      })
+      .catch(() => null)
+  }
+
+  const media = resolveProposalMedia(attachments, network, proposalId)
+  const mediaByKey = new Map(media.map((m) => [m.key, m]))
 
   return (
     <div className="space-y-3">
@@ -159,37 +187,65 @@ export function AttachmentDropzone({
 
       {attachments.length > 0 && (
         <ul className="space-y-2">
-          {attachments.map((att) => (
-            <li
-              key={att.bucket_key}
-              className="flex items-center gap-3 p-3 rounded-lg bg-surface-1 border border-border"
-            >
-              <Paperclip className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <a
-                  href={att.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-foreground hover:text-primary truncate block"
-                >
-                  {att.name}
-                </a>
-                <p className="text-[11px] text-muted-foreground font-mono truncate">
-                  {(att.size_bytes / 1024).toFixed(1)} KB · sha256:{" "}
-                  {att.sha256.slice(0, 12)}…
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => remove(att.bucket_key)}
-                disabled={disabled}
-                className="text-muted-foreground hover:text-destructive disabled:opacity-40"
-                title="Remove attachment"
+          {attachments.map((att) => {
+            const m = mediaByKey.get(att.bucket_key)
+            return (
+              <li
+                key={att.bucket_key}
+                className="flex items-center gap-3 p-2.5 rounded-xl bg-surface-1 border border-border"
               >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </li>
-          ))}
+                {m?.isImage ? (
+                  <MediaThumb
+                    media={m}
+                    className="w-11 h-11 rounded-lg object-cover border border-border bg-surface-2 flex-shrink-0"
+                  />
+                ) : (
+                  <span className="w-11 h-11 rounded-lg border border-red-500/30 bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-4 h-4 text-red-500" />
+                  </span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <a
+                    href={m?.src ?? att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-foreground hover:text-primary truncate block"
+                  >
+                    {att.name}
+                  </a>
+                  <p className="text-[11px] text-muted-foreground font-mono truncate">
+                    {formatBytes(att.size_bytes)} · sha256 {att.sha256.slice(0, 8)}…
+                  </p>
+                </div>
+                {onInsert && (
+                  <button
+                    type="button"
+                    onClick={() => onInsert(att)}
+                    disabled={disabled}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors disabled:opacity-40 flex-shrink-0",
+                      m?.isImage
+                        ? "border-purple-border bg-primary/5 text-primary hover:bg-primary/10"
+                        : "border-border text-foreground hover:bg-surface-2",
+                    )}
+                  >
+                    <Plus className="w-3 h-3" />
+                    {m?.isImage ? "Insert into text" : "Insert link"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => remove(att.bucket_key)}
+                  disabled={disabled}
+                  className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40 flex-shrink-0"
+                  title="Remove attachment"
+                  aria-label={`Remove ${att.name}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

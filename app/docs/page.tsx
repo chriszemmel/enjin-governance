@@ -239,6 +239,19 @@ export default function DocsPage() {
               decimals, which overflows <Code>Number</Code>.
             </p>
             <p>
+              <strong>Attachments</strong> live next to the JSON under{" "}
+              <Code>proposals/&lt;network&gt;/&lt;id&gt;/media/</Code>. The
+              server builds each <Code>url</Code> from that key, and images
+              are stored without their metadata (no GPS) and scaled to fit
+              2560 px; the <Code>sha256</Code> is of the stored file. The
+              body can show an attachment with{" "}
+              <Code>![caption](&lt;attachment url or file name&gt;)</Code>.
+              Only the proposal&apos;s own attachments render as images;
+              any other image link is shown as a plain link, so nothing in a
+              proposal can be swapped or used to track readers after voting
+              starts.
+            </p>
+            <p>
               <Code>track</Code> is a free-form label, not an enum, and{" "}
               <strong>its casing is not normalised</strong>. Treasury
               proposals filed through this client carry the PascalCase Origins

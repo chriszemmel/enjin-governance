@@ -35,6 +35,17 @@ export function proposalMediaKey(
   return `proposals/${network}/${proposalUuid}/media/${sanitiseFilename(filename)}`
 }
 
+/**
+ * Name an upload is stored under: a short random prefix plus the sanitised
+ * original name, so two uploads called "image.png" never overwrite each
+ * other (media is cached as immutable, so an overwrite would also keep
+ * serving the old bytes). Capped so the thumbnail key still fits.
+ */
+export function uniqueMediaName(original: string, random: string): string {
+  const base = sanitiseFilename(original).slice(0, 90) || "file"
+  return `${random}-${base}`
+}
+
 /** Folder every object of one proposal lives under (JSON + media). */
 export function proposalPrefix(network: string, proposalUuid: string): string {
   return `proposals/${network}/${proposalUuid}/`

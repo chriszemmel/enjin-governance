@@ -866,6 +866,7 @@ function CreatePageInner() {
             track={formatTrackName(pickedTier.origin)}
             trackRaw={pickedTier.origin}
             chainName={chain.name}
+            network={chain.id}
             attachments={attachments}
             callHex={preimagePreview?.callHex ?? "0x"}
             preimageHash={preimagePreview?.preimageHash ?? "0x"}
