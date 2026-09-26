@@ -42,7 +42,8 @@ async function send<T>(url: string, method: string, body: unknown): Promise<T> {
 export function useMyModerationRole(enabled = true) {
   return useQuery<ModerationRole | null>({
     queryKey: ["moderation", "me"],
-    queryFn: async () => (await getJson<{ role: ModerationRole | null }>("/api/moderation/me")).role,
+    queryFn: async () =>
+      (await getJson<{ role: ModerationRole | null }>("/api/moderation/me")).role,
     enabled,
     staleTime: 60_000,
   })
@@ -57,7 +58,12 @@ export function useProposalModeration(proposalId: string | null | undefined) {
       }>(`/api/moderation/state?proposal=${proposalId}`)
       const out: ProposalModeration = { proposal: null, attachments: {} }
       for (const i of items) {
-        const info = { state: i.state, reason: i.reason, source: i.source, updated_at: i.updated_at }
+        const info = {
+          state: i.state,
+          reason: i.reason,
+          source: i.source,
+          updated_at: i.updated_at,
+        }
         if (i.target_type === "proposal") out.proposal = info
         if (i.target_type === "attachment") out.attachments[i.target_id] = info
       }
@@ -72,7 +78,12 @@ export function useReport() {
   return useMutation<
     { duplicate: boolean },
     Error,
-    { target_type: ModerationTarget; target_id: string; category: ReportCategory; note?: string | null }
+    {
+      target_type: ModerationTarget
+      target_id: string
+      category: ReportCategory
+      note?: string | null
+    }
   >({
     mutationFn: (body) => send("/api/moderation/reports", "POST", body),
   })
@@ -122,7 +133,13 @@ export function useModerationAction() {
     unknown,
     Error,
     | { target_type: ModerationTarget; target_id: string; action: ContentAction; reason: string }
-    | { target_type: "user"; target_id: string; action: "suspend" | "unsuspend"; days?: number; reason: string }
+    | {
+        target_type: "user"
+        target_id: string
+        action: "suspend" | "unsuspend"
+        days?: number
+        reason: string
+      }
   >({
     mutationFn: (body) => send("/api/moderation/actions", "POST", body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["moderation"] }),

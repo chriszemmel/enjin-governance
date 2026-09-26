@@ -56,7 +56,11 @@ export async function listRoles(): Promise<
   `) as { public_key: string; role: ModerationRole; granted_by: string | null; created_at: Date }[]
 }
 
-export async function grantRole(publicKey: string, role: ModerationRole, by: string): Promise<void> {
+export async function grantRole(
+  publicKey: string,
+  role: ModerationRole,
+  by: string,
+): Promise<void> {
   await getSql()`
     INSERT INTO moderation_roles (public_key, role, granted_by)
     VALUES (${publicKey}, ${role}, ${by})
@@ -85,11 +89,18 @@ export async function getState(
   return rows[0] ?? null
 }
 
-/** Non-visible states of a proposal, its attachments and its comments. */
+/**
+ * Non-visible states of a proposal, its attachments and its comments.
+ * Uploads checked before their draft existed carry no proposal_id, so
+ * attachments are also matched by their folder.
+ */
 export async function listStatesForProposal(proposalId: string): Promise<ModerationStateRow[]> {
+  const folder = `proposals/%/${proposalId}/media/%`
   return (await getSql()`
     SELECT * FROM moderation_state
-     WHERE proposal_id = ${proposalId} AND state <> 'visible'
+     WHERE state <> 'visible'
+       AND (proposal_id = ${proposalId}
+            OR (target_type = 'attachment' AND target_id LIKE ${folder}))
   `) as ModerationStateRow[]
 }
 
@@ -234,16 +245,27 @@ export async function listQueue(): Promise<QueueRow[]> {
        WHERE status = 'open'
        GROUP BY target_type, target_id
     )
-    SELECT o.target_type, o.target_id, o.proposal_id, o.reports, o.user_reports, o.automatic,
+    , located AS (
+      -- Uploads checked before their draft existed have no proposal_id;
+      -- their key names the proposal folder.
+      SELECT open.*,
+             COALESCE(
+               open.proposal_id,
+               CASE WHEN open.target_type = 'attachment'
+                    THEN split_part(open.target_id, '/', 3)::uuid END
+             ) AS pid
+        FROM open
+    )
+    SELECT o.target_type, o.target_id, o.pid AS proposal_id, o.reports, o.user_reports, o.automatic,
            CASE o.sev WHEN 3 THEN 'high' WHEN 2 THEN 'medium' ELSE 'low' END AS severity,
            o.categories, o.notes, o.details, o.first_at, o.last_at,
            s.state, s.reason AS state_reason,
            p.network, p.referendum_index, p.title AS proposal_title, p.proposer_address,
            a.filename AS attachment_name, a.content_type AS attachment_type,
            LEFT(c.body_markdown, 400) AS comment_body, c.author_address AS comment_author
-      FROM open o
+      FROM located o
       LEFT JOIN moderation_state s ON s.target_type = o.target_type AND s.target_id = o.target_id
-      LEFT JOIN proposals p ON p.id = o.proposal_id
+      LEFT JOIN proposals p ON p.id = o.pid
       LEFT JOIN proposal_attachments a ON o.target_type = 'attachment' AND a.bucket_key = o.target_id
       LEFT JOIN comments c ON o.target_type = 'comment' AND c.id::text = o.target_id
      ORDER BY o.sev DESC, o.first_at ASC

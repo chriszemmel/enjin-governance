@@ -49,14 +49,19 @@ function itemTitle(i: QueueItem): string {
 function itemWhere(i: QueueItem): string {
   const where = i.referendum_index != null ? `referendum #${i.referendum_index}` : "a draft"
   const kind =
-    i.target_type === "attachment" ? "Attachment" : i.target_type === "comment" ? "Comment" : "Proposal"
+    i.target_type === "attachment"
+      ? "Attachment"
+      : i.target_type === "comment"
+        ? "Comment"
+        : "Proposal"
   return `${kind} on ${where}`
 }
 
 function flaggedBy(i: QueueItem): string {
   const parts: string[] = []
   if (i.automatic) parts.push("Automatic check")
-  if (i.user_reports > 0) parts.push(`${i.user_reports} user report${i.user_reports === 1 ? "" : "s"}`)
+  if (i.user_reports > 0)
+    parts.push(`${i.user_reports} user report${i.user_reports === 1 ? "" : "s"}`)
   return parts.join(" + ")
 }
 
@@ -140,7 +145,8 @@ export default function ModerationPage() {
                   <ul className="divide-y divide-border">
                     {items.map((i) => {
                       const key = `${i.target_type}:${i.target_id}`
-                      const active = selected && key === `${selected.target_type}:${selected.target_id}`
+                      const active =
+                        selected && key === `${selected.target_type}:${selected.target_id}`
                       return (
                         <li key={key}>
                           <button
@@ -148,7 +154,9 @@ export default function ModerationPage() {
                             onClick={() => setSelectedKey(key)}
                             className={cn(
                               "w-full grid grid-cols-[2.75rem_1fr_auto] items-center gap-3 px-4 py-3 text-left transition-colors",
-                              active ? "bg-primary/5 shadow-[inset_3px_0_0] shadow-primary" : "hover:bg-surface-1",
+                              active
+                                ? "bg-primary/5 shadow-[inset_3px_0_0] shadow-primary"
+                                : "hover:bg-surface-1",
                             )}
                           >
                             <span className="w-11 h-11 rounded-lg bg-surface-2 flex items-center justify-center text-[9px] font-semibold uppercase text-muted-foreground">
@@ -189,7 +197,13 @@ export default function ModerationPage() {
                   </p>
                 )}
               </div>
-              {selected && <DetailPanel key={`${selected.target_type}:${selected.target_id}`} item={selected} role={role} />}
+              {selected && (
+                <DetailPanel
+                  key={`${selected.target_type}:${selected.target_id}`}
+                  item={selected}
+                  role={role}
+                />
+              )}
             </div>
           )}
         </div>
@@ -228,7 +242,13 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
   const suspend = () => {
     if (!author) return
     act.mutate(
-      { target_type: "user", target_id: author, action: "suspend", days: suspendDays, reason: reason.trim() },
+      {
+        target_type: "user",
+        target_id: author,
+        action: "suspend",
+        days: suspendDays,
+        reason: reason.trim(),
+      },
       {
         onSuccess: () => toast.success(`Posting paused for ${suspendDays} days`),
         onError: (e) => toast.error("Could not pause posting", { description: formatError(e) }),
@@ -306,12 +326,17 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
               </span>
             )}
             {(auto.labels ?? []).map((l) => (
-              <span key={l} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+              <span
+                key={l}
+                className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"
+              >
                 {l.replace(/_/g, " ")}
               </span>
             ))}
           </div>
-          {auto.explanation && <p className="text-sm text-foreground">&ldquo;{auto.explanation}&rdquo;</p>}
+          {auto.explanation && (
+            <p className="text-sm text-foreground">&ldquo;{auto.explanation}&rdquo;</p>
+          )}
         </div>
       )}
 
@@ -322,13 +347,18 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
           </p>
           <div className="flex flex-wrap gap-1.5">
             {item.categories.map((c) => (
-              <span key={c} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+              <span
+                key={c}
+                className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"
+              >
                 {REPORT_CATEGORY_LABELS[c as ReportCategory] ?? c}
               </span>
             ))}
           </div>
           {item.notes.map((n, i) => (
-            <p key={i} className="text-xs text-muted-foreground">&ldquo;{n}&rdquo;</p>
+            <p key={i} className="text-xs text-muted-foreground">
+              &ldquo;{n}&rdquo;
+            </p>
           ))}
         </div>
       )}
@@ -371,7 +401,9 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
           placeholder="Reason (public)"
           className="w-full rounded-xl border border-border bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:border-primary/50"
         />
-        <p className="text-[11px] text-muted-foreground">Required. Shown in the public moderation log.</p>
+        <p className="text-[11px] text-muted-foreground">
+          Required. Shown in the public moderation log.
+        </p>
       </div>
 
       <button
@@ -431,8 +463,8 @@ function RolesPanel() {
   return (
     <div className="rounded-2xl bg-card border border-border p-5 space-y-4 max-w-2xl">
       <p className="text-sm text-muted-foreground">
-        Moderators blur, hide and restore content. Admins can also delete files, pause
-        posting and manage roles. Roles follow the wallet on every network.
+        Moderators blur, hide and restore content. Admins can also delete files, pause posting and
+        manage roles. Roles follow the wallet on every network.
       </p>
       <ul className="divide-y divide-border rounded-xl border border-border">
         {(roles.data ?? []).map((r) => (
@@ -486,7 +518,8 @@ function RolesPanel() {
                   setAddress("")
                   toast.success("Role granted - logged publicly")
                 },
-                onError: (e) => toast.error("Could not grant the role", { description: formatError(e) }),
+                onError: (e) =>
+                  toast.error("Could not grant the role", { description: formatError(e) }),
               },
             )
           }
@@ -514,7 +547,9 @@ function TabButton({
       onClick={onClick}
       className={cn(
         "px-3 py-1 rounded-md",
-        active ? "bg-card text-foreground shadow-sm border border-border" : "text-muted-foreground hover:text-foreground",
+        active
+          ? "bg-card text-foreground shadow-sm border border-border"
+          : "text-muted-foreground hover:text-foreground",
       )}
     >
       {children}

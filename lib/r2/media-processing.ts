@@ -77,3 +77,16 @@ export async function processProposalImage(
     throw new ImageProcessingError(e instanceof Error ? e.message : String(e))
   }
 }
+
+/**
+ * JPEG copy for the automatic content check: small enough to send, large
+ * enough to read text in a screenshot (the model downsizes past ~1568 px).
+ */
+export async function scanCopy(image: Buffer): Promise<Buffer> {
+  return sharp(image, { limitInputPixels: MAX_INPUT_PIXELS })
+    .rotate()
+    .resize({ width: 1568, height: 1568, fit: "inside", withoutEnlargement: true })
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: 80 })
+    .toBuffer()
+}

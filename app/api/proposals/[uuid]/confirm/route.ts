@@ -22,6 +22,7 @@ import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { attachReferendumIndex, getProposalById } from "@/lib/db/proposals"
 import { expectedMetadataHash } from "@/lib/governance/proposal-metadata"
+import { flagText } from "@/lib/moderation/auto-flag"
 import { isR2Configured } from "@/lib/r2/client"
 import { proposalIndexRedirectKey } from "@/lib/r2/paths"
 import { putJson } from "@/lib/r2/upload"
@@ -264,6 +265,15 @@ export async function POST(
       // ignore
     }
   }
+
+  // The proposal is public now: check its text in the background (flags
+  // for a moderator at most, never hides it).
+  flagText({
+    targetType: "proposal",
+    targetId: row.id,
+    proposalId: row.id,
+    text: [row.title, row.summary ?? "", row.body_markdown].join("\n\n"),
+  })
 
   return NextResponse.json({
     ok: true,

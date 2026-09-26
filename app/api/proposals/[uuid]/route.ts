@@ -40,6 +40,7 @@ import {
 import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
 import { ownMediaKey, proposalPrefix, publicUrlFor } from "@/lib/r2/paths"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
+import { flagText } from "@/lib/moderation/auto-flag"
 import { deleteObjects, putJson, readObjectText } from "@/lib/r2/upload"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
@@ -379,6 +380,13 @@ export async function PATCH(
   } catch {
     // Best-effort - the JSON already carries the authoritative list.
   }
+
+  flagText({
+    targetType: "proposal",
+    targetId: existing.id,
+    proposalId: existing.id,
+    text: [parsed.title, parsed.summary ?? "", parsed.body_markdown].join("\n\n"),
+  })
 
   return NextResponse.json({
     ok: true,

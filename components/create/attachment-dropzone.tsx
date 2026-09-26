@@ -87,12 +87,27 @@ export function AttachmentDropzone({
             { method: "POST", body: form },
           )
           const json = (await res.json()) as
-            | { ok: true; bucket_key: string; url: string; sha256: string; size_bytes: number; content_type: string; name: string }
+            | {
+                ok: true
+                bucket_key: string
+                url: string
+                sha256: string
+                size_bytes: number
+                content_type: string
+                name: string
+                moderation?: "blurred" | null
+              }
             | { ok: false; error: string }
           if (!res.ok || !("ok" in json) || !json.ok) {
             const err = "error" in json ? json.error : `HTTP ${res.status}`
             toast.error(`Upload failed: ${file.name}`, { description: err })
             continue
+          }
+          if (json.moderation === "blurred") {
+            toast.info(`${file.name} was sent to moderators`, {
+              description:
+                "The automatic check wants a human to look at it. Until then it shows blurred.",
+            })
           }
           next.push({
             bucket_key: json.bucket_key,

@@ -4,12 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Flag, Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { useReport } from "@/lib/query/hooks/use-moderation"
 import { useMe } from "@/lib/query/hooks/use-session"
 import {

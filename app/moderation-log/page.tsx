@@ -8,13 +8,22 @@ import { cn } from "@/lib/utils"
 import { formatError } from "@/lib/utils/format-error"
 
 const ACTION_BADGE: Record<string, { label: string; tone: string }> = {
-  keep: { label: "Kept visible", tone: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" },
-  restore: { label: "Restored", tone: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" },
+  keep: {
+    label: "Kept visible",
+    tone: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+  },
+  restore: {
+    label: "Restored",
+    tone: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+  },
   blur: { label: "Blurred", tone: "border-amber-500/40 text-amber-600 dark:text-amber-400" },
   hide: { label: "Hidden", tone: "border-purple-border text-primary" },
   delete_file: { label: "File deleted", tone: "border-red-500/40 text-red-600 dark:text-red-400" },
   suspend: { label: "Posting paused", tone: "border-red-500/40 text-red-600 dark:text-red-400" },
-  unsuspend: { label: "Posting resumed", tone: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" },
+  unsuspend: {
+    label: "Posting resumed",
+    tone: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+  },
   grant: { label: "Role granted", tone: "border-border text-muted-foreground" },
   revoke: { label: "Role removed", tone: "border-border text-muted-foreground" },
 }
@@ -51,8 +60,8 @@ export default function ModerationLogPage() {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Moderation log</h1>
             <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-              Every moderation action on this site, with its reason. Referenda, votes and
-              on-chain records are never changed.
+              Every moderation action on this site, with its reason. Referenda, votes and on-chain
+              records are never changed.
             </p>
           </div>
 
@@ -74,7 +83,12 @@ export default function ModerationLogPage() {
                   return (
                     <li key={i.id} className="p-4 space-y-1.5">
                       <div className="flex items-center justify-between gap-3">
-                        <span className={cn("rounded-full border px-2.5 py-0.5 text-[11px]", badge.tone)}>
+                        <span
+                          className={cn(
+                            "rounded-full border px-2.5 py-0.5 text-[11px]",
+                            badge.tone,
+                          )}
+                        >
                           {badge.label}
                         </span>
                         <span className="text-xs text-muted-foreground">

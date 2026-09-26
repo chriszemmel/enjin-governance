@@ -46,7 +46,10 @@ export function roleAtLeast(role: ModerationRole | null, min: ModerationRole): b
 }
 
 /** Actions a role may take on a target type. */
-export function allowedActions(target: ModerationTarget, role: ModerationRole | null): ContentAction[] {
+export function allowedActions(
+  target: ModerationTarget,
+  role: ModerationRole | null,
+): ContentAction[] {
   if (!roleAtLeast(role, "moderator")) return []
   const base: ContentAction[] =
     target === "attachment" ? ["keep", "blur", "hide", "restore"] : ["keep", "hide", "restore"]

@@ -18,6 +18,7 @@
     "db:migrate": "node scripts/run-migrations.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@aws-sdk/client-s3": "^3.1050.0",
     "@aws-sdk/s3-request-presigner": "^3.1050.0",
     "@hookform/resolvers": "^3.9.1",

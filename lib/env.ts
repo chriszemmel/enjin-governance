@@ -27,6 +27,12 @@ export const env = createEnv({
     // others from /moderation; those grants live in the database.
     GOVERNANCE_ADMIN_PUBLIC_KEYS: z.string().optional(),
 
+    // Automatic content checks (Claude). Off unless CONTENT_SCAN=ON and an
+    // API key is set. Images are checked at upload; text is only flagged
+    // for moderators, never hidden automatically.
+    CONTENT_SCAN: z.enum(["ON", "OFF"]).default("OFF"),
+    ANTHROPIC_API_KEY: z.string().optional(),
+
     // Cloudflare R2 - bucket `enjin-governance` holds:
     //   proposals/{network}/{uuid}/proposal.json
     //   proposals/{network}/{uuid}/media/{filename}
@@ -81,6 +87,8 @@ export const env = createEnv({
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
     GOVERNANCE_ADMIN_PUBLIC_KEYS: process.env.GOVERNANCE_ADMIN_PUBLIC_KEYS,
+    CONTENT_SCAN: process.env.CONTENT_SCAN,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
 
     R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
     R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,

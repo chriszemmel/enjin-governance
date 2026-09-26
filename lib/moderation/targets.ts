@@ -21,7 +21,10 @@ type ResolvedTarget = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export async function resolveTarget(type: ModerationTarget, id: string): Promise<ResolvedTarget | null> {
+export async function resolveTarget(
+  type: ModerationTarget,
+  id: string,
+): Promise<ResolvedTarget | null> {
   if (type === "proposal") {
     if (!UUID.test(id)) return null
     const proposal = await getProposalById(id)

@@ -16,13 +16,7 @@ function who(info: ModerationInfo): string {
 }
 
 /** Placeholder where a hidden or removed image used to be. */
-export function WithheldMedia({
-  info,
-  className,
-}: {
-  info: ModerationInfo
-  className?: string
-}) {
+export function WithheldMedia({ info, className }: { info: ModerationInfo; className?: string }) {
   return (
     <div
       className={cn(

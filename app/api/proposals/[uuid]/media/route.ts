@@ -32,7 +32,12 @@ import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById, listAttachments } from "@/lib/db/proposals"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import { isR2Configured } from "@/lib/r2/client"
-import { ImageProcessingError, processProposalImage } from "@/lib/r2/media-processing"
+import {
+  ImageProcessingError,
+  processProposalImage,
+  scanCopy,
+} from "@/lib/r2/media-processing"
+import { checkUpload, queueBlurredUpload } from "@/lib/moderation/auto-flag"
 import { ownMediaKey, proposalMediaKey, uniqueMediaName } from "@/lib/r2/paths"
 import { sniffMediaMime } from "@/lib/r2/sniff"
 import { deleteObjects, putObject, sha256Hex } from "@/lib/r2/upload"
@@ -196,6 +201,17 @@ export async function POST(
     }
   }
 
+  // Automatic check (when enabled): clear violations - a readable recovery
+  // phrase, say - are never stored; borderline images are stored blurred
+  // and queued for a moderator.
+  const check =
+    sniffed === "application/pdf"
+      ? ({ action: "store" } as const)
+      : await checkUpload(() => scanCopy(body), file.name || "file")
+  if (check.action === "reject") {
+    return NextResponse.json({ ok: false, error: check.message }, { status: 422 })
+  }
+
   const storedName = uniqueMediaName(file.name || "file", randomUUID().slice(0, 8))
   const key = proposalMediaKey(network, proposalUuid, storedName)
 
@@ -215,8 +231,13 @@ export async function POST(
         cacheControl: "public, max-age=31536000, immutable",
       }).catch(() => null)
     }
+    if (check.action === "store_blurred") {
+      const existing = isDbConfigured() ? await getProposalById(proposalUuid).catch(() => null) : null
+      await queueBlurredUpload(result.key, existing?.id ?? null, check.outcome).catch(() => null)
+    }
     return NextResponse.json({
       ok: true,
+      moderation: check.action === "store_blurred" ? "blurred" : null,
       bucket_key: result.key,
       url: result.url,
       sha256: result.sha256,

@@ -883,6 +883,14 @@ export default function DocsPage() {
               . Proposers can remove their own attachments at any time.
             </p>
             <p>
+              <strong>Automatic checks</strong> (when enabled): uploaded images are
+              checked by an AI model before they are stored. Clear violations, such
+              as a readable recovery phrase, are rejected; borderline images are
+              stored blurred and sent to the moderators&apos; queue. Proposal text
+              and comments are only ever flagged for a human - the machine never
+              hides text on its own.
+            </p>
+            <p>
               <strong>What moderation never does:</strong> nobody can rewrite someone
               else&apos;s text, and referenda, votes and on-chain records are never
               touched. A proposal&apos;s <Code>proposal.json</Code> stays byte-identical,

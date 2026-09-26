@@ -9,6 +9,7 @@ import {
 import { getProposalById } from "@/lib/db/proposals"
 import { listStatesForProposal } from "@/lib/db/moderation"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { flagText } from "@/lib/moderation/auto-flag"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
@@ -132,6 +133,12 @@ export async function POST(
     userId: me.id,
     authorAddress: me.address,
     bodyMarkdown: parsed.body_markdown,
+  })
+  flagText({
+    targetType: "comment",
+    targetId: row.id,
+    proposalId: proposal.id,
+    text: parsed.body_markdown,
   })
 
   return NextResponse.json({

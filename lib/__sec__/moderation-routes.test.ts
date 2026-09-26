@@ -13,7 +13,9 @@ const USER = "efRd63tR845wJ4FxoUfFgrDpxfAQ2t1iydU7LyzJCf577hgTH"
 vi.hoisted(() => {
   process.env.GOVERNANCE_ADMIN_PUBLIC_KEYS = "enD9wdMEaQa3MEDUc7dtsCC86JYGMN5JBE2NBRoMyC37dX4iA"
 })
-const auth = vi.hoisted(() => ({ user: null as null | { id: string; address: string; handle: string | null } }))
+const auth = vi.hoisted(() => ({
+  user: null as null | { id: string; address: string; handle: string | null },
+}))
 const mod = vi.hoisted(() => ({
   roles: new Map<string, "moderator" | "admin">(),
   states: new Map<string, { state: string; reason: string }>(),
@@ -78,7 +80,11 @@ const PID = "22222222-2222-4222-8222-222222222222"
 const FILE = `proposals/${NET}/${PID}/media/ab12cd34-wallet.png`
 
 const post = (url: string, body: unknown) =>
-  new NextRequest(url, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } })
+  new NextRequest(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  })
 const act = (body: unknown) => ACT(post("https://gov.test/api/moderation/actions", body))
 const signIn = (address: string) => {
   auth.user = { id: `id-${address.slice(0, 4)}`, address, handle: null }
@@ -92,7 +98,14 @@ beforeEach(() => {
   mod.actions.length = 0
   mod.reports.length = 0
   mod.roles.set(`0x${publicKeyOf(MOD)}`, "moderator")
-  db.seedProposal({ id: PID, network: NET, proposer_address: USER, status: "on_chain", referendum_index: 214, json_key: `proposals/${NET}/${PID}/proposal.json` })
+  db.seedProposal({
+    id: PID,
+    network: NET,
+    proposer_address: USER,
+    status: "on_chain",
+    referendum_index: 214,
+    json_key: `proposals/${NET}/${PID}/proposal.json`,
+  })
   bucketMod.bucket.set(FILE, { body: "IMG", contentType: "image/png" })
   bucketMod.bucket.set(`${FILE}.thumb.webp`, { body: "THUMB", contentType: "image/webp" })
   auth.user = null
@@ -104,29 +117,60 @@ describe("reports", () => {
     expect((await REPORT(post("https://gov.test/api/moderation/reports", body))).status).toBe(401)
     signIn(USER)
     const missing = { ...body, target_id: `proposals/${NET}/${PID}/media/nope/../x.png` }
-    expect((await REPORT(post("https://gov.test/api/moderation/reports", missing))).status).toBe(404)
+    expect((await REPORT(post("https://gov.test/api/moderation/reports", missing))).status).toBe(
+      404,
+    )
     const res = await REPORT(post("https://gov.test/api/moderation/reports", body))
     expect(res.status).toBe(200)
-    expect(mod.reports).toMatchObject([{ targetId: FILE, proposalId: PID, severity: "high", source: "user" }])
+    expect(mod.reports).toMatchObject([
+      { targetId: FILE, proposalId: PID, severity: "high", source: "user" },
+    ])
   })
 })
 
 describe("actions", () => {
   it("are for moderators only, and always need a reason", async () => {
     signIn(USER)
-    expect((await act({ target_type: "attachment", target_id: FILE, action: "hide", reason: "Recovery phrase" })).status).toBe(403)
+    expect(
+      (
+        await act({
+          target_type: "attachment",
+          target_id: FILE,
+          action: "hide",
+          reason: "Recovery phrase",
+        })
+      ).status,
+    ).toBe(403)
     signIn(MOD)
-    expect((await act({ target_type: "attachment", target_id: FILE, action: "hide", reason: "" })).status).toBe(400)
+    expect(
+      (await act({ target_type: "attachment", target_id: FILE, action: "hide", reason: "" }))
+        .status,
+    ).toBe(400)
   })
 
   it("lets a moderator hide an image, which /r then refuses to serve", async () => {
-    expect((await READ(new NextRequest(`https://gov.test/r/${FILE}`), { params: Promise.resolve({ key: FILE.split("/") }) })).status).toBe(200)
+    expect(
+      (
+        await READ(new NextRequest(`https://gov.test/r/${FILE}`), {
+          params: Promise.resolve({ key: FILE.split("/") }),
+        })
+      ).status,
+    ).toBe(200)
     signIn(MOD)
-    const res = await act({ target_type: "attachment", target_id: FILE, action: "hide", reason: "Screenshot shows a recovery phrase." })
+    const res = await act({
+      target_type: "attachment",
+      target_id: FILE,
+      action: "hide",
+      reason: "Screenshot shows a recovery phrase.",
+    })
     expect(res.status).toBe(200)
-    expect(mod.actions).toMatchObject([{ action: "hide", referendumIndex: 214, actorLabel: expect.stringMatching(/^enCrdz/) }])
+    expect(mod.actions).toMatchObject([
+      { action: "hide", referendumIndex: 214, actorLabel: expect.stringMatching(/^enCrdz/) },
+    ])
     for (const key of [FILE, `${FILE}.thumb.webp`]) {
-      const r = await READ(new NextRequest(`https://gov.test/r/${key}`), { params: Promise.resolve({ key: key.split("/") }) })
+      const r = await READ(new NextRequest(`https://gov.test/r/${key}`), {
+        params: Promise.resolve({ key: key.split("/") }),
+      })
       expect(r.status).toBe(404)
     }
     // Hiding never deletes: the file is still in storage for an appeal.
@@ -135,10 +179,28 @@ describe("actions", () => {
 
   it("keeps file deletion for admins, and then really deletes", async () => {
     signIn(MOD)
-    expect((await act({ target_type: "attachment", target_id: FILE, action: "delete_file", reason: "Legal takedown" })).status).toBe(403)
+    expect(
+      (
+        await act({
+          target_type: "attachment",
+          target_id: FILE,
+          action: "delete_file",
+          reason: "Legal takedown",
+        })
+      ).status,
+    ).toBe(403)
     expect(bucketMod.bucket.has(FILE)).toBe(true)
     signIn(ADMIN)
-    expect((await act({ target_type: "attachment", target_id: FILE, action: "delete_file", reason: "Legal takedown" })).status).toBe(200)
+    expect(
+      (
+        await act({
+          target_type: "attachment",
+          target_id: FILE,
+          action: "delete_file",
+          reason: "Legal takedown",
+        })
+      ).status,
+    ).toBe(200)
     expect(bucketMod.bucket.has(FILE)).toBe(false)
     expect(bucketMod.bucket.has(`${FILE}.thumb.webp`)).toBe(false)
     expect(mod.states.get(`attachment:${FILE}`)?.state).toBe("removed")
@@ -146,9 +208,24 @@ describe("actions", () => {
 
   it("refuses actions that don't fit the item, and made-up items", async () => {
     signIn(ADMIN)
-    expect((await act({ target_type: "proposal", target_id: PID, action: "blur", reason: "Not needed" })).status).toBe(403)
-    expect((await act({ target_type: "proposal", target_id: PID, action: "delete_file", reason: "Not needed" })).status).toBe(403)
+    expect(
+      (await act({ target_type: "proposal", target_id: PID, action: "blur", reason: "Not needed" }))
+        .status,
+    ).toBe(403)
+    expect(
+      (
+        await act({
+          target_type: "proposal",
+          target_id: PID,
+          action: "delete_file",
+          reason: "Not needed",
+        })
+      ).status,
+    ).toBe(403)
     const other = "99999999-2222-4222-8222-222222222222"
-    expect((await act({ target_type: "proposal", target_id: other, action: "hide", reason: "Spam" })).status).toBe(404)
+    expect(
+      (await act({ target_type: "proposal", target_id: other, action: "hide", reason: "Spam" }))
+        .status,
+    ).toBe(404)
   })
 })

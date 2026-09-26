@@ -17,12 +17,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireRole } from "@/lib/auth/roles"
 import { getUserByAddress } from "@/lib/db/users"
-import {
-  closeReports,
-  insertAction,
-  setPostingSuspended,
-  setState,
-} from "@/lib/db/moderation"
+import { closeReports, insertAction, setPostingSuspended, setState } from "@/lib/db/moderation"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import {
   allowedActions,
