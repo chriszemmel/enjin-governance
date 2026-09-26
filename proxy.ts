@@ -5,6 +5,59 @@ import {
   timingSafeEqual,
 } from "@/lib/auth/site-password"
 import { enforceSameOrigin } from "@/lib/auth/csrf"
+import { NETWORK_HINT_HEADER, networkHint } from "@/lib/seo/network-hint"
+
+/**
+ * Paths that never belong in search results: the JSON API, the signed-in
+ * tools, the moderation queue (not its public log), the password gate, the
+ * proposal editor and uploaded files. robots.txt asks crawlers to stay out;
+ * this header also covers the ones that arrive by a link anyway.
+ */
+function isPrivatePath(pathname: string): boolean {
+  return (
+    /^\/(api|account|create|moderation|unlock)(\/|$)/.test(pathname) ||
+    /^\/proposals\/[^/]+\/edit(\/|$)/.test(pathname) ||
+    pathname.startsWith("/r/")
+  )
+}
+
+/**
+ * Let the request through with the headers this site adds: noindex for
+ * private paths (and for everything while the gate is on), and the
+ * `?network=` hint the proposal layout needs, since layouts can't read the
+ * query string. A client-sent hint header is always replaced.
+ */
+function pass(request: NextRequest, gated: boolean): NextResponse {
+  const { pathname, searchParams } = request.nextUrl
+  let response: NextResponse
+  if (pathname.startsWith("/proposals/")) {
+    const headers = new Headers(request.headers)
+    const hint = networkHint(searchParams.get("network"))
+    if (hint) headers.set(NETWORK_HINT_HEADER, hint)
+    else headers.delete(NETWORK_HINT_HEADER)
+    response = NextResponse.next({ request: { headers } })
+  } else {
+    response = NextResponse.next()
+  }
+  if (gated || isPrivatePath(pathname)) {
+    response.headers.set("X-Robots-Tag", "noindex")
+  }
+  return response
+}
+
+/**
+ * A path with a broken %-escape (e.g. `/%E0%A4%A`) can't be decoded. This
+ * proxy runs before Next decodes the path; left alone, Next's router fails
+ * on it later and answers 500. Say what it is instead: a bad request.
+ */
+function hasMalformedEscape(pathname: string): boolean {
+  try {
+    decodeURIComponent(pathname)
+    return false
+  } catch {
+    return true
+  }
+}
 
 /**
  * User-agent fragments for social-media link unfurlers. When one of
@@ -49,11 +102,18 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const csrf = enforceSameOrigin(request)
   if (csrf) return csrf
 
-  if (process.env.SITE_PASSWORD_STATUS !== "ON") {
-    return NextResponse.next()
+  const { pathname, search } = request.nextUrl
+
+  if (hasMalformedEscape(pathname)) {
+    return new NextResponse("Bad Request", {
+      status: 400,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    })
   }
 
-  const { pathname, search } = request.nextUrl
+  if (process.env.SITE_PASSWORD_STATUS !== "ON") {
+    return pass(request, false)
+  }
 
   // The gate page, its API, and the public brand assets it renders must
   // remain reachable while the rest of the site is locked.
@@ -64,9 +124,15 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     // Who runs the site and how data is handled must stay readable.
     pathname === "/imprint" ||
     pathname === "/privacy" ||
-    pathname === "/terms"
+    pathname === "/terms" ||
+    // Crawlers must be able to read "disallow everything" and the empty
+    // sitemap, and browsers the manifest. The matcher below already skips
+    // these; listing them here keeps them open if the matcher changes.
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml" ||
+    pathname === "/manifest.webmanifest"
   ) {
-    return NextResponse.next()
+    return pass(request, true)
   }
 
   // Per-route OpenGraph images are public previews by design - Next
@@ -82,7 +148,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     /\/opengraph-image-[a-z0-9]+/.test(pathname) ||
     /\/twitter-image-[a-z0-9]+/.test(pathname)
   ) {
-    return NextResponse.next()
+    return pass(request, true)
   }
 
   // Social link-unfurlers fetch the page itself to read og:* meta
@@ -91,7 +157,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // to non-API paths so a spoofed crawler UA can't reach the JSON APIs
   // (e.g. the proposal write endpoints) without the password gate.
   if (!pathname.startsWith("/api/") && isSocialCrawler(request)) {
-    return NextResponse.next()
+    return pass(request, true)
   }
 
   const password = process.env.SITE_PASSWORD
@@ -99,7 +165,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (password && cookie) {
     const expected = await expectedCookieValue(password)
     if (timingSafeEqual(cookie, expected)) {
-      return NextResponse.next()
+      return pass(request, true)
     }
   }
 
@@ -111,6 +177,6 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|robots\\.txt|sitemap\\.xml).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|robots\\.txt|sitemap\\.xml|manifest\\.webmanifest).*)",
   ],
 }
