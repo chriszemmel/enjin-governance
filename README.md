@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-665%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-667%20passing-22c55e?style=flat-square" />
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
@@ -217,9 +217,8 @@
   by public key, so they hold on every network prefix.
 - **Optional automatic checks** - with an Anthropic API key, uploads and
   text can be checked by an AI model before moderators see them. Admins
-  choose the model (Haiku 4.5 by default), what is checked, how clear
-  violations are handled and a daily limit, and see this month's usage
-  and cost. Text is only ever flagged for a human, never hidden
+  choose the model, what is checked, how clear violations are handled
+  and a daily limit, and see this month's usage and cost. Text is only ever flagged for a human, never hidden
   automatically. See [Moderation](#moderation).
 
 ### Legal
@@ -307,8 +306,8 @@
   on the site-access password gate, input-size caps on the batch-read
   endpoints, and a honeypot on the public disclosure form that silently
   drops bots.
-- **Open-source ready** - TS strict, ESLint clean, knip-clean, 665
-  vitest tests, CI on every push.
+- **Open-source ready** - TS strict, ESLint clean, knip-clean, 667
+  vitest tests, CI on every pull request and on `main`.
 
 ---
 
@@ -318,7 +317,7 @@
 |---|---|
 | TypeScript source files (excl. vendored shadcn) | **~260** |
 | Docs files | **7** |
-| Unit tests | **665** (58 files) |
+| Unit tests | **667** (58 files) |
 | Test coverage (lines) | **82%** of API routes, **72%** of server code. Pages and components have no unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
@@ -370,9 +369,9 @@ See **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** and
 | Object storage | Cloudflare R2 (S3-compatible) | Avatars, proposal JSON (`EGOV1` envelope), proposal media |
 | State | Zustand | Wallet session + active chain |
 | Validation | Zod + `@t3-oss/env-nextjs` | `lib/env.ts` is the single source of truth |
-| Content checks | Anthropic API (optional) | Haiku 4.5 by default, chosen by admins; structured output, one request per item |
+| Content checks | Anthropic API (optional) | Model chosen by admins; structured output, one request per item |
 | Tests | Vitest | Pallet + chain primitives + auth + format helpers + route security |
-| CI | GitHub Actions | typecheck + lint + knip + test + build on every push |
+| CI | GitHub Actions | typecheck + lint + knip + test + build on every pull request and push to `main` |
 
 ---
 
@@ -388,7 +387,7 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (665 tests)
+pnpm test         # Vitest (667 tests)
 pnpm test:watch   # Vitest watch
 ```
 
@@ -660,17 +659,19 @@ fixed policy prompt and a JSON schema for the answer (`allow` / `review`
   moderator instead. Every check counts against the limit before it is
   sent, so the limit is a hard cap on cost.
 
-Typical cost per check at list prices (policy prompt plus the item and a
-short JSON answer):
+**Cost.** Each check is one short request, and with the recommended
+model it costs a fraction of a cent. The Settings tab lists the
+supported models with their current list prices and an estimate per
+image, PDF, proposal and comment, and shows the real usage and cost per
+month from the token counts the API reports.
 
-| Model | Image | PDF (≈5 pages) | Proposal | Comment |
-|---|---|---|---|---|
-| Haiku 4.5 (default) | ~$0.003 | ~$0.009 | ~$0.005 | ~$0.001 |
-| Sonnet 5 | ~$0.006 | ~$0.018 | ~$0.010 | ~$0.002 |
-| Opus 5 | ~$0.015 | ~$0.044 | ~$0.026 | ~$0.006 |
-
-The Settings tab shows the real usage and cost per month from the token
-counts the API reports.
+**Models.** The supported models live in one table, `SCAN_MODELS` in
+[`lib/moderation/scan-settings.ts`](lib/moderation/scan-settings.ts),
+with their prices and the request options each one accepts. Offering a
+newer model is one entry there: mark it recommended and set
+`offered: false` on the model it replaces. Admins who used the old model
+move to the new one and keep their other settings, and past usage keeps
+its cost.
 
 ---
 
@@ -714,8 +715,8 @@ open an issue first to align on approach.
 
 | Version | What changed |
 |---|---|
-| **1.8** | Uploads capped at 4 MB to match the host's request limit, with large photos shrunk in the browser first. Attachment size, type and hash are checked against the stored file. Fixes from a security review: every staged draft version is kept, a copied EGOV1 envelope can't block or claim a submission, unsigned drafts are private to their proposer, and the daily check limit is a hard cap. Route tests for sign-in, profiles, the password gate, comments, withdrawals, roles, the review queue and uploads (665 tests), and the fixes they led to: no redirect to another site after unlocking, no look-alike handles, comments only on published proposals, and a failed undo no longer withdraws again. |
-| **1.7** | Content-check settings for admins: on/off, model (Haiku 4.5 default, Sonnet 5, Opus 5), what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migrations `012` and `013`. New reports are posted to Telegram. |
+| **1.8** | Uploads capped at 4 MB to match the host's request limit, with large photos shrunk in the browser first. Attachment size, type and hash are checked against the stored file. The supported AI models live in one table, so a newer model is one entry. Fixes from a security review: every staged draft version is kept, a copied EGOV1 envelope can't block or claim a submission, unsigned drafts are private to their proposer, and the daily check limit is a hard cap. Route tests for sign-in, profiles, the password gate, comments, withdrawals, roles, the review queue and uploads (667 tests), and the fixes they led to: no redirect to another site after unlocking, no look-alike handles, comments only on published proposals, and a failed undo no longer withdraws again. |
+| **1.7** | Content-check settings for admins: on/off, model, what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migrations `012` and `013`. New reports are posted to Telegram. |
 | **1.6** | Imprint, privacy policy and terms (filled from `LEGAL_*`), footer with legal links, disclaimer and AGPL source link. |
 | **1.5** | Automatic checks of uploads, proposal text and comments; borderline items go to the review queue. |
 | **1.4** | Moderation: reports, review queue, roles by wallet, posting pauses, public moderation log. Migration `011`. |
