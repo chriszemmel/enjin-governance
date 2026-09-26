@@ -6,7 +6,7 @@
 
 import "server-only"
 import { createHash } from "node:crypto"
-import { DeleteObjectsCommand, PutObjectCommand } from "@aws-sdk/client-s3"
+import { DeleteObjectsCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
 import { getR2Client, r2Bucket, publicAssetBase } from "./client"
 import { stringifyStable } from "./json"
 import { publicUrlFor } from "./paths"
@@ -95,4 +95,16 @@ export async function putJson(
     // making readers wait an hour to pick up a proposer edit.
     cacheControl: "public, max-age=30, must-revalidate",
   })
+}
+
+/** Read a stored object as text, or null when it doesn't exist. */
+export async function readObjectText(key: string): Promise<string | null> {
+  try {
+    const res = await getR2Client().send(new GetObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    return res.Body ? await res.Body.transformToString("utf-8") : null
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    if (name === "NoSuchKey" || name === "NotFound") return null
+    throw err
+  }
 }

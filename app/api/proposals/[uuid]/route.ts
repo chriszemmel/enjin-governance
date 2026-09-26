@@ -40,7 +40,7 @@ import {
 import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
 import { ownMediaKey, proposalPrefix, publicUrlFor } from "@/lib/r2/paths"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
-import { deleteObjects, putJson } from "@/lib/r2/upload"
+import { deleteObjects, putJson, readObjectText } from "@/lib/r2/upload"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
 import { getApi } from "@/lib/chain/api"
@@ -48,6 +48,7 @@ import { getReferendum } from "@/lib/governance/referenda"
 import {
   PROPOSAL_SCHEMA,
   PROPOSAL_SCHEMA_VERSION,
+  PROPOSAL_SCHEMA_VERSION_WITH_CALL,
   type ProposalAttachmentMeta,
   type ProposalJson,
 } from "@/lib/governance/proposal-metadata"
@@ -281,9 +282,23 @@ export async function PATCH(
 
   const editedAt = new Date().toISOString()
 
+  // The JSON is rebuilt from the DB row plus the edited text. The 1.2.0
+  // call / enactment sections only live in the JSON, so carry them over
+  // from the current version (only this server writes that object).
+  let carried: Pick<ProposalJson, "call" | "enactment"> | null = null
+  try {
+    const current = await readObjectText(existing.json_key)
+    const prev = current ? (JSON.parse(current) as Partial<ProposalJson>) : null
+    if (prev && (prev.call != null || prev.enactment != null)) {
+      carried = { call: prev.call ?? null, enactment: prev.enactment ?? null }
+    }
+  } catch {
+    // Unreadable current JSON: the edit still saves, without the section.
+  }
+
   const proposalJson: ProposalJson = {
     schema: PROPOSAL_SCHEMA,
-    version: PROPOSAL_SCHEMA_VERSION,
+    version: carried ? PROPOSAL_SCHEMA_VERSION_WITH_CALL : PROPOSAL_SCHEMA_VERSION,
     network: existing.network as ProposalJson["network"],
     proposer: existing.proposer_address,
     title: parsed.title,
@@ -306,6 +321,7 @@ export async function PATCH(
         size_bytes: a.size_bytes,
       }),
     ),
+    ...(carried ?? {}),
     preimage_hash: existing.preimage_hash,
     preimage_len: existing.preimage_len,
     created_at: existing.created_at.toISOString(),

@@ -43,7 +43,7 @@ import {
 } from "@/lib/governance/submit-treasury-proposal"
 import { useApi } from "@/lib/query/hooks/use-api"
 import { useBalance } from "@/lib/query/hooks/use-balance"
-import { useMe, useNoncePrefetch, useSignIn } from "@/lib/query/hooks/use-session"
+import { useEnsureSignedIn } from "@/lib/wallet/use-ensure-signed-in"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
 import { usePreimageStatus } from "@/lib/query/hooks/use-preimage"
@@ -129,11 +129,9 @@ function CreatePageInner() {
   // The draft + media write endpoints now require an authenticated
   // proposer. Mirror the comments flow: prefetch a nonce, and gate the
   // first write behind a sign-in (a one-line nonce signature, no tx).
-  const meQuery = useMe()
-  const prefetchedNonce = useNoncePrefetch()
-  const signIn = useSignIn(prefetchedNonce)
-  const [signInModalOpen, setSignInModalOpen] = useState(false)
-  const [signInError, setSignInError] = useState<string | null>(null)
+  const { ensureSignedIn, signInModal } = useEnsureSignedIn({
+    isWalletConnect: sign.isWalletConnect,
+  })
 
   // The proposer is always the connected signer (drafts, deposits, sign-in
   // are keyed to it). The beneficiary is who the treasury pays - defaults to
@@ -442,37 +440,6 @@ function CreatePageInner() {
   if (enactmentError) {
     missingReasons.push(`Enactment: ${enactmentError}`)
   }
-
-  // Resolve a signed-in session, prompting the wallet to sign the nonce
-  // if we don't already have one. Returns false when the user cancels or
-  // the signature fails so callers can abort the write they were about to
-  // make. Gates both the media upload and the draft staging step.
-  const ensureSignedIn = useCallback(async (): Promise<boolean> => {
-    if (meQuery.data) return true
-    // The /api/auth/me poll can trail a fresh cookie by up to 60s - re-check
-    // before forcing a signature the user may not actually need.
-    try {
-      const refreshed = await meQuery.refetch()
-      if (refreshed.data) return true
-    } catch {
-      // fall through to the sign-in prompt
-    }
-    setSignInError(null)
-    if (sign.isWalletConnect) setSignInModalOpen(true)
-    try {
-      await signIn.submit()
-      setSignInModalOpen(false)
-      toast.success("Signed in")
-      return true
-    } catch (e) {
-      const message = formatError(e)
-      setSignInError(message)
-      if (!sign.isWalletConnect) {
-        toast.error("Sign-in required", { description: message })
-      }
-      return false
-    }
-  }, [meQuery, sign.isWalletConnect, signIn])
 
   // staging hop (upload media is already done; here we upload JSON)
   const stageDraft = useCallback(async () => {
@@ -1038,27 +1005,11 @@ function CreatePageInner() {
         }}
       />
       <SignRequestModal
-        open={signInModalOpen}
+        {...signInModal}
         walletName={walletMeta.name}
         walletIcon={walletMeta.icon}
         subtitle="Sign in to stage your proposal"
-        status={
-          signInError
-            ? { kind: "error", message: signInError }
-            : { kind: "signing" }
-        }
         deepLinkUrl={sign.deepLinkUrl}
-        onClose={() => setSignInModalOpen(false)}
-        onRetry={() => {
-          setSignInError(null)
-          signIn
-            .submit()
-            .then(() => {
-              setSignInModalOpen(false)
-              toast.success("Signed in")
-            })
-            .catch((e) => setSignInError(formatError(e)))
-        }}
       />
     </Shell>
   )

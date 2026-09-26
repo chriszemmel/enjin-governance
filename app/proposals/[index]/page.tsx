@@ -59,6 +59,7 @@ import {
   subscanReferendumUrl,
 } from "@/lib/chain/chains"
 import { SubscanLink } from "@/components/governance/subscan-link"
+import { RuntimeCodeHash } from "@/components/governance/runtime-code-hash"
 import { useActiveChain, useSetActiveChain } from "@/lib/chain/use-chain"
 import { formatTokenAmount } from "@/lib/chain/format"
 import {
@@ -583,6 +584,7 @@ function ProposalDetailPageInner() {
                     <PreimageDisplay preimageRef={proposalRef} />
                   )
                 ) : null}
+                <RuntimeCodeHash callBytes={preimageQuery.data?.bytes} />
               </div>
             )}
           </div>

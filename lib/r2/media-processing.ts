@@ -42,16 +42,16 @@ export async function processProposalImage(
       const animated = (meta.pages ?? 1) > 1
       if (animated) {
         // Animated WebP: re-encode every frame to drop metadata, keep size.
-        body = await sharp(input, { ...opts, animated: true }).webp({ quality: 85 }).toBuffer()
+        body = await sharp(input, { ...opts, animated: true })
+          .webp({ quality: 85 })
+          .toBuffer()
       } else {
-        const pipeline = sharp(input, opts)
-          .rotate()
-          .resize({
-            width: MAX_EDGE_PX,
-            height: MAX_EDGE_PX,
-            fit: "inside",
-            withoutEnlargement: true,
-          })
+        const pipeline = sharp(input, opts).rotate().resize({
+          width: MAX_EDGE_PX,
+          height: MAX_EDGE_PX,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
         body =
           mime === "image/jpeg"
             ? await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer()

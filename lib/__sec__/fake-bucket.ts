@@ -72,3 +72,7 @@ export async function deleteObjects(keys: string[]): Promise<void> {
   deleteCalls.push(unique)
   for (const k of unique) bucket.delete(k)
 }
+
+export async function readObjectText(key: string): Promise<string | null> {
+  return bucket.get(key)?.body ?? null
+}

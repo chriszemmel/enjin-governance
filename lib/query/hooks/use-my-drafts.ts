@@ -21,6 +21,8 @@ export type MyDraft = {
   tx_hash: string | null
   json_url: string
   created_at: string
+  /** Treasury drafts can be resumed in the wizard; advanced ones can't. */
+  is_treasury?: boolean
 }
 
 /**

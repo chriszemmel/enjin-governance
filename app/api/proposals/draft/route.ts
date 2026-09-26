@@ -53,6 +53,7 @@ import {
   buildRemarkPayload,
   PROPOSAL_SCHEMA,
   PROPOSAL_SCHEMA_VERSION,
+  PROPOSAL_SCHEMA_VERSION_WITH_CALL,
   type ProposalAttachmentMeta,
   type ProposalJson,
 } from "@/lib/governance/proposal-metadata"
@@ -94,6 +95,29 @@ const bodySchema = z.object({
     .nullable(),
   preimage_len: z.number().int().nonnegative().nullable(),
   attachments: z.array(attachmentSchema).max(20).default([]),
+  /** EGOV1 1.2.0: the call being proposed (advanced composer). */
+  call: z
+    .object({
+      section: z.string().regex(/^[A-Za-z0-9_]{1,64}$/),
+      method: z.string().regex(/^[A-Za-z0-9_]{1,64}$/),
+      origin: z.string().min(1).max(80),
+      preimage_hash: z.string().regex(/^0x[0-9a-f]{64}$/),
+      preimage_len: z.number().int().positive(),
+      inline: z.boolean(),
+      code_hash: z.string().regex(/^0x[0-9a-f]{64}$/).nullable().optional(),
+    })
+    .strict()
+    .nullable()
+    .optional(),
+  /** EGOV1 1.2.0: the enactment moment chosen at submission. */
+  enactment: z
+    .object({
+      type: z.enum(["At", "After"]),
+      block: z.number().int().nonnegative(),
+    })
+    .strict()
+    .nullable()
+    .optional(),
   /**
    * When re-staging an existing draft: the json_sha256 the browser last saw.
    * The update only applies if the row still has it.
@@ -252,9 +276,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const key = proposalJsonKey(parsed.network, parsed.proposal_id)
 
+  // The call section describes what the referendum enacts, so it must agree
+  // with the preimage the draft records.
+  if (
+    parsed.call &&
+    (parsed.call.preimage_hash !== parsed.preimage_hash ||
+      parsed.call.preimage_len !== parsed.preimage_len)
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "The call section doesn't match the proposal's preimage." },
+      { status: 400 },
+    )
+  }
+  const withCall = parsed.call != null || parsed.enactment != null
+
   const proposalJson: ProposalJson = {
     schema: PROPOSAL_SCHEMA,
-    version: PROPOSAL_SCHEMA_VERSION,
+    version: withCall ? PROPOSAL_SCHEMA_VERSION_WITH_CALL : PROPOSAL_SCHEMA_VERSION,
     network: parsed.network,
     proposer: parsed.proposer_address,
     title: parsed.title,
@@ -277,6 +315,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         size_bytes: a.size_bytes,
       }),
     ),
+    ...(withCall ? { call: parsed.call ?? null, enactment: parsed.enactment ?? null } : {}),
     preimage_hash: parsed.preimage_hash,
     preimage_len: parsed.preimage_len,
     created_at: (existingRow?.created_at ?? new Date()).toISOString(),

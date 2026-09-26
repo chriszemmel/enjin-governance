@@ -150,14 +150,16 @@ function DraftRow({
             {statusLabel} · {new Date(draft.created_at).toLocaleString()}
           </p>
         </div>
-        <a
-          href={resumeHref}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-purple-border text-[11px] font-medium hover:bg-primary/20 transition-colors"
-          title="Resume this draft"
-        >
-          <Pencil className="w-3 h-3" />
-          Resume
-        </a>
+        {draft.is_treasury !== false && (
+          <a
+            href={resumeHref}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-purple-border text-[11px] font-medium hover:bg-primary/20 transition-colors"
+            title="Resume this draft"
+          >
+            <Pencil className="w-3 h-3" />
+            Resume
+          </a>
+        )}
         <button
           type="button"
           onClick={onCancel}

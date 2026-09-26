@@ -176,6 +176,26 @@ describe("draft POST", () => {
     expect(bucketMod.bucket.has(proposalJsonKey(NET, OWN_ID))).toBe(false)
   })
 
+  it("writes EGOV1 1.2.0 with the call section, and only when it matches the preimage", async () => {
+    const hash = "0x" + "e".repeat(64)
+    const call = { section: "referenda", method: "cancel", origin: "ReferendumCanceller", preimage_hash: hash, preimage_len: 7, inline: true }
+    const base = { preimage_hash: hash, preimage_len: 7, track: "ReferendumCanceller", enactment: { type: "After", block: 0 } }
+    const bad = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ ...base, call: { ...call, preimage_len: 8 } })))
+    expect(bad.status).toBe(400)
+    const ok = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ ...base, call })))
+    expect(ok.status).toBe(200)
+    const saved = JSON.parse(bodyOf(proposalJsonKey(NET, OWN_ID))!)
+    expect(saved).toMatchObject({ version: "1.2.0", call, enactment: { type: "After", block: 0 } })
+  })
+
+  it("still writes 1.1.0 for treasury drafts without a call section", async () => {
+    const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({})))
+    expect(res.status).toBe(200)
+    const saved = JSON.parse(bodyOf(proposalJsonKey(NET, OWN_ID))!)
+    expect(saved.version).toBe("1.1.0")
+    expect("call" in saved).toBe(false)
+  })
+
   it("still saves a normal draft with its own attachment", async () => {
     const mediaKey = `proposals/${NET}/${OWN_ID}/media/roadmap.png`
     const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [att(mediaKey, "roadmap.png")] })))
@@ -295,6 +315,16 @@ describe("PATCH (edit)", () => {
   it("rejects a foreign attachment key", async () => {
     const res = await PATCH(req(`https://gov.test/api/proposals/${OWN_ONCHAIN_ID}`, "PATCH", patchBody([att(victimJsonKey)])), ctx(OWN_ONCHAIN_ID))
     expect(res.status).toBe(400)
+  })
+
+  it("keeps the EGOV1 1.2.0 call and enactment sections across an edit", async () => {
+    const key = proposalJsonKey(NET, OWN_ONCHAIN_ID)
+    const call = { section: "system", method: "setCode", origin: "Root", preimage_hash: "0x" + "c".repeat(64), preimage_len: 9000, inline: false, code_hash: "0x" + "d".repeat(64) }
+    bucketMod.bucket.set(key, { body: JSON.stringify({ version: "1.2.0", call, enactment: { type: "After", block: 10 } }), contentType: "application/json" })
+    const res = await PATCH(req(`https://gov.test/api/proposals/${OWN_ONCHAIN_ID}`, "PATCH", patchBody([])), ctx(OWN_ONCHAIN_ID))
+    expect(res.status).toBe(200)
+    const saved = JSON.parse(bodyOf(key)!)
+    expect(saved).toMatchObject({ version: "1.2.0", title: "Edited", call, enactment: { type: "After", block: 10 } })
   })
 
   it("accepts the edit page's r/-prefixed key and stores the real key", async () => {

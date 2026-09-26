@@ -59,6 +59,8 @@ export async function GET(
       tx_hash: r.tx_hash,
       json_url: r.json_url,
       created_at: r.created_at,
+      // Treasury drafts resume in the wizard; advanced ones carry no spend.
+      is_treasury: r.amount_planck != null,
     })),
   })
 }

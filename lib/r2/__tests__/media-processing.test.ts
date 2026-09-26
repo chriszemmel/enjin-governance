@@ -60,6 +60,8 @@ describe("processProposalImage", () => {
 
   it("rejects bytes that don't decode", async () => {
     const junk = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 7)])
-    await expect(processProposalImage(junk, "image/jpeg")).rejects.toBeInstanceOf(ImageProcessingError)
+    await expect(processProposalImage(junk, "image/jpeg")).rejects.toBeInstanceOf(
+      ImageProcessingError,
+    )
   })
 })

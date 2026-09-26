@@ -88,7 +88,11 @@ export function findProposalImage(
 }
 
 /** Markdown for one attachment: an image for pictures, a link for files. */
-export function markdownForAttachment(a: { name: string; url: string; content_type: string }): string {
+export function markdownForAttachment(a: {
+  name: string
+  url: string
+  content_type: string
+}): string {
   const label = a.name.replace(/[[\]]/g, "")
   return IMAGE_TYPES.has(a.content_type) ? `![${label}](${a.url})` : `[${label}](${a.url})`
 }

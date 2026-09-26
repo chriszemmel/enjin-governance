@@ -172,13 +172,25 @@ function renderNodes(nodes: InlineNode[], ctx: Ctx): ReactNode[] {
         )
       case "link":
         return (
-          <a key={key} href={n.href} target="_blank" rel="noopener noreferrer" className={linkClass}>
+          <a
+            key={key}
+            href={n.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={linkClass}
+          >
             {renderNodes(n.children, ctx)}
           </a>
         )
       case "autolink":
         return (
-          <a key={key} href={n.href} target="_blank" rel="noopener noreferrer" className={`${linkClass} break-all`}>
+          <a
+            key={key}
+            href={n.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`${linkClass} break-all`}
+          >
             {n.href}
           </a>
         )
@@ -190,7 +202,13 @@ function renderNodes(nodes: InlineNode[], ctx: Ctx): ReactNode[] {
         // Not one of this proposal's files: never load it, show a link.
         const label = n.alt || n.target
         return isSafeUrl(n.target) ? (
-          <a key={key} href={n.target} target="_blank" rel="noopener noreferrer nofollow" className={linkClass}>
+          <a
+            key={key}
+            href={n.target}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className={linkClass}
+          >
             {label}
           </a>
         ) : (

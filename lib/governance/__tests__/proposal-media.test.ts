@@ -44,7 +44,11 @@ describe("resolveProposalMedia", () => {
   })
 
   it("marks PDFs as files without a thumbnail", () => {
-    const [m] = resolveProposalMedia([att(own("budget.pdf"), "budget.pdf", "application/pdf")], NET, ID)
+    const [m] = resolveProposalMedia(
+      [att(own("budget.pdf"), "budget.pdf", "application/pdf")],
+      NET,
+      ID,
+    )
     expect(m).toMatchObject({ isImage: false, thumbSrc: null })
   })
 })
@@ -61,9 +65,9 @@ describe("findProposalImage", () => {
 
   it("finds an image by URL, by /r path or by file name", () => {
     expect(findProposalImage(media, own("ab12cd34-roadmap.png"))?.name).toBe("roadmap.png")
-    expect(findProposalImage(media, `/r/proposals/${NET}/${ID}/media/ab12cd34-roadmap.png`)?.name).toBe(
-      "roadmap.png",
-    )
+    expect(
+      findProposalImage(media, `/r/proposals/${NET}/${ID}/media/ab12cd34-roadmap.png`)?.name,
+    ).toBe("roadmap.png")
     expect(findProposalImage(media, "roadmap.png")?.name).toBe("roadmap.png")
   })
 
@@ -76,7 +80,9 @@ describe("findProposalImage", () => {
 
 describe("markdownForAttachment", () => {
   it("writes images as images and files as links", () => {
-    expect(markdownForAttachment(att("https://g/r/a.png", "a [1].png"))).toBe("![a 1.png](https://g/r/a.png)")
+    expect(markdownForAttachment(att("https://g/r/a.png", "a [1].png"))).toBe(
+      "![a 1.png](https://g/r/a.png)",
+    )
     expect(markdownForAttachment(att("https://g/r/b.pdf", "b.pdf", "application/pdf"))).toBe(
       "[b.pdf](https://g/r/b.pdf)",
     )

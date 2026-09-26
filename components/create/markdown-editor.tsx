@@ -76,7 +76,8 @@ export function MarkdownEditor({
         let after = value.slice(at)
         if (opts?.block) {
           if (before && !before.endsWith("\n\n")) before += before.endsWith("\n") ? "\n" : "\n\n"
-          if (after && !after.startsWith("\n\n")) after = (after.startsWith("\n") ? "\n" : "\n\n") + after
+          if (after && !after.startsWith("\n\n"))
+            after = (after.startsWith("\n") ? "\n" : "\n\n") + after
         } else if (before && !/\s$/.test(before)) {
           before += " "
         }
@@ -108,7 +109,10 @@ export function MarkdownEditor({
           {label}
           {required && <span className="text-red-400"> *</span>}
         </label>
-        <div role="tablist" className="inline-flex rounded-lg border border-border bg-surface-1 p-0.5">
+        <div
+          role="tablist"
+          className="inline-flex rounded-lg border border-border bg-surface-1 p-0.5"
+        >
           {(["write", "preview"] as const).map((t) => (
             <button
               key={t}
@@ -192,9 +196,8 @@ export function MarkdownEditor({
             </tbody>
           </table>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Use &quot;Insert into text&quot; on an attachment to place it. Links to images
-            elsewhere stay links. Pasted addresses become compact chips; inside
-            `code` they stay in full.
+            Use &quot;Insert into text&quot; on an attachment to place it. Links to images elsewhere
+            stay links. Pasted addresses become compact chips; inside `code` they stay in full.
           </p>
         </div>
       )}

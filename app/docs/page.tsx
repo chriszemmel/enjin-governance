@@ -205,7 +205,7 @@ export default function DocsPage() {
             </h3>
             <Pre>{`{
   "schema": "enjin-governance-proposal",
-  "version": "1.1.0",
+  "version": "1.1.0" | "1.2.0",
   "network": "enjin-relay" | "enjin-matrix" | "canary-relay" | "canary-matrix",
   "proposer": "<SS58 address>",
   "title": "<≤ 200 chars>",
@@ -223,6 +223,16 @@ export default function DocsPage() {
     "content_type": "<MIME>",
     "size_bytes": <int>
   }],
+  "call": {                       // 1.2.0, optional
+    "section": "<pallet, e.g. system>",
+    "method": "<call, e.g. setCode>",
+    "origin": "<track origin, e.g. Root>",
+    "preimage_hash": "<0x… blake2-256 of the call>",
+    "preimage_len": <int>,
+    "inline": <bool>,
+    "code_hash": "<0x… blake2-256 of the runtime> | null"
+  } | null,
+  "enactment": { "type": "At" | "After", "block": <int> } | null,  // 1.2.0
   "preimage_hash": "<0x… hex> | null",
   "preimage_len": <int> | null,
   "created_at": "<ISO 8601>",
@@ -237,6 +247,20 @@ export default function DocsPage() {
               All <Code>amount_planck</Code> values are decimal strings (not
               numbers) to preserve precision - the relay has 18
               decimals, which overflows <Code>Number</Code>.
+            </p>
+            <p>
+              <strong>Version 1.2.0</strong> adds the optional{" "}
+              <Code>call</Code> and <Code>enactment</Code> sections, written
+              for proposals filed through the advanced composer (runtime
+              upgrades, cancel / kill, whitelisting, remarks, raw calls).
+              Every other field is unchanged, so 1.1.0 readers keep working.
+              The <Code>call</Code> section is what the proposer recorded;
+              the proposal page still decodes the call from the preimage on
+              chain, and for runtime upgrades shows the code hash computed
+              from it. Referenda filed elsewhere can get the same details
+              afterwards: the account that submitted one signs{" "}
+              <Code>preimage.notePreimage</Code> +{" "}
+              <Code>referenda.setMetadata</Code> while it is ongoing.
             </p>
             <p>
               <strong>Attachments</strong> live next to the JSON under{" "}

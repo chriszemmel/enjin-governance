@@ -45,9 +45,7 @@ export function AttachmentGallery({
   if (media.length === 0) return null
   return (
     <div className="pt-3 border-t border-border">
-      <p className="text-xs font-medium text-muted-foreground mb-2">
-        Attachments ({media.length})
-      </p>
+      <p className="text-xs font-medium text-muted-foreground mb-2">Attachments ({media.length})</p>
       <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2">
         {media.map((m) => (
           <li key={m.key}>
@@ -71,8 +69,12 @@ export function AttachmentGallery({
                 <span className="flex h-9 w-8 items-center justify-center rounded-md border border-red-500/30 bg-red-500/10">
                   <FileText className="w-4 h-4 text-red-500" />
                 </span>
-                <span className="w-full truncate text-center text-[11px] text-foreground">{m.name}</span>
-                <span className="text-[10px] text-muted-foreground font-mono">{formatBytes(m.size_bytes)}</span>
+                <span className="w-full truncate text-center text-[11px] text-foreground">
+                  {m.name}
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {formatBytes(m.size_bytes)}
+                </span>
               </a>
             )}
           </li>
@@ -181,13 +183,18 @@ export function ImageLightbox({
                   {images.map((img, i) => (
                     <span
                       key={img.key}
-                      className={cn("w-1.5 h-1.5 rounded-full", i === index ? "bg-white" : "bg-white/35")}
+                      className={cn(
+                        "w-1.5 h-1.5 rounded-full",
+                        i === index ? "bg-white" : "bg-white/35",
+                      )}
                     />
                   ))}
                 </div>
               )}
               <div>
-                <DialogTitle className="text-base font-semibold text-white break-all">{m.name}</DialogTitle>
+                <DialogTitle className="text-base font-semibold text-white break-all">
+                  {m.name}
+                </DialogTitle>
                 <DialogDescription className="font-mono text-xs text-white/60 mt-0.5">
                   {formatBytes(m.size_bytes)} · sha256 {m.sha256.slice(0, 4)}…{m.sha256.slice(-4)}
                 </DialogDescription>
