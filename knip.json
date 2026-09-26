@@ -37,7 +37,7 @@
     "e2e/**/*.ts",
     "test/**/*.ts"
   ],
-  "ignore": ["components/ui/**"],
+  "ignore": ["components/ui/**", ".claude/**"],
   "ignoreDependencies": [
     "tailwindcss",
     "tw-animate-css",
