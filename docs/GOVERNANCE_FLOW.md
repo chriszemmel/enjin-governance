@@ -1,330 +1,585 @@
 # Governance flow
 
-The Enjin Relaychain runs the Polkadot SDK OpenGov pallets (`referenda`,
-`convictionVoting`, `preimage`, `treasury`). This doc explains the
-lifecycle and points to the code that implements each step.
+The Enjin Relaychain runs the Polkadot SDK OpenGov pallets: `referenda`,
+`preimage` and `treasury`, plus `utility` for batching and `whitelist`.
+Voting goes through Enjin's multi-token `convictionVoting` fork, or
+`voteManager` on runtimes that have it. This doc explains the lifecycle of
+a referendum and points to the code for each step.
 
-## Concepts (skim if you already know OpenGov)
+For RPC connections see [`CHAIN_FLOW.md`](CHAIN_FLOW.md). For how a
+signature is produced see [`WALLET_INTEGRATION.md`](WALLET_INTEGRATION.md).
 
-- **Referendum** - a single on-chain decision: enact this call if it passes.
+## Concepts
+
+Skip this section if you already know OpenGov.
+
+- **Referendum** - one on-chain decision: enact this call if it passes.
 - **Track** - a class of decision (Root, BigSpender, SmallTipper, ...). Each
-  track has its own decision period, prepare period, confirm period, min
-  approval curve, and min support curve.
-- **Origin** - the privilege level required to dispatch the call. Each
-  track is associated with one origin (e.g. the `SmallTipper` track grants
-  the `SmallTipper` origin).
-- **Preimage** - the call bytes. Stored separately on chain. You
-  `preimage.notePreimage(bytes)` and reference it by `Lookup { hash, len }`
-  in the referendum.
-- **Submission deposit** - small, refundable when decided.
-- **Decision deposit** - per-track, larger, refundable when decided.
-  Anyone can pay it; until it is paid, the referendum waits in the queue.
-- **Conviction** - multiplier (1x, 2x, 3x, 4x, 5x, 6x) applied to a voter's
-  balance, with a proportional lock period applied after the vote.
-- **Status** - `Ongoing | Approved | Rejected | Cancelled | TimedOut | Killed`.
+  track has its own decision deposit, prepare, decision, confirm and
+  minimum enactment periods, and approval and support curves.
+- **Origin** - the privilege the call is dispatched with. Each track maps
+  to one origin, encoded as `{ Origins: "SmallTipper" }` or
+  `{ System: "Root" }`.
+- **Proposal** - the call itself, passed to `referenda.submit` as a bounded
+  value: `Inline` (the call bytes, at most 128 bytes) or
+  `Lookup { hash, len }` (a preimage noted with `preimage.notePreimage`).
+- **Enactment** - when a passed call runs: `After n` blocks (clamped by the
+  runtime to the track's minimum) or `At` a block height.
+- **Submission deposit** - reserved when the referendum is filed.
+- **Decision deposit** - per track and larger. Anyone can place it. Until
+  it is placed, the referendum cannot start deciding.
+- **Conviction** - multiplies a vote's weight in exchange for a lock:
+  `None` counts 0.1x with no lock, `Locked1x` to `Locked6x` count 1x to 6x.
+- **Metadata** - an optional preimage hash bound to a referendum with
+  `referenda.setMetadata`. This app uses it for its EGOV1 record.
+- **Status** - `Ongoing`, `Approved`, `Rejected`, `Cancelled`, `TimedOut`
+  or `Killed`.
 
-For the canonical reference, see the Polkadot SDK referenda pallet docs.
+The Polkadot SDK referenda pallet docs are the canonical reference.
 
-## Read flow: listing referenda
+## Reading the chain
 
-```ts
-// lib/governance/referenda.ts
-export async function listReferenda(
-  api: ApiPromise,
-  { trackId, status }: { trackId?: number; status?: ReferendumStatus } = {},
-): Promise<Referendum[]> {
-  const entries = await api.query.referenda.referendumInfoFor.entries()
-  return entries
-    .map(([key, opt]) => decodeReferendum(key, opt))
-    .filter((r): r is Referendum => !!r)
-    .filter((r) => (trackId == null ? true : r.trackId === trackId))
-    .filter((r) => (status == null ? true : r.status.type === status))
-    .sort((a, b) => b.index - a.index)
-}
-```
+### Referenda
 
-Wrapped by `lib/query/hooks/use-referenda.ts` with a 30s stale time and a
-60s refetch interval when the page is visible.
+`lib/governance/referenda.ts`:
 
-## Read flow: single referendum
+- `listReferenda(api, { trackId?, status? })` reads
+  `referenda.referendumInfoFor.entries()`, decodes each row with
+  `decodeReferendumInfo` (`lib/governance/status.ts`), filters, and sorts
+  newest first.
+- `getReferendum(api, index)` reads one row. It returns `null` when the
+  index doesn't exist.
+- `getReferendumCount(api)` reads `referenda.referendumCount()`, the index
+  the next submission will get.
 
-```ts
-// lib/governance/referenda.ts
-export async function getReferendum(
-  api: ApiPromise,
-  index: number,
-): Promise<Referendum | null> {
-  const info = await api.query.referenda.referendumInfoFor(index)
-  return decodeReferendum(index, info)
-}
-```
+Hooks in `lib/query/hooks/`:
 
-`use-referendum.ts` polls every 10s while ongoing, drops to 60s on
-terminal status.
+| Hook | Stale time | Refetch |
+|---|---|---|
+| `useReferenda` | 30 s | every 60 s while the tab is visible |
+| `useReferendum` | 10 s | every 10 s while ongoing, 60 s after |
+| `useReferendumCount` | 10 s | refetched right before a proposal is signed |
 
-## Read flow: tracks
+### Tracks
 
-```ts
-// lib/governance/tracks.ts
-export function getTracks(api: ApiPromise): Track[] {
-  const raw = api.consts.referenda.tracks
-  return decodeTracks(raw)
-}
-```
+`getTracks(api)` in `lib/governance/tracks.ts` decodes
+`api.consts.referenda.tracks` and caches the result per `ApiPromise`.
+Tracks only change with a runtime upgrade, so `useTracks` never refetches.
 
-Cached per `api` instance - tracks change only on runtime upgrade, so we
-treat them as effectively constant per session.
+The runtime pads track names with NUL bytes and uses snake_case
+(`small_tipper`), while origins use PascalCase (`SmallTipper`). Compare
+names with `findTrackByName` or `canonicalTrackName`, never with `===`.
 
-## Write flow: casting a vote
+### History, voters and calls
 
-```
-                                                           ┌──────────────┐
-   vote-panel.tsx                                          │  Wallet app  │
-        │                                                  │  (mobile/UI) │
-        ▼                                                  └──────┬───────┘
-   useExtrinsic({                                                 ▲
-     build: buildVote({                                           │
-       pollIndex: 42,                                             │
-       aye: true,                                                 │
-       balance: 10n * 10n**18n,                                   │
-       conviction: 'Locked1x',                                    │
-     }),                                                          │
-   })                                                             │
-        │                                                          │
-        │ api.tx.convictionVoting.vote(42, { Standard: { ... } })  │
-        ▼                                                          │
-   tx.signAndSend(address, { signer }, callback)                   │
-        │                                                          │
-        │ The signer adapter calls signClient.request({            │
-        │   method: 'polkadot_signTransaction', ...                │
-        │ }) which surfaces in the wallet ─────────────────────────┘
-        ▼
-   { status: ready }   →   { status: broadcast }
-   { status: inBlock(blockHash) }   →   { status: finalized, events }
+- **History** - a concluded referendum drops its tally, call and
+  submission block. `getReferendumHistory(api, index, atBlock)` reads the
+  row at the block before the terminal transition, through the archive
+  RPC.
+- **Voters** - `listVotesOnPoll(api, pollIndex)` in
+  `lib/governance/conviction-voting.ts` reads
+  `convictionVoting.votingFor.entries()` and keeps the votes on that poll.
+  For a concluded referendum, `useReferendumVotes` runs it on the archive
+  node at the block before it concluded, so later vote removals don't hide
+  voters.
+- **Calls** - `getPreimage(api, { hash, len })` in
+  `lib/governance/preimage.ts` reads `preimage.preimageFor`. When `len` is
+  wrong or 0 (old `Legacy` proposals), it recovers the length from
+  `requestStatusFor` and, as a last resort, by scanning the preimage keys.
+
+## Writing to the chain: `useExtrinsic`
+
+Every write goes through `useExtrinsic` in `lib/query/hooks/use-tx.ts`:
+
+1. `build(api)` returns one extrinsic or an array. An array is wrapped in
+   `utility.batchAll`, so all calls apply or none do.
+2. The active address is re-encoded for the active chain, and the
+   connector returns a `Signer` for it.
+3. `signAsync` signs with a mortal era of 256 blocks (about 25 minutes).
+   Enjin Wallet refuses immortal payloads, and the default era can expire
+   during a slow mobile round trip.
+4. If the RPC socket dropped while the user was in the wallet, the hook
+   waits up to 15 s for it to reconnect, then calls `send()`.
+5. Status moves through `signing`, `broadcast`, `in-block` and
+   `finalized`, or ends in `error`. Dispatch errors are decoded to module
+   errors with `decodeDispatchError` (`lib/chain/events.ts`).
+
+`resolveOn` decides when `onSuccess` runs. The default is `in-block`, used
+for votes, deposits and unlocks. Proposal submission uses `finalized`,
+because it writes the new referendum index to the database and a reorg
+could otherwise store the wrong one. On success the hook invalidates the
+referenda and balance queries; callers invalidate anything else they own.
+
+Other safeguards:
+
+- A second tap while a submit is in flight gets the same promise, so a
+  wallet never sees two sign requests.
+- If no block notification arrives within 90 s of broadcasting, the hook
+  reports an error that says the transaction may still have gone through.
+
+Callers show progress. For browser extensions they use toasts. For
+WalletConnect wallets they open the sign-request modal, which follows the
+same status (see [`WALLET_INTEGRATION.md`](WALLET_INTEGRATION.md#sign-request-modal)).
+
+### Casting a vote
+
+```text
+vote-panel.tsx
+  useExtrinsic({ build: (api) => buildVote(api, { pollIndex, aye, balance, conviction, currency }) })
         │
         ▼
-   match events:  api.events.convictionVoting.Voted   ✓
-                  api.events.system.ExtrinsicSuccess  ✓
+  buildVote (lib/governance/conviction-voting.ts)
+    voteManager.vote(poll, { Standard: { vote, balance } }, currency)   runtime has voteManager
+    convictionVoting.vote(poll, accountVote, currency)                  multi-token fork, 3 args
+    convictionVoting.vote(poll, accountVote)                            stock Substrate, 2 args
         │
         ▼
-   toast: "Vote submitted"
-   invalidate use-referendum(42) → refetch on next tick
+  signAsync(address, { signer, era: 256 })
+    extension: the extension's popup
+    WalletConnect: polkadot_signTransaction, approved on the phone
+        │
+        ▼
+  send() ─► broadcast ─► in-block ─► finalized
+                          │            └─ toast "Vote finalised on chain"
+                          └─ onSuccess: refetch the voter list, the user's
+                             votes and account locks; the modal shows success
+                             (WalletConnect) or a "Vote submitted" toast
 ```
 
-The whole pipeline lives in `lib/query/hooks/use-tx.ts` so every write
-flow (votes, proposals, deposit placement, unlocks) gets the same
-status + toast treatment for free.
+## Filing a proposal
 
-## Write flow: submitting a treasury referendum
+There are two composers. Both end in one signed `utility.batchAll` that
+files the referendum and binds its EGOV1 record.
 
-The wizard's full pipeline. The signed extrinsic is one
-`utility.batchAll` of four calls.
+- **Treasury wizard** (`/create`, `app/create/page.tsx`) - a
+  `treasury.spendLocal(amount, beneficiary)` call. The origin tier is
+  picked from the amount (see [Origins and treasury tiers](#origins-and-treasury-tiers)).
+  The call is always noted as a preimage and submitted by `Lookup`.
+- **Advanced composer** (`/create/advanced`, `app/create/advanced/page.tsx`) -
+  any of the curated calls in `lib/governance/proposal-calls.ts`: a
+  treasury spend, `referenda.cancel`, `referenda.kill`,
+  `whitelist.whitelistCall`, a runtime upgrade (`system.setCode`), a
+  `system.remark`, or a raw SCALE-encoded call. A raw call must re-encode
+  to exactly the pasted bytes. The origin is chosen from `SUBMIT_ORIGINS`
+  and defaults to the kind's suggested origin. Calls of 128 bytes or less
+  are submitted `Inline`; larger calls are noted as a preimage first.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ 1. Build the spend call                                              │
-│                                                                      │
-│   const call = api.tx.treasury.spendLocal(                           │
-│     /* amount      */ amountPlanck,                                  │
-│     /* beneficiary */ MultiAddress(beneficiarySs58),                 │
-│   )                                                                  │
-│                                                                      │
-│   const bytes = call.method.toU8a()                                  │
-└──────────────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│ 2. Pre-signature stage (R2 + DB)                                     │
-│                                                                      │
-│   POST /api/proposals/draft                                          │
-│   ├─ putJson(r2://proposals/<network>/<uuid>/proposal.json)          │
-│   │     → { url, sha256 }                                            │
-│   └─ insertProposalDraft({ id: uuid, status: 'draft', … })           │
-│   returns { id, json_url, json_sha256, remark_payload }              │
-│                                                                      │
-│   remark_payload = `EGOV1:{"u":"<url>","h":"<sha256>"}`              │
-└──────────────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│ 3. Build the batchAll                                                │
-│                                                                      │
-│   const tier = pickOriginForAmount(amountPlanck)                     │
-│                  // -> { origin: "BigSpender", maxAmount } | null    │
-│   const index = referenda.referendumCount()  // read at build time   │
-│   const envelope = stringToU8a(remark_payload)                       │
-│                                                                      │
-│   utility.batchAll([                                                 │
-│     preimage.notePreimage(bytes),                                    │
-│     referenda.submit(                                                │
-│       { Origins: tier.origin },                                      │
-│       { Lookup: { hash: blake2_256(bytes), len: bytes.length } },    │
-│       { After: 0 },                                                  │
-│     ),                                                               │
-│     preimage.notePreimage(envelope),                                 │
-│     referenda.setMetadata(index, blake2_256(envelope)),              │
-│   ])                                                                 │
-│                                                                      │
-│   One signature; all four apply atomically or none do. If another    │
-│   submission lands first, `index` is stale, setMetadata fails the    │
-│   runtime's depositor check (NoPermission), the batch reverts, and   │
-│   the wizard rebuilds with a fresh count on retry - a stale index    │
-│   can never annotate someone else's referendum.                      │
-└──────────────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│ 4. Confirm on the server                                             │
-│                                                                      │
-│   On finalised:                                                      │
-│   POST /api/proposals/<id>/confirm                                   │
-│     { referendum_index, tx_hash, block_hash, block_number }          │
-│   → attachReferendumIndex(…) flips status to 'on_chain'.             │
-└──────────────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│ 5. (Optional) Place the decision deposit                             │
-│                                                                      │
-│   api.tx.referenda.placeDecisionDeposit(index)                       │
-│                                                                      │
-│   The new referendum's index is known only after the batch emits     │
-│   referenda.Submitted{index}, so this is a separate signed tx.       │
-│   Anyone can pay it - not just the proposer.                         │
-└──────────────────────────────────────────────────────────────────────┘
+### 1. Compose
+
+The composer builds the call locally and previews its bytes, blake2-256
+hash and length before any signature. The enactment moment (as soon as
+possible, a delay, or a fixed block) is checked by `validateEnactment` in
+`lib/governance/enactment.ts`. An `At` block must be in the future and, in
+the treasury wizard, past the track's minimum enactment period.
+
+Beneficiary addresses from another network are caught here. See
+[Wrong-network addresses](#wrong-network-addresses).
+
+### 2. Stage the draft
+
+Staging writes the proposal text before anything is signed on chain. It
+needs a signed-in session, so the composer asks for a sign-in signature
+first if there isn't one.
+
+```text
+POST /api/proposals/draft                     (app/api/proposals/draft/route.ts)
+  checks: signed in, proposer_address is the session's own key,
+          beneficiary valid for the network, attachments in the proposal's
+          own media folder and matching the stored files
+  writes: proposals/<network>/<uuid>/proposal-<first 16 hex of sha256>.json
+          a proposals row with status 'draft'
+  returns { id, json_url, json_sha256, remark_payload, proposal }
 ```
 
-The `EGOV1:` envelope is a content-addressed backlink to the off-chain
-JSON, bound to the referendum through `referenda.metadataOf(index)`.
-Any third party can rebuild the proposal corpus by reading `MetadataOf`,
-resolving the hash through the `preimage` pallet to the envelope bytes,
-and fetching the URL - no integration against our DB required. Generic
-tooling (Polkadot-JS Apps, Subscan) renders the binding natively.
+`remark_payload` is the EGOV1 envelope, `EGOV1:{"u":"<json_url>","h":"<json_sha256>"}`.
 
-Referenda filed before the setMetadata anchor shipped carry the same
-envelope as a `system.remark` call co-located in the submission
-`utility.batchAll` instead - indexers should check `MetadataOf` first
-and fall back to remark-scanning for those.
-Schema lives in `lib/governance/proposal-metadata.ts`.
+Every staged version gets its own key, and staging never overwrites an
+earlier one. A batch signed from an older version (a second tab, or a
+re-stage while it was in flight) still points at the exact bytes it
+pinned. Staging the same draft again updates the row in place, but only:
+
+- by its own proposer, on the same network, while it is still a draft;
+- from the version the browser last saw (`expected_sha256`), so two tabs
+  can't overwrite each other;
+- while no version's envelope is on chain yet. If one is, the draft must
+  be linked to its referendum instead. The check fails closed when the
+  chain can't be read.
+
+Staging with nothing changed returns the saved version without writing.
+
+### 3. Build and sign the batch
+
+```text
+utility.batchAll([
+  preimage.notePreimage(<call bytes>),            left out when inline or already noted
+  referenda.submit(<origin>, <Inline | Lookup{hash, len}>, <enactment>),
+  preimage.notePreimage(<EGOV1 envelope bytes>),  left out when already noted
+  referenda.setMetadata(<index>, blake2_256(<envelope bytes>)),
+])
+```
+
+The builders are `buildTreasuryProposal` in
+`lib/governance/submit-treasury-proposal.ts` and `buildProposalBatch` in
+`lib/governance/proposal-batch.ts`.
+
+- **Order.** `setMetadata` needs an ongoing referendum and a preimage for
+  the hash, so it comes last.
+- **Index.** `<index>` is `referenda.referendumCount()`, refetched right
+  before signing. If another submission lands first, the index is stale,
+  `setMetadata` fails the depositor check (`NoPermission`) and the whole
+  batch reverts. It can never annotate someone else's referendum. Retry
+  rebuilds with a fresh count.
+- **Already noted.** Noting a preimage that exists aborts with
+  `preimage.AlreadyNoted` and reverts the batch. The composers read the
+  preimage status of the call and of the envelope right before signing and
+  leave out a note that is already there. The envelope can already exist
+  if someone copied it. On an `AlreadyNoted` error both statuses are read
+  again, so the retry skips the right call.
+
+The user signs once. The hook resolves on finalisation and reads the new
+index from the `referenda.Submitted` event (`extractReferendumIndex`).
+
+### 4. Link the draft to its referendum
+
+The client posts the index with `confirmWithRetry`
+(`lib/governance/confirm-client.ts`) to
+`POST /api/proposals/<id>/confirm` (`app/api/proposals/[uuid]/confirm/route.ts`).
+The tx and block hashes are optional; the route proves ownership from
+chain state:
+
+1. The caller is signed in as the draft's proposer (matched by public key).
+2. `referenda.metadataOf(index)` equals the blake2-256 of this draft's
+   envelope. If it matches an older staged version instead, the draft is
+   switched back to that version, so the page shows exactly what the
+   referendum pins.
+3. The referendum was filed by the proposer (its submission deposit), and
+   when its call can be read, it has the same hash and length as the
+   draft's. For a concluded referendum the route reads its last ongoing
+   state from the archive node. This stops anyone who notes a copy of a
+   draft's envelope on their own referendum from claiming it.
+
+Then the row becomes `on_chain` with the index and tx coordinates, and a
+redirect file is written at `proposals/<network>/index/<index>.json` for
+indexers that only have the index. The proposal text is queued for the
+automatic content check if that is switched on.
+
+Chain reads are capped at 8 s. An unreachable RPC (503) or a node that
+hasn't seen the `setMetadata` yet (409, `retryable: true`) is retried after
+1, 3 and 6 s. A hash or filer mismatch is final. A 401 triggers one fresh
+sign-in and an immediate retry.
+
+If linking still fails, the referendum is live but has no text here. The
+drafts panel on `/create` offers "Already on chain? Link it to its
+referendum", which calls the same route with the index alone.
+
+### 5. Place the decision deposit
+
+`referenda.placeDecisionDeposit(index)` is a separate transaction, because
+the index is only known after the batch lands. The success screen offers
+it (`components/governance/place-deposit-button.tsx`), and so does the
+proposal page. Anyone can pay it.
+
+### Add details to an existing referendum
+
+The advanced composer has a second mode for referenda filed elsewhere
+(Polkadot-JS Apps, scripts). It stages a draft that records the existing
+call, then signs only the envelope calls (`attachMetadataToExisting`):
+`preimage.notePreimage(envelope)` and `referenda.setMetadata(index, hash)`.
+The runtime accepts this only from the referendum's submission depositor
+while it is ongoing, and the composer checks both first. It refuses a
+referendum that already has details here.
+
+## After submission
+
+### Draft states
+
+| Status | Meaning | Allowed actions |
+|---|---|---|
+| `draft` | Staged, not linked to a referendum | Resume (re-stage), link, cancel, delete |
+| `on_chain` | Linked to a referendum | Edit while ongoing, withdraw |
+| `cancelled` | Marked outdated by the proposer | Delete |
+
+The schema also has `submitted` and `failed`; the drafts lists still show
+`submitted` rows, but the current code doesn't set either status.
+
+- **Private drafts.** `GET /api/proposals/<id>/json` serves a proposal that
+  hasn't reached the chain only to its signed-in proposer.
+- **Resume.** Drafts appear on `/create` and `/account`. The treasury
+  wizard reopens an unsigned draft with `?from=<id>` and updates it in
+  place. Drafts from the advanced composer can't be resumed in the
+  treasury wizard.
+- **Cancel** (`POST /api/proposals/<id>/cancel`) sets the status to
+  `cancelled`. It is refused for `on_chain` rows.
+- **Delete** (`DELETE /api/proposals/<id>`) removes the row and the
+  proposal's whole R2 folder: every JSON version and every upload. It is
+  refused for `on_chain` rows and for drafts whose envelope (any version)
+  is already on chain. The on-chain check fails closed.
 
 ### Proposer edits
 
-After submission the proposer can edit the off-chain narrative (title,
-summary, body, attachments) via `PATCH /api/proposals/[uuid]`. The
-endpoint re-uploads `proposal.json` at the same R2 key, so existing
-URLs keep resolving, but the canonical bytes (and therefore the
-sha256) change. The on-chain envelope still pins the **original**
-hash, so the pinned-hash vs. bucket-hash divergence is the public
-signal that an edit happened.
+After linking, the proposer can edit the title, summary, body and
+attachments on `/proposals/<index>/edit`, which calls
+`PATCH /api/proposals/<id>`:
 
-The DB tracks `edited_at` + `edit_count`. The detail page shows
-`(edited)` next to the title and switches the verification badge to
-`EGOV · Edited` (neutral tone) instead of `EGOV · Unverified`
-(warning tone). Spend amount, beneficiary, preimage, and proposer
-address are **not** editable - those are baked into the referendum.
+- Only for `on_chain` rows, and only while the referendum is ongoing. A
+  concluded referendum's text is frozen. (This chain check fails open: an
+  RPC error still allows the edit, and the hash divergence below still
+  shows it.)
+- The JSON is rewritten at the same R2 key, so the pinned URL keeps
+  resolving. The EGOV1 1.2.0 `call` and `enactment` sections are carried
+  over.
+- The spend amount, beneficiary, preimage, track and proposer are not
+  editable. They are part of the referendum.
 
-## Origin selection (`lib/governance/treasury.ts`)
+The on-chain envelope still pins the original sha256, so a hash mismatch
+between the envelope and the stored JSON is the public signal of an edit.
+The row records `edited_at` and `edit_count`, and the JSON carries the same
+fields. The proposal page shows "(edited)" next to the title. Its source
+badge (`components/governance/proposal-metadata-header.tsx`) reads
+`EGOV1 · Edited`. `EGOV1 · Unverified` is reserved for stored JSON that
+doesn't match the recorded hash when no edit was recorded.
 
-Tracks have a `maxDeciding` and an implicit "max amount" derived from their
-origin's spending limit. We map amount → track:
+### Withdrawing
 
-```ts
-pickOriginForAmount(tracks, amount) →
-  amount ≤ tracks.SmallTipper.maxAmount      ? SmallTipperOrigin
-  amount ≤ tracks.BigTipper.maxAmount        ? BigTipperOrigin
-  amount ≤ tracks.SmallSpender.maxAmount     ? SmallSpenderOrigin
-  amount ≤ tracks.MediumSpender.maxAmount    ? MediumSpenderOrigin
-  amount ≤ tracks.BigSpender.maxAmount       ? BigSpenderOrigin
-  : null   // above the cap - rejected at compose time
+A proposer can't cancel their own referendum: `referenda.cancel` needs the
+ReferendumCanceller origin. Instead, `POST /api/proposals/<id>/withdraw`
+sets an off-chain flag, and the proposal page shows a banner asking voters
+to vote NAY, with an optional reason of up to 280 characters.
+
+- Only proposals that reached the chain (`on_chain`) can be marked
+  withdrawn. `{ "undo": true }` clears the flag at any time.
+- A body that doesn't parse is refused, so a failed undo never withdraws
+  again.
+- Linking a draft clears any withdrawal flag.
+
+## The EGOV1 record
+
+Each proposal filed here carries an EGOV1 record: a JSON document in R2
+and a short envelope on chain that pins it.
+
+```text
+EGOV1:{"u":"<url>","h":"<sha256>"}
 ```
 
-Enjin has no `Treasurer` track, so `BigSpender` is the top tier and the table
-is capped at 1,000,000 ENJ; a larger amount returns null and the wizard blocks
-it rather than filing under an origin that can't authorize the spend. The
-deposit thresholds come from chain config (read at runtime). The treasury
-wizard auto-picks the tier; the `/create/advanced` composer lets you choose any
-track origin explicitly.
+- `u` is the JSON's public URL. With `NEXT_PUBLIC_APP_URL` set it is served
+  by the app's own `/r` route:
+  `<app>/r/proposals/<network>/<uuid>/proposal-<16 hex>.json`.
+- `h` is the sha256 of the canonical JSON: keys sorted at every level,
+  `JSON.stringify` separators, UTF-8 (`stringifyStable` in
+  `lib/r2/json.ts`).
+- The envelope is noted as its own preimage and bound with
+  `referenda.setMetadata(index, blake2_256(envelope))`. That hash commits
+  to the envelope, not to the JSON; `expectedMetadataHash` rebuilds it
+  from a stored URL and sha256.
 
-## Voting lock periods
+To read a referendum's record without this app's database, read
+`referenda.metadataOf(index)`, resolve the hash through the `preimage`
+pallet, check for the `EGOV1:` prefix and fetch `u`.
+`getReferendumMetadata(api, index)` in `lib/governance/referenda.ts` does
+this. Referenda filed before the `setMetadata` binding shipped carry the
+same envelope in a `system.remark` inside their submission batch;
+indexers should check `MetadataOf` first and fall back to the remark.
 
-A vote with conviction `Locked3x` locks the balance for 3 × track decision
-period after the vote is finalized. The decision period varies by track:
+Schema versions (`lib/governance/proposal-metadata.ts`):
 
-- BigSpender: ~28 days
-- SmallTipper: ~7 days
-- (etc - read `Track.decisionPeriod` from `lib/governance/tracks.ts`)
+- **1.1.0** - treasury proposals: title, summary, body, track, spend,
+  attachments, preimage hash and length.
+- **1.2.0** - adds the optional `call` section (section, method, origin,
+  preimage hash and length, whether it was inline, and the code hash for
+  runtime upgrades) and `enactment`. The advanced composer writes it. 1.1.0
+  readers keep working.
 
-Conviction selector shows the actual lock duration for the current track,
-not a hard-coded "8 / 16 / 32 day" table.
+The README section
+[The EGOV1 metadata standard](../README.md#the-egov1-metadata-standard) is
+the public description of the format.
 
-## Unlocking locked balance
+## Wrong-network addresses
 
-A conviction lock outlives the referendum. To free it the voter must (1)
-remove the vote (`convictionVoting.removeVote(track, index, currency)`), then
-(2) once the lock period has elapsed, call
-`convictionVoting.unlock(track, account, currency)`. On Enjin these calls are
-the multi-token fork's 3-arg form (the extra `currency` arg); `buildUnlock` /
-`buildRemoveVote` in `lib/governance/conviction-voting.ts` probe metadata for
-the arity so the arg is never dropped. The lock is **per track and per
-currency** - `classLocksFor` is keyed `(account, currency)` on Enjin - so an
-ENJ `unlock` frees the ENJ lock on that track regardless of how many ENJ votes
-contributed to it; an sENJ lock is freed separately.
+Enjin addresses differ per network (`en…` on the Relaychain, `cn…` on
+Canary, `ef…` on the Matrixchain), but the same key can be written in any
+of them. `inspectAddress(input, chainId)` in `lib/chain/ss58.ts` classifies
+what was typed as `empty`, `invalid`, `native` (this chain's format) or
+`foreign` (another network's format, or a raw 0x public key).
 
-`getAccountLocks(api, address)` builds the per-track picture the UI needs:
-`classLocksFor` gives the authoritative frozen `locked` amount, while
-`votingFor` supplies the `prior` lock (the `(unlockAt, amount)` tuple that
-the chain sets when a vote is removed) and the list of votes still actively
-holding a lock. Because locks are per currency, it enumerates **every**
-currency (`classLocksFor.entries(address)`), so an ENJ lock and an sENJ lock
-on the same track surface as two distinct rows - each carrying its own
-`currencyRaw` and `locked` amount, and each unlockable in its own currency.
-The matching `votingFor` rows are filtered by currency so an ENJ lock's
-"held by" list only references the ENJ votes that hold it, never an sENJ
-vote on the same track (and vice-versa). The account page
-(`components/governance/locked-balance-panel.tsx`, via `useAccountLocks`)
-uses this with the current block to show, per lock, one of: *held by your
-vote on #N* (link to remove it there), *unlocks in N days* (a `prior` lock
-still counting down), or *unlockable now* (enabled Unlock button), labelled
-with the lock's own token (ENJ or sENJ · pool #N). Casting a vote or removing
-one invalidates `["account-locks", chainId, address]` so the panel stays live.
+A `foreign` beneficiary is never converted silently. The composer opens
+`AddressFormatDialog`, which shows the matching address for this chain and
+converts only when the user agrees. The draft route rejects a beneficiary
+that isn't valid for the proposal's network. A delegation target must also
+be valid for the active chain.
 
-## Vote currency: liquid ENJ vs staked-pool sENJ
+## Origins and treasury tiers
 
-Enjin extends `AccountVote` with a `currency` argument so a voter can
-stake either liquid ENJ (`{ Enj: null }`) or staked-pool tokens
-(`{ SEnj: { tokenId } }`) into a referendum. The per-vote currency is part of
-the `convictionVoting.votingFor` storage key (a triple map of
-`(account, track, currency)`); `listVotesOnPoll` (in
-`lib/governance/conviction-voting.ts`) reads it from there, and also enriches
-from `voteManager.VoteCurrencies(voter, pollIndex)` on any runtime that exposes
-the `voteManager` pallet.
+`lib/governance/treasury.ts` maps an amount to the smallest treasury origin
+that covers it:
 
-Each nomination pool on the relay also owns an NFT in the chain's
-staking-pool collection (the "Degens" family, collection id `2` on
-mainnet). The mapping is:
+| Origin | Maximum spend |
+|---|---|
+| `SmallTipper` | 250 ENJ |
+| `BigTipper` | 1,000 ENJ |
+| `SmallSpender` | 10,000 ENJ |
+| `MediumSpender` | 100,000 ENJ |
+| `BigSpender` | 1,000,000 ENJ |
 
+- `pickOriginForAmount(amount, tiers = ENJIN_TREASURY_TIERS)` returns the
+  first tier that covers the amount, or `null` when none does. The
+  composers block a `null` rather than fall back to another origin.
+- The caps are a static table. The runtime doesn't expose its per-origin
+  spend limits in metadata, so they can't be read from chain. Enjin has no
+  `Treasurer` origin, so `BigSpender` is the top tier, and 1,000,000 ENJ is
+  a product cap, not a chain value.
+- `assertTierCoversAmount` re-checks at build time, so a referendum is
+  never filed under an origin the table says is too small.
+
+The advanced composer offers these origins (`SUBMIT_ORIGINS` in
+`lib/governance/proposal-calls.ts`): `Root`, `WhitelistedCaller`,
+`ReferendumCanceller`, `ReferendumKiller`, `GeneralAdmin` and the five
+treasury origins. Cancel defaults to `ReferendumCanceller` and kill to
+`ReferendumKiller`; every other kind defaults to `Root`. A treasury spend in the
+advanced composer still takes its origin from the amount. An origin that
+is too weak for the call only fails at enactment, after the full vote, so
+the composer warns about it.
+
+## Deposits
+
+- **Submission deposit** - `api.consts.referenda.submissionDeposit`,
+  reserved when the batch lands.
+- **Decision deposit** - the track's `decisionDeposit`, reserved from
+  whoever places it.
+- **Preimage deposits** - one per noted preimage, so a proposal holds up
+  to two: the call and the envelope. They can be reclaimed with
+  `preimage.unnotePreimage` while the preimage is `Unrequested`.
+  In the stock pallet `setMetadata` doesn't request the preimage, so the
+  envelope stays `Unrequested` and is offered for reclaim. Unnoting it
+  removes the bytes that `MetadataOf` points to: the app still finds the
+  record through its database, but outside readers can no longer resolve
+  it from chain.
+
+The treasury wizard only lets a proposer continue when their free balance
+covers the submission deposit, the track's decision deposit and 0.01 of a
+token for fees.
+
+The Reserved deposits panel on `/account`
+(`components/governance/reserved-deposits-panel.tsx`) lists the
+connected account's deposits with `getReferendumDepositsFor` and
+`getPreimageDepositsFor` (`lib/governance/deposits.ts`) and reclaims them
+with `referenda.refundSubmissionDeposit`,
+`referenda.refundDecisionDeposit` or `preimage.unnotePreimage`. A killed
+referendum has no deposits left to refund; they were slashed. A reserved
+deposit is separate from a conviction lock: unlocking votes never frees
+it.
+
+## Conviction voting
+
+### Calls and arity
+
+Enjin adds a `currency` argument to the voting calls. The builders in
+`lib/governance/conviction-voting.ts` use `voteManager` when the runtime
+has it and `convictionVoting` otherwise, and read each call's argument
+count from metadata, so `currency` is passed exactly when the runtime
+expects it:
+
+| Builder | Multi-token form | Stock Substrate form |
+|---|---|---|
+| `buildVote` (also split and split-abstain) | `vote(poll, vote, currency)` | `vote(poll, vote)` |
+| `buildRemoveVote` | `removeVote(track, poll, currency)` | `removeVote(track, poll)` |
+| `buildUnlock` | `unlock(track, target, currency)` | `unlock(track, target)` |
+| `buildDelegate` | `delegate(track, to, conviction, balance, currency)` | `delegate(track, to, conviction, balance)` |
+| `buildUndelegate` | `undelegate(track, currency)` | `undelegate(track)` |
+
+`currency` defaults to ENJ (`{ Enj: null }`).
+
+### Vote currency: liquid ENJ or staked-pool sENJ
+
+A voter can vote with liquid ENJ (`{ Enj: null }`) or with a nomination
+pool's sENJ tokens (`{ SEnj: { tokenId } }`, built by `sEnjCurrency(poolId)`;
+the token id is the pool id). The runtime needs the inner struct: a flat
+`{ SEnj: 34 }` fails to decode.
+
+The currency is part of the `convictionVoting.votingFor` storage key,
+which is a triple map of `(account, track, currency)`. `listVotesOnPoll`
+reads it from the key, and on runtimes with `voteManager` it also reads
+`voteManager.voteCurrencies`. One account can hold separate ENJ and sENJ
+votes on the same referendum.
+
+### Lock periods
+
+`CONVICTION_LOCK_PERIODS` in `lib/governance/types.ts` gives the lock
+length in periods: 0 for `None`, then 1, 2, 4, 8, 16 and 32 for `Locked1x`
+to `Locked6x`. The vote panel multiplies this by the track's
+`decisionPeriod`, read from chain, and shows the result as a duration.
+Nothing is hard-coded per track.
+
+### Removing votes and unlocking
+
+A conviction lock outlives the referendum. To free it, the voter:
+
+1. removes the vote with `removeVote(track, poll, currency)`. The proposal
+   page offers this, also for concluded referenda
+   (`getMyVotesOnPollAnyTrack` finds the track from storage);
+2. once the lock period has passed, calls `unlock(track, account, currency)`.
+
+Locks are held per track and per currency: `classLocksFor` is keyed
+`(account, currency)` on Enjin. An ENJ unlock frees the ENJ lock on that
+track however many ENJ votes built it; an sENJ lock is freed separately.
+
+`getAccountLocks(api, address)` builds the picture for the Locked balance
+panel on `/account` (`components/governance/locked-balance-panel.tsx`, via
+`useAccountLocks`):
+
+- `classLocksFor.entries(address)` gives one row per track and currency,
+  with the authoritative locked amount.
+- `votingFor` for the same track and currency gives the votes that still
+  hold the lock, and the `prior` lock (`unlockAt`, `amount`) that the
+  chain sets when a vote is removed. An ENJ row never lists sENJ votes.
+
+Each row shows one of: "Held by your vote on #N - remove it first",
+"Unlocks in …" (a prior lock still counting down), or "Unlockable now"
+with an enabled Unlock button. sENJ rows are labelled
+`sENJ · <pool name>`. Voting, removing a vote or unlocking invalidates
+`["account-locks", chainId, address]`, so the panel stays current.
+
+### Delegation
+
+The Delegation panel on `/account`
+(`components/governance/delegation-panel.tsx`) delegates ENJ voting power:
+
+- to one track, or to all eligible tracks in one signature (one
+  `delegate` per track, batched). A track is eligible when the account
+  isn't already delegating on it and has no active vote there; otherwise
+  the runtime rejects the call.
+- The target must be a valid address for the chain and not the account
+  itself. The amount can't exceed the free balance.
+- `getDelegationsFor` lists active delegations, one per track and
+  currency. Each has its own Undelegate button.
+
+## Staking-pool NFTs
+
+Each nomination pool on the relay owns an NFT in the staking-pool
+collection (the "Degens" family, collection `2` on mainnet). The UI uses
+it as the pool's avatar next to sENJ votes and locks.
+
+```text
+poolId ─► nominationPools.bondedPools(poolId).tokenId ─► multiTokens (collectionId, tokenId)
 ```
-poolId  ─►  nominationPools.bondedPools(poolId).tokenId  ─►  multiTokens (collectionId, tokenId)
-```
 
-Helpers:
-
-- `lib/governance/staking-pools.ts` → `getPool(api, poolId)` reads the
-  pool's `tokenId`, name, and state. Returns `null` when the pallet
-  isn't present (matrix chains).
-- `lib/governance/multi-tokens.ts` → `getCollectionUriTemplate(api,
-  collectionId)` reads the collection's `uri` attribute (a template
-  containing `{id}`). `buildTokenMetadataUrl(template, c, t)`
-  substitutes `{id}` with `<c>-<t>`. `fetchTokenMetadata(url)` pulls
-  + normalises the JSON; falls back to `null` on any error.
-- `lib/query/hooks/use-pool-nft.ts` → `usePoolNft(poolId)` wraps the
-  above in React Query (30-minute staleTime). Dedupes across rows.
-- The collection id per chain lives in `ChainConfig.stakingPoolNftCollectionId`
-  (`lib/chain/chains.ts`); `null` disables the lookup and the UI
-  degrades to plain "sENJ · pool #N" text.
+- `getPool(api, poolId)` in `lib/governance/staking-pools.ts` reads the
+  pool's `tokenId`, name and state. It returns `null` when the pallet or
+  the pool is missing.
+- `lib/governance/multi-tokens.ts`: `getCollectionUriTemplate(api,
+  collectionId)` reads the collection's `uri` attribute, a template with
+  `{id}`. `buildTokenMetadataUrl(template, c, t)` replaces `{id}` with
+  `<c>-<t>`. `fetchTokenMetadata(url)` fetches and normalises the JSON and
+  returns `null` on any error.
+- `usePoolNft(poolId)` in `lib/query/hooks/use-pool-nft.ts` wraps these
+  in React Query (30-minute stale time), so many rows for one pool share
+  one fetch.
+- `ChainConfig.stakingPoolNftCollectionId` (`lib/chain/chains.ts`) sets
+  the collection per chain. `null` (Canary today) turns the lookup off,
+  and the UI shows `Pool #N` text instead.
 
 ## See also
 
-- [`CHAIN_FLOW.md`](CHAIN_FLOW.md) - RPC connection
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) - layers and data flow
+- [`CHAIN_FLOW.md`](CHAIN_FLOW.md) - RPC connection, archive RPCs, event matching
 - [`WALLET_INTEGRATION.md`](WALLET_INTEGRATION.md) - how signing works
-- The `scripts/00*.sql` files - canonical off-chain schema
+- `scripts/0*.sql` - the off-chain schema
