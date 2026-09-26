@@ -18,6 +18,8 @@ Every variable is described in [`ENVIRONMENT.md`](ENVIRONMENT.md).
    content checks and Telegram.
 7. [Legal pages](#legal-pages-and-footer): set your own details and
    redeploy.
+8. [Check the deployment](#checking-the-deployment): open **Moderation →
+   Status** and fix every item marked Problem.
 
 ## Vercel
 
@@ -55,6 +57,11 @@ Notes:
 - File URLs are built from `NEXT_PUBLIC_APP_URL`, so a preview without it
   would hand out `http://localhost:3000` links. Do not file real proposals
   from a preview: the file URL in the EGOV1 record is pinned on chain.
+- The production deployment refuses to build such links. While
+  `NEXT_PUBLIC_APP_URL` points at localhost there, staging a draft, editing
+  a proposal and uploading files or avatars answer `503` with "The site's
+  public URL isn't configured." Previews are not checked. See
+  [`ENVIRONMENT.md`](ENVIRONMENT.md#app).
 - Changing any variable takes effect only on the next deployment.
 - Vercel refuses request bodies over 4.5 MB. Uploads are therefore capped
   at 4 MB per file (`lib/uploads/limits.ts`), and large photos are shrunk
@@ -111,12 +118,12 @@ don't drop them) for at least one deploy, so a rollback still works.
 
 | Table | Purpose |
 |---|---|
-| `users` | One row per SS58 address: handle (unique per network), display name, bio, avatar, `is_verified`. |
+| `users` | One row per SS58 address, with the network its prefix belongs to: handle (unique per network), display name, bio, avatar, `is_verified`. |
 | `wallet_sessions` | One row per signed-in session: SHA-256 of the session token, expiry, user agent and IP address. |
 | `auth_nonces` | Single-use sign-in nonces with the exact message to sign; deleted when used. |
 | `proposals` | Index of every proposal filed through the app. `status` is one of `draft`, `submitted`, `on_chain`, `failed`, `cancelled`. The JSON in R2 is canonical. |
 | `proposal_attachments` | Files listed by a proposal, by bucket key. |
-| `comments` | Threaded comments per proposal. Deleting one only marks it deleted. |
+| `comments` | Threaded comments per proposal. The author can edit one for 15 minutes after posting; `edited_at` records the last edit, and no history is kept. Deleting one only marks it deleted. |
 | `comment_reactions` | Emoji reactions per comment. Not used by the current UI. |
 | `security_disclosures` | Reports from `/security`. The IP address is stored only as a SHA-256 hash. |
 | `moderation_roles` | Moderator and admin grants, by public key. |
@@ -124,7 +131,7 @@ don't drop them) for at least one deploy, so a rollback still works.
 | `moderation_actions` | The public moderation log. |
 | `moderation_reports` | User reports and automatic flags, open until a moderator decides. |
 | `moderation_suspensions` | Posting pauses set by admins, by public key. |
-| `moderation_settings` | Settings for the automatic content checks. |
+| `moderation_settings` | Key-value rows: the content-check settings (`content_scan`), the content-check health record (`content_scan_health`), and once-per-window gates shared by all servers (`slot:telegram_test` for the Telegram test message, `slot:notice:content_scan_health` for the daily content-check alert). |
 | `moderation_scan_usage` | Checks and tokens per day, model and kind, for the daily limit and the cost shown to admins. |
 | `_migrations` | Files applied by `pnpm db:migrate`. |
 
@@ -223,6 +230,12 @@ falls back to per-instance counting.
 3. New moderation reports go to the same chat, or to
    `TELEGRAM_MODERATION_CHAT_ID` if set. Set it to `OFF` for no moderation
    notices.
+4. Redeploy. As an admin, open **Moderation → Status** and press **Send
+   test message**. It posts a short message to the moderators' chat, at
+   most once a minute across all admins. If Telegram refuses it, the tab
+   says why: the bot token was refused, the chat wasn't found, the bot
+   can't post in the chat, Telegram is rate limiting the bot, or Telegram
+   couldn't be reached.
 
 ### Automatic content checks (optional)
 
@@ -237,7 +250,42 @@ falls back to per-instance counting.
 
 The daily limit is a hard cap: every check is counted before it is sent.
 Past it, uploads wait for a moderator and text is not checked until the
-next day (UTC).
+next day (UTC). A check that can't be counted, because the database is
+failing, isn't sent either. If the settings can't be read, each server
+keeps the settings it last read, so a short database outage doesn't
+switch the checks off.
+
+### Content-check health
+
+A check can fail for three kinds of reasons (`classifyApiError` in
+`lib/moderation/scan.ts`):
+
+- **An outage** passes by itself: a timeout, a connection error, a server
+  error, overload or a rate limit. Posting goes on as if the checks were
+  off.
+- **The item** can't be checked: the API rejects it as input. An upload
+  then waits for a moderator; text stays unchecked.
+- **A setup problem** doesn't pass by itself: the API key was refused, the
+  key may not use the chosen model, the model wasn't found (it may be
+  retired), the account is out of credit, or the API no longer accepts the
+  request the app sends. A "credit balance too low" answer counts here, as
+  running out of credit; it no longer holds the upload for a moderator.
+  Uploads and text go through without a check, as during an outage.
+
+A setup problem is recorded in `moderation_settings` under
+`content_scan_health`, with when it was first and last seen
+(`lib/moderation/scan-health.ts`). While it lasts:
+
+- **Moderation → Status** shows it under Automatic checks → Health.
+- **Moderation → Settings** shows a red banner with the problem and when it
+  was first and last seen.
+- The moderators' Telegram chat gets an alert when a new problem appears,
+  at most once a day across all servers.
+
+The next check that gets an answer clears the record. Outages and items
+rejected as input leave it alone. To limit database writes, each server
+keeps the record in memory, re-reads it every 5 minutes, and refreshes
+"last seen" at most every 15 minutes.
 
 ## Legal pages and footer
 
@@ -249,6 +297,29 @@ anyone running their own instance must set their own details.
 These pages are built at deploy time. **Redeploy after changing any of
 these variables.**
 
+## Checking the deployment
+
+**Moderation → Status** (admins only) is the checklist after every deploy.
+Each item is OK, Warning or Problem, with a one-line hint that names the
+variable to set. It never shows a secret, key, token or connection string.
+**Check again** reloads it.
+
+| Section | Items |
+|---|---|
+| Database | Reachable; migrations `011`, `012` and `013`, judged by their tables and foreign keys, so migrations applied by hand count too |
+| Storage and links | The five R2 settings; the public URL base, with a Problem while it points at localhost in production |
+| Rate limits | Shared store or in memory (a Warning in production) |
+| Telegram | Bot token, security chat, moderators' chat, and **Send test message** |
+| Automatic checks | API key, whether the checks are on and for what, the model, checks today against the daily limit, and health |
+| Legal pages | Operator name, contact email and postal address |
+| Wallets | WalletConnect project ID |
+
+The tab says whether it judged the deployment as production:
+`VERCEL_ENV=production`, or `NODE_ENV=production` off Vercel. Some items
+are only a Warning outside production, such as missing legal details or
+WalletConnect. The same report is available as JSON from
+`GET /api/moderation/status` (`lib/moderation/status.ts`).
+
 ## Site password gate (staging)
 
 Set `SITE_PASSWORD_STATUS=ON` and `SITE_PASSWORD` to keep a staging site
@@ -257,6 +328,29 @@ on, the API and `/r` file links are locked too, so turn it off before real
 proposals are filed. Changing the password signs everyone out of the gate.
 See [`ENVIRONMENT.md`](ENVIRONMENT.md#site-password-gate) for what stays
 open.
+
+While the gate is on, `robots.txt` disallows everything and names no
+sitemap, and `/sitemap.xml` is an empty list. Both stay reachable, so
+crawlers can read them, and every response the gate lets through carries
+`X-Robots-Tag: noindex`.
+
+## Search engines
+
+- **`/robots.txt`** (`app/robots.ts`) keeps crawlers out of `/api/`,
+  `/account`, `/create`, `/moderation` (but not `/moderation-log`),
+  `/unlock`, `/proposals/*/edit` and `/r/`. It allows the public API reads
+  the pages make while they render, and points at the sitemap.
+- **`/sitemap.xml`** (`app/sitemap.ts`) lists the public pages and every
+  referendum of `NEXT_PUBLIC_DEFAULT_NETWORK`, with the date its text last
+  changed where the database knows it. It refreshes at most hourly. A slow
+  or failing chain or database only shortens the list; it never fails.
+- **`/manifest.webmanifest`** (`app/manifest.ts`) lets browsers install the
+  site.
+- **`X-Robots-Tag: noindex`** is sent by `proxy.ts` on the same private
+  areas, for crawlers that arrive by a link anyway. User profiles and other
+  networks' referendum pages are marked `noindex` in their page metadata.
+
+All absolute URLs come from `NEXT_PUBLIC_APP_URL`.
 
 ## Custom RPC (recommended for production)
 
@@ -285,10 +379,25 @@ Set in `next.config.mjs`: a Content Security Policy, `X-Frame-Options`,
 `X-Content-Type-Options` and `Referrer-Policy`. `connect-src` allows any
 `https:` and `wss:` host, so a new RPC provider needs no change there.
 
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on pushes and pull
+requests to `main`, and by hand. It has two jobs:
+
+- **Verify**: typecheck, lint, knip, `pnpm test` (unit, route and database
+  tests) and a production build.
+- **Browser tests**: installs Chromium, builds with
+  `NEXT_PUBLIC_APP_URL=http://localhost:3100` and runs `pnpm test:e2e`
+  against that build. The API, storage and wallet are faked in the
+  browser; chain data comes from the public Canary RPC. On failure, the
+  Playwright report and test results are kept as an artifact for 14 days.
+
 ## Monitoring
 
 No analytics or error tracking is built in. Server errors appear in the
-Vercel runtime logs. RPC and signing errors are shown to the user through
+Vercel runtime logs. **Moderation → Status** shows the setup at a glance,
+and a failing content-check setup is reported to the moderators' Telegram
+chat. RPC and signing errors are shown to the user through
 `friendlyError()` (`lib/utils/format-error.ts`).
 
 ## Rollback

@@ -57,8 +57,9 @@ URL.
 - **Sharing.** Concurrent callers for the same endpoint share one in-flight
   connection promise, so a burst of hooks opens one socket.
 - **Cache hits.** A cached instance is returned while it reports
-  `isConnected`. One that doesn't is dropped from the cache and a new one is
-  opened.
+  `isConnected`. One that doesn't is dropped from the cache and
+  disconnected, so its provider stops reconnecting in the background, and
+  a new one is opened.
 - **Provider settings.** The socket is a
   `WsProvider(endpoint, 1_000, {}, 10_000)`. After a drop it reconnects on
   its own, retrying every second. Any single RPC request without an answer
@@ -78,10 +79,11 @@ requests in flight fail and their queries retry.
 
 ### On the server
 
-Route handlers use the same pool. A warm function instance reuses its
-socket across requests, and routes don't disconnect after use. Server reads
-pass `retries = 0` and put one deadline on the whole read, because the
-caller retries the request instead. See [Server-side reads](#server-side-reads).
+Route handlers and the sitemap use the same pool. A warm function instance
+reuses its socket across requests, and routes don't disconnect after use.
+Server reads pass `retries = 0` and put one deadline on the whole read,
+because the caller retries the request instead (for the sitemap, the next
+hourly rebuild). See [Server-side reads](#server-side-reads).
 
 ## Refresh and retries in the browser (`lib/query/client.ts`)
 
@@ -206,13 +208,19 @@ and `referenda.referendumCount()` right before signing, and again after an
 
 ## Server-side reads
 
-The server reads the chain only before it acts on a proposal.
+The server reads the chain only before it acts on a proposal, and for the
+sitemap.
 
 | Caller | Reads | Endpoint | `getApi` retries | Deadline | On failure |
 |---|---|---|---|---|---|
 | `POST /api/proposals/[uuid]/confirm` | `referenda.metadataOf`, `referendumInfoFor` | Primary; archive for a concluded referendum | 0 | 8 s per check | 503, retryable (fails closed) |
 | `isEnvelopeOnChain` (`lib/governance/envelope-status.ts`), through `anyVersionOnChain` in `POST /api/proposals/draft` (re-stage) and `DELETE /api/proposals/[uuid]` | `preimage.requestStatusFor` for each stored version's envelope | Primary | 0 | 8 s per version | 503; nothing is written or deleted (fails closed) |
-| `PATCH /api/proposals/[uuid]` (`referendumConcluded`) | `referendumInfoFor` | Primary | 3 (default) | None | The edit is allowed (fails open) |
+| `PATCH /api/proposals/[uuid]` (`referendumConcluded`) | `referendumInfoFor` | Primary | 0 | 8 s | The edit is allowed (fails open) |
+| `/sitemap.xml` (`listPublicReferenda` in `lib/seo/referenda.ts`) | `referenda.referendumCount` | Primary of `NEXT_PUBLIC_DEFAULT_NETWORK` | 0 | 5 s | The sitemap lists only the referenda the database knows; it never fails |
+
+The confirm route is also rate-limited per account (30 calls in 5 minutes),
+because every call reads the chain. Over the limit it answers `429` with
+`retryable: false`.
 
 The confirm route answers with a `retryable` flag:
 

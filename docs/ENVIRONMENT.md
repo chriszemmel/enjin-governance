@@ -9,6 +9,10 @@ Two names are read outside `lib/env.ts`: `UPSTASH_REDIS_REST_URL` and
 `UPSTASH_REDIS_REST_TOKEN`, accepted by `lib/rate-limit.ts` as alternatives
 to the `KV_REST_API_*` pair.
 
+The app also reads `VERCEL_ENV`, which Vercel sets on its own and which you
+don't set. It decides what counts as production for the public-URL check
+(see [App](#app)) and for the admins' Status tab.
+
 ## How loading works
 
 - **Server variables** (no `NEXT_PUBLIC_` prefix) are available on the
@@ -17,8 +21,9 @@ to the `KV_REST_API_*` pair.
   Never put a secret in one.
 - **Validation.** `lib/env.ts` checks every value when it is first imported.
   An invalid value throws an error that names the variable, for example an
-  `R2_ENDPOINT` that does not start with `https://`, a `CRON_SECRET` shorter
-  than 16 characters, or a `SITE_PASSWORD_STATUS` other than `ON` or `OFF`.
+  `R2_ENDPOINT` that does not start with `https://`, a
+  `NEXT_PUBLIC_APP_URL` that does not start with `http://` or `https://`,
+  or a `SITE_PASSWORD_STATUS` other than `ON` or `OFF`.
 - **Nothing is required.** Every variable is optional or has a default. A
   missing value never stops the app; the feature that needs it is off, and
   its API routes answer `503`.
@@ -50,12 +55,29 @@ to the `KV_REST_API_*` pair.
 | Telegram notices | `TELEGRAM_BOT_TOKEN` and a chat ID |
 | A public deployment | `NEXT_PUBLIC_APP_URL`, `LEGAL_*`, `NEXT_PUBLIC_SITE_MAINTAINER`, `NEXT_PUBLIC_SOURCE_URL` |
 
+**Moderation → Status** shows admins whether the database, storage, public
+URL, rate-limit store, Telegram, content checks, legal details and
+WalletConnect are set up. It shows whether a value is present, never a
+secret.
+
 ## App
 
 | Variable | Default | Notes |
 |---|---|---|
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | The canonical origin of the deployment. Used for OpenGraph and WalletConnect metadata, links in Telegram notices, the cross-site check, and as the base of every file URL (`<origin>/r/...`), including the EGOV1 pointer pinned on chain. Set it to the production domain before any real proposal is filed: a wrong value is pinned on chain for good. |
-| `NEXT_PUBLIC_DEFAULT_NETWORK` | `canary-relay` | The network the app opens on: `canary-relay` or `enjin-relay` (mainnet). Users can switch in the app. |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | The canonical origin of the deployment. Used for OpenGraph and WalletConnect metadata, canonical URLs, `robots.txt` and the sitemap, links in Telegram notices, the cross-site check, and as the base of every file URL (`<origin>/r/...`), including the EGOV1 pointer pinned on chain. Set it to the production domain before any real proposal is filed: a wrong value is pinned on chain for good. |
+| `NEXT_PUBLIC_DEFAULT_NETWORK` | `canary-relay` | The network the app opens on: `canary-relay` or `enjin-relay` (mainnet). Users can switch in the app. The sitemap lists this network's referenda, and only its referendum pages are indexed. |
+
+**The public-URL guard.** On Vercel's production deployment
+(`VERCEL_ENV=production`), the app refuses to build file URLs while
+`NEXT_PUBLIC_APP_URL` points at this machine: `localhost`, a `.localhost`
+name, `127.x.x.x`, `0.0.0.0` or `::1`. This usually means the variable was
+never set and fell back to its default. Staging a draft, editing a
+proposal, uploading a file and uploading an avatar then answer `503` with
+"The site's public URL isn't configured.", so a localhost URL is never
+pinned on chain (`isPublicUrlMisconfigured` in `lib/r2/client.ts`). The
+Status tab marks it as a problem. Preview deployments, local development,
+tests and hosts other than Vercel are never refused. Set the variable and
+redeploy to fix it: it is built into the app.
 
 ## Wallet
 
@@ -109,7 +131,7 @@ user-avatars/{user_uuid}.png
 | Variable | Notes |
 |---|---|
 | `GOVERNANCE_ADMIN_PUBLIC_KEYS` | Wallets that are always admins: SS58 addresses on any network, or `0x` public keys, separated by commas or spaces. Entries that are not valid are skipped. These admins cannot be removed in the app; they grant further moderator and admin roles in **Moderation → Roles**, which are stored in the database. Moderation needs migrations `011` to `013` (`lib/auth/roles.ts`). |
-| `ANTHROPIC_API_KEY` | Enables the automatic content checks (`lib/moderation/scan.ts`). The key alone checks nothing: an admin switches the checks on in **Moderation → Settings** and chooses the model, what is checked, how clear violations are handled and a daily limit. The settings need migration `012`. The key is used only on the server. |
+| `ANTHROPIC_API_KEY` | Enables the automatic content checks (`lib/moderation/scan.ts`). The key alone checks nothing: an admin switches the checks on in **Moderation → Settings** and chooses the model, what is checked, how clear violations are handled and a daily limit. The settings need migration `012`. The key is used only on the server. A refused key shows as a setup problem in **Moderation → Status** (see [`DEPLOYMENT.md`](DEPLOYMENT.md#content-check-health)). |
 
 ## Telegram notices
 
@@ -120,7 +142,10 @@ never fails a request.
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather. Add the bot to each chat it should post in. |
 | `TELEGRAM_CHAT_ID` | Chat for new `/security` reports (`lib/security/notify.ts`). The report text and the reporter's contact are posted. Reports are always stored in the database as well. |
-| `TELEGRAM_MODERATION_CHAT_ID` | Chat for a short notice about each new moderation report: the kind of item, the category and a link to `/moderation`, never the reporter, their note or the content (`lib/moderation/notify.ts`). Unset: `TELEGRAM_CHAT_ID` is used. `OFF`: no moderation notices. |
+| `TELEGRAM_MODERATION_CHAT_ID` | Chat for a short notice about each new moderation report: the kind of item, the category and a link to `/moderation`, never the reporter, their note or the content (`lib/moderation/notify.ts`). Content-check alerts (at most one a day) and the admins' test message go here too. Unset: `TELEGRAM_CHAT_ID` is used. `OFF`: no moderation notices or alerts. |
+
+Admins can check the setup with **Send test message** in **Moderation →
+Status**, which posts to the moderators' chat.
 
 ## Legal pages and footer
 
@@ -152,8 +177,11 @@ days. Changing the password invalidates every cookie.
 
 While the gate is on, the API and the `/r` file route are locked too, so
 EGOV1 links do not resolve for outsiders. `/unlock`, the legal pages,
-`/brand/*` and OpenGraph images stay open, and link-preview crawlers
-(recognised by user agent) can read pages outside `/api/`.
+`/brand/*`, OpenGraph images, `robots.txt`, the sitemap and the manifest
+stay open, and link-preview crawlers (recognised by user agent) can read
+pages outside `/api/`. Search engines are kept out: `robots.txt` disallows
+everything and names no sitemap, the sitemap is empty, and every response
+the gate lets through carries `X-Robots-Tag: noindex`.
 
 | Variable | Default | Notes |
 |---|---|---|
@@ -188,12 +216,6 @@ explorer URLs are only used for links. Archive RPCs are fixed in
 `lib/chain/chains.ts`; they are public and stable, so they are not
 configurable.
 
-## Reserved
-
-| Variable | Notes |
-|---|---|
-| `CRON_SECRET` | Declared for a future scheduled job. Nothing uses it yet. If set, it must be at least 16 characters. |
-
 ## Adding a new variable
 
 1. Add it to `lib/env.ts` with a Zod schema, in the `server` or `client`
@@ -204,11 +226,25 @@ configurable.
 4. Add it to this page, and to the inventory in
    [`HANDOVER.md`](HANDOVER.md) if it holds a secret or an account.
 
-## CI
+## CI and tests
 
 CI (`.github/workflows/ci.yml`) builds with only `NEXT_PUBLIC_APP_URL` set.
 Every other variable is optional or has a default, so the build needs
-nothing else.
+nothing else. The **Verify** job builds with `http://localhost:3000`. The
+**Browser tests** job builds with `http://localhost:3100`, the origin the
+Playwright tests run the production server on.
+
+`pnpm test` needs no variables: the database tests use an in-process
+PGlite database, and the route tests replace the other services with
+in-memory fakes. The browser tests read a few variables of their own, in
+`playwright.config.ts` and `e2e/support/`, never in the app:
+
+| Variable | Effect |
+|---|---|
+| `E2E_SKIP_BUILD` | Any non-empty value: start the last build instead of building first. CI sets it, because it builds in its own step. That build must have been made with `NEXT_PUBLIC_APP_URL=http://localhost:3100`. |
+| `E2E_WS_RELAY` | `0`: the browser connects to the Canary RPC directly instead of through Node. |
+| `PW_CHROMIUM_PATH` | Path to a Chromium binary, for when Playwright's own download isn't available. |
+| `CI` | Set by GitHub Actions: retries each failed test twice, runs two workers and never reuses a running server. |
 
 ## See also
 

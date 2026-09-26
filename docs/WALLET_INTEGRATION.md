@@ -176,8 +176,12 @@ would disagree.
   `web3Enable` again. Extensions remember their approval per origin, so
   there is no prompt.
 - When `restore()` returns `null` or throws, the store resets to
-  disconnected. Otherwise the persisted active address is kept, or the
-  first account is used when none was saved.
+  disconnected. Otherwise the persisted active address is kept while the
+  session still holds it (matched by public key), and the session's first
+  account is used when none was saved or the saved one is gone
+  (`pickActiveAddress` in `lib/wallet/store.ts`). If that fallback is a
+  different account from the signed-in one, `WalletRestoreMounter` signs
+  out, as an account switch in the modal would.
 
 The user sees the connect modal again only after disconnecting, or when
 the wallet no longer has the session.

@@ -29,8 +29,9 @@ only be shared over a secure channel if ever genuinely necessary.
 | Hosting | Vercel (Next.js App Router) |
 | Build | `pnpm build` (Node 22, see `.nvmrc`) |
 | Dev | `pnpm dev` (`http://localhost:3000`) |
-| Tests | `pnpm test` (Vitest, including the route-level security tests in `lib/__sec__`), plus `pnpm typecheck`, `pnpm lint` and `pnpm knip` |
-| CI | GitHub Actions (`.github/workflows/ci.yml`) runs typecheck, lint, knip, tests and build on pushes and pull requests to `main` |
+| Tests | `pnpm test` (Vitest: unit tests, the route-level security tests in `lib/__sec__`, and database tests against PGlite), `pnpm test:e2e` (Playwright browser tests in `e2e/`), plus `pnpm typecheck`, `pnpm lint` and `pnpm knip` |
+| CI | GitHub Actions (`.github/workflows/ci.yml`) on pushes and pull requests to `main`: the Verify job runs typecheck, lint, knip, tests and build; the Browser tests job runs the Playwright tests against a production build |
+| Post-deploy check | **Moderation → Status** (admins): what is set up and what is missing, and a Telegram test message |
 | Production domain | `gov.enjin.cloud` (CNAME to Vercel; Cloudflare DNS only, not proxied) |
 | Database | Neon Postgres (pooled for requests, unpooled for migrations) |
 | Object storage | Cloudflare R2 (S3-compatible), served through the app's `/r` route |
@@ -46,7 +47,7 @@ descriptions are in [`ENVIRONMENT.md`](ENVIRONMENT.md).
 
 | Variable | Purpose | Provisioned from | Secret | Needed for |
 |---|---|---|---|---|
-| `NEXT_PUBLIC_APP_URL` | Canonical origin: file URLs pinned on chain, OpenGraph, cross-site check | The live domain | No | Any public deployment |
+| `NEXT_PUBLIC_APP_URL` | Canonical origin: file URLs pinned on chain, OpenGraph, canonical URLs and the sitemap, cross-site check | The live domain | No | Any public deployment |
 | `NEXT_PUBLIC_DEFAULT_NETWORK` | Network the app opens on (`enjin-relay` for mainnet) | Configuration | No | Optional (default `canary-relay`) |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Enjin Wallet and WalletConnect | Reown | No | Mobile wallets |
 | `NEXT_PUBLIC_WALLETCONNECT_RELAY_URL` | WalletConnect relay | Configuration | No | Optional (has a default) |
@@ -63,11 +64,16 @@ descriptions are in [`ENVIRONMENT.md`](ENVIRONMENT.md).
 | `SITE_PASSWORD_STATUS`, `SITE_PASSWORD` | Password gate for a staging site (`OFF` to disable) | Configuration | Yes (password) | Optional |
 | `SUBSCAN_API_KEY` | Call data for very old finalised referenda | Subscan (pro.subscan.io) | Yes | Optional |
 | `NEXT_PUBLIC_*_WSS`, `NEXT_PUBLIC_*_SUBSCAN_URL` | RPC endpoints and explorer links | RPC provider | No | Optional (have defaults) |
-| `CRON_SECRET` | Reserved for a future scheduled job; unused | Configuration | Yes | Not used |
 
 Every variable is optional or has a default. `lib/env.ts` checks each value
 when it loads and fails with the variable's name if one is invalid.
 A missing value switches the feature off instead: its routes answer `503`.
+
+One exception: `NEXT_PUBLIC_APP_URL` defaults to localhost, and on
+Vercel's production deployment (`VERCEL_ENV=production`, set by Vercel) a
+localhost value is refused. Staging drafts, editing proposals and
+uploading files and avatars then answer `503`, so no localhost URL is ever
+pinned on chain. See [`ENVIRONMENT.md`](ENVIRONMENT.md#app).
 
 The defaults of `LEGAL_*`, `NEXT_PUBLIC_SITE_MAINTAINER` and
 `NEXT_PUBLIC_SOURCE_URL` name the original maintainer. A new operator must
@@ -91,7 +97,7 @@ moderation.
 | Proposals and drafts | `proposals`, `proposal_attachments` |
 | Security reports | `security_disclosures` |
 | Moderation | `moderation_roles`, `moderation_state`, `moderation_actions`, `moderation_reports`, `moderation_suspensions` |
-| Content checks | `moderation_settings`, `moderation_scan_usage` |
+| Content checks | `moderation_settings` (settings, health record and once-per-window gates), `moderation_scan_usage` |
 | Migration ledger | `_migrations` |
 
 **Cloudflare R2** (layout in [`ENVIRONMENT.md`](ENVIRONMENT.md#storage-cloudflare-r2)):
@@ -164,6 +170,14 @@ appears in the navigation. Grant further moderators and admins under
 environment cannot be removed in the app: remove them from the variable
 and redeploy.
 
+**The Status tab.** After every deploy, open **Moderation → Status**. It
+lists what is set up and what is missing: the database and migrations
+`011` to `013`, storage and the public URL, the rate-limit store,
+Telegram, the content checks, the legal details and WalletConnect. Each
+item is OK, Warning or Problem, with a hint that names the variable to
+set; no secret is ever shown. Fix every Problem.
+[`DEPLOYMENT.md`](DEPLOYMENT.md#checking-the-deployment) lists the items.
+
 **Automatic content checks.** They need an Anthropic API key in
 `ANTHROPIC_API_KEY` and are off until an admin switches them on.
 
@@ -179,11 +193,22 @@ Past it, uploads wait for a moderator and text is not checked until the
 next day (UTC). Checked content is sent to Anthropic only while the
 checks are on; the privacy policy says so.
 
+If the checks fail because of the setup (the key refused, a model that is
+no longer available, no credit left, including a "credit balance too low"
+answer), uploads go through unchecked, as during an outage. The problem is
+recorded, shown under Health in the Status tab and as a banner on the
+Settings tab, and reported to the moderators' Telegram chat at most once
+a day. Fix the cause, for example top up the account or pick another
+model; the next check that gets an answer clears it.
+[`DEPLOYMENT.md`](DEPLOYMENT.md#content-check-health) has the details.
+
 **Telegram.** Create a bot with @BotFather and add it to a private chat.
 `TELEGRAM_CHAT_ID` receives security reports with their text and contact.
 Moderation notices go there too, or to `TELEGRAM_MODERATION_CHAT_ID` if
-set (`OFF` turns them off). A notice only names the kind of item and links
-to `/moderation`; it never includes the reporter or the content.
+set (`OFF` turns them off). A report notice only names the kind of item and
+links to `/moderation`; it never includes the reporter or the content. The
+same chat gets the content-check alerts. **Send test message** in the
+Status tab checks the setup, at most once a minute.
 
 **Security reports.** There is no in-app inbox. Reports arrive in Telegram
 when it is configured and are always stored in `security_disclosures`.
@@ -224,7 +249,11 @@ To offer a newer model, for example a new Haiku:
 4. Run `pnpm test` and deploy.
 
 Admins who had picked a model that is no longer offered move to the
-recommended one and keep their other settings. When list prices change,
+recommended one and keep their other settings; the Status tab shows a
+Warning until an admin saves the settings again. If Anthropic retires a
+model that is still in use, every check fails with a setup problem
+("model wasn't found"), which the Status tab, the Settings banner and the
+Telegram alert report. When list prices change,
 update them in the same table. Costs are computed from the reported token
 counts with the prices in this table, so a price change also changes the
 cost shown for earlier usage.
