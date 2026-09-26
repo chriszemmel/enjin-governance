@@ -85,6 +85,9 @@ export async function GET(
       "content-type": "application/json; charset=utf-8",
       "cache-control": "private, no-cache, must-revalidate",
       "x-proposal-sha256": row.json_sha256,
+      // Lets the create page decide whether "Resume" can re-stage this row
+      // in place (only unsigned drafts can).
+      "x-proposal-status": row.status,
       "x-proposal-bucket-url": row.json_url,
     },
   })

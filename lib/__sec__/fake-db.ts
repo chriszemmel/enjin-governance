@@ -181,6 +181,40 @@ export async function insertProposalDraft(d: CreateProposalDraft): Promise<Propo
   return row
 }
 
+export async function updateProposalDraft(d: {
+  id: string
+  expectedSha256: string
+  title: string
+  summary: string | null
+  bodyMarkdown: string
+  track: string | null
+  beneficiary: string | null
+  amountPlanck: bigint | null
+  jsonUrl: string
+  jsonSha256: string
+  preimageHash: string | null
+  preimageLen: number | null
+  remarkPayload: string | null
+}): Promise<ProposalRow | null> {
+  const row = proposals.get(d.id)
+  if (!row || row.status !== "draft" || row.json_sha256 !== d.expectedSha256) return null
+  Object.assign(row, {
+    title: d.title,
+    summary: d.summary,
+    body_markdown: d.bodyMarkdown,
+    track: d.track,
+    beneficiary: d.beneficiary,
+    amount_planck: d.amountPlanck?.toString() ?? null,
+    json_url: d.jsonUrl,
+    json_sha256: d.jsonSha256,
+    preimage_hash: d.preimageHash,
+    preimage_len: d.preimageLen,
+    remark_payload: d.remarkPayload,
+    updated_at: new Date(),
+  })
+  return row
+}
+
 type InsertAttachmentArgs = {
   proposalId: string
   bucketKey: string

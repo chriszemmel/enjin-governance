@@ -21,9 +21,11 @@
  * `signature` field isn't verified - but it can no longer be filed
  * anonymously or under someone else's address.
  *
- * The proposal id must be unused (an existing id is refused before anything
- * is written to R2), and every attachment key must sit in the proposal's own
- * media folder.
+ * An existing id is checked before anything is written to R2: only its own
+ * proposer may re-stage it, only while it is still an unsigned draft whose
+ * envelope hasn't reached the chain, and only from the version the browser
+ * last saw (`expected_sha256`). Every attachment key must sit in the
+ * proposal's own media folder.
  */
 
 import { NextResponse, type NextRequest } from "next/server"
@@ -35,8 +37,11 @@ import {
   getProposalById,
   insertProposalDraft,
   insertAttachment,
+  replaceAttachments,
+  updateProposalDraft,
   type CreateProposalDraft,
 } from "@/lib/db/proposals"
+import { isEnvelopeOnChain } from "@/lib/governance/envelope-status"
 import { upsertUserByAddress } from "@/lib/db/users"
 import { isR2Configured } from "@/lib/r2/client"
 import { ownMediaKey, proposalJsonKey } from "@/lib/r2/paths"
@@ -87,6 +92,15 @@ const bodySchema = z.object({
     .nullable(),
   preimage_len: z.number().int().nonnegative().nullable(),
   attachments: z.array(attachmentSchema).max(20).default([]),
+  /**
+   * When re-staging an existing draft: the json_sha256 the browser last saw.
+   * The update only applies if the row still has it.
+   */
+  expected_sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .nullable()
+    .optional(),
 })
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -164,17 +178,57 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 503 },
     )
   }
+  // An existing id may only be re-staged by its own proposer, while it is
+  // still an unsigned draft on the same network, and only from the version
+  // the browser last saw (two tabs can't silently overwrite each other).
   if (existingRow) {
-    const own = samePublicKey(existingRow.proposer_address, me.address)
-    return NextResponse.json(
-      {
-        ok: false,
-        error: own
-          ? "This draft is already saved. Reload the page and resume it from your drafts."
-          : "This proposal id is already in use.",
-      },
-      { status: own ? 409 : 403 },
-    )
+    if (!samePublicKey(existingRow.proposer_address, me.address)) {
+      return NextResponse.json(
+        { ok: false, error: "This proposal id is already in use." },
+        { status: 403 },
+      )
+    }
+    if (existingRow.status !== "draft" || existingRow.network !== parsed.network) {
+      return NextResponse.json(
+        { ok: false, error: "This proposal can no longer be changed here." },
+        { status: 409 },
+      )
+    }
+    if (parsed.expected_sha256 !== existingRow.json_sha256) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This draft was changed elsewhere. Reload the page and resume it from your drafts.",
+        },
+        { status: 409 },
+      )
+    }
+    // Rewriting the JSON is only safe while nothing on chain points at the
+    // current bytes. Fails closed: if the chain can't be read, don't write.
+    let anchored: boolean
+    try {
+      anchored = await isEnvelopeOnChain(
+        existingRow.network,
+        existingRow.json_url,
+        existingRow.json_sha256,
+      )
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Could not reach the chain to check this draft - try again." },
+        { status: 503 },
+      )
+    }
+    if (anchored) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This draft already reached the chain. Link it to its referendum from your drafts instead.",
+        },
+        { status: 409 },
+      )
+    }
   }
 
   // Attachment keys come from the browser and are later deleted from the
@@ -221,7 +275,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     ),
     preimage_hash: parsed.preimage_hash,
     preimage_len: parsed.preimage_len,
-    created_at: new Date().toISOString(),
+    created_at: (existingRow?.created_at ?? new Date()).toISOString(),
     signature: null,
   }
 
@@ -268,6 +322,60 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     remarkPayload,
   }
 
+  if (existingRow) {
+    const updated = await updateProposalDraft({
+      id: existingRow.id,
+      expectedSha256: existingRow.json_sha256,
+      title: draft.title,
+      summary: draft.summary,
+      bodyMarkdown: draft.bodyMarkdown,
+      track: draft.track,
+      beneficiary: draft.beneficiary,
+      amountPlanck: draft.amountPlanck,
+      jsonUrl: draft.jsonUrl,
+      jsonSha256: draft.jsonSha256,
+      preimageHash: draft.preimageHash,
+      preimageLen: draft.preimageLen,
+      remarkPayload: draft.remarkPayload,
+    }).catch(() => null)
+    if (!updated) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This draft was changed elsewhere. Reload the page and resume it from your drafts.",
+        },
+        { status: 409 },
+      )
+    }
+    try {
+      await replaceAttachments(
+        updated.id,
+        attachments.map(({ key: bucketKey, att }) => ({
+          bucketKey,
+          url: att.url,
+          filename: att.name,
+          contentType: att.content_type,
+          sizeBytes: att.size_bytes,
+          sha256: att.sha256,
+          uploadedBy: proposerUserId,
+        })),
+      )
+    } catch {
+      // Best-effort - the JSON already carries the authoritative list.
+    }
+    return NextResponse.json({
+      ok: true,
+      id: updated.id,
+      updated: true,
+      json_url: put.url,
+      json_sha256: put.sha256,
+      json_size_bytes: put.sizeBytes,
+      remark_payload: remarkPayload,
+      proposal: proposalJson,
+    })
+  }
+
   let row
   try {
     row = await insertProposalDraft(draft)
@@ -285,6 +393,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             "Database tables are missing. Apply scripts/004_proposals_comments_profiles.sql to the Neon project (run `pnpm db:migrate` locally, or paste the SQL into the Neon SQL editor).",
         },
         { status: 503 },
+      )
+    }
+    if (/duplicate key/i.test(raw)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "This draft is already saved. Reload the page and resume it from your drafts.",
+        },
+        { status: 409 },
       )
     }
     return NextResponse.json(

@@ -10,6 +10,8 @@ const VICTIM = "enD9wdMEaQa3MEDUc7dtsCC86JYGMN5JBE2NBRoMyC37dX4iA"
 const ATTACKER = "enCrdzdh8TVcEuoWtWokRRzgWVgLdGoyo5P4c7344LXRzFidX"
 
 const auth = vi.hoisted(() => ({ user: null as null | { id: string; address: string } }))
+// "anchored" = the draft's envelope is already on chain; "down" = RPC unreachable.
+const chainState = vi.hoisted(() => ({ mode: "free" as "free" | "anchored" | "down" }))
 
 vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: async () => auth.user }))
 vi.mock("@/lib/db/client", () => ({
@@ -36,6 +38,12 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/lib/chain/api", () => ({
   getApi: async () => {
     throw new Error("no RPC in tests")
+  },
+}))
+vi.mock("@/lib/governance/envelope-status", () => ({
+  isEnvelopeOnChain: async () => {
+    if (chainState.mode === "down") throw new Error("rpc down")
+    return chainState.mode === "anchored"
   },
 }))
 vi.mock("@/lib/r2/upload", async () => await import("./fake-bucket"))
@@ -90,6 +98,7 @@ beforeEach(() => {
   db.reset()
   bucketMod.resetBucket()
   auth.user = { id: "attacker-user-id", address: ATTACKER }
+  chainState.mode = "free"
   db.seedProposal({ id: VICTIM_ID, network: NET, proposer_address: VICTIM, status: "on_chain", referendum_index: 42, json_key: victimJsonKey })
   for (const k of [victimJsonKey, avatarKey, indexKey]) bucketMod.bucket.set(k, { body: `REAL:${k}`, contentType: "x" })
 })
@@ -100,6 +109,42 @@ describe("draft POST", () => {
     expect(res.status).toBe(403)
     expect(bodyOf(victimJsonKey)).toBe(`REAL:${victimJsonKey}`)
     expect(db.proposals.size).toBe(1)
+  })
+
+  it("re-stages the caller's own draft in place when it sends the current hash", async () => {
+    const ownKey = proposalJsonKey(NET, OWN_ID)
+    db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: ownKey, json_sha256: "b".repeat(64) })
+    bucketMod.bucket.set(ownKey, { body: "SAVED", contentType: "application/json" })
+    const res = await POST(
+      req("https://gov.test/api/proposals/draft", "POST", draftBody({ title: "Changed title", expected_sha256: "b".repeat(64) })),
+    )
+    const json = await res.json()
+    expect(res.status).toBe(200)
+    expect(json.updated).toBe(true)
+    expect(JSON.parse(bodyOf(ownKey)!).title).toBe("Changed title")
+    expect(db.proposals.get(OWN_ID)!.title).toBe("Changed title")
+    expect(db.proposals.get(OWN_ID)!.json_sha256).toBe(json.json_sha256)
+    expect(db.proposals.size).toBe(2)
+  })
+
+  it("refuses to re-stage from a stale hash, a submitted row, an anchored envelope or without the chain", async () => {
+    const ownKey = proposalJsonKey(NET, OWN_ID)
+    const seed = (status: "draft" | "on_chain") =>
+      db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status, json_key: ownKey, json_sha256: "b".repeat(64) })
+    bucketMod.bucket.set(ownKey, { body: "SAVED", contentType: "application/json" })
+    const post = (sha: string) =>
+      POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ expected_sha256: sha })))
+
+    seed("draft")
+    expect((await post("c".repeat(64))).status).toBe(409) // stale
+    seed("on_chain")
+    expect((await post("b".repeat(64))).status).toBe(409) // no longer a draft
+    seed("draft")
+    chainState.mode = "anchored"
+    expect((await post("b".repeat(64))).status).toBe(409) // envelope already on chain
+    chainState.mode = "down"
+    expect((await post("b".repeat(64))).status).toBe(503) // fail closed
+    expect(bodyOf(ownKey)).toBe("SAVED")
   })
 
   it("answers 409 for the caller's own already-saved draft without rewriting it", async () => {

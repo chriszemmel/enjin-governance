@@ -141,11 +141,22 @@ async function metadataBindingMatches(
 
 const uuidSchema = z.string().uuid()
 
+// The tx coordinates are optional: a proposer whose submission landed but
+// never got linked can link it later by index alone. The on-chain binding
+// check below is what proves ownership either way.
 const bodySchema = z.object({
   referendum_index: z.number().int().nonnegative(),
-  tx_hash: z.string().regex(/^0x[0-9a-f]{64}$/),
-  block_hash: z.string().regex(/^0x[0-9a-f]{64}$/),
-  block_number: z.number().int().nonnegative(),
+  tx_hash: z
+    .string()
+    .regex(/^0x[0-9a-f]{64}$/)
+    .nullable()
+    .optional(),
+  block_hash: z
+    .string()
+    .regex(/^0x[0-9a-f]{64}$/)
+    .nullable()
+    .optional(),
+  block_number: z.number().int().nonnegative().nullable().optional(),
 })
 
 export async function POST(
@@ -215,9 +226,9 @@ export async function POST(
     row = await attachReferendumIndex({
       proposalId: proposalUuid,
       referendumIndex: parsed.referendum_index,
-      txHash: parsed.tx_hash,
-      blockHash: parsed.block_hash,
-      blockNumber: parsed.block_number,
+      txHash: parsed.tx_hash ?? null,
+      blockHash: parsed.block_hash ?? null,
+      blockNumber: parsed.block_number ?? null,
     })
   } catch (e) {
     return NextResponse.json(
@@ -244,9 +255,9 @@ export async function POST(
         json_url: row.json_url,
         json_sha256: row.json_sha256,
         referendum_index: parsed.referendum_index,
-        tx_hash: parsed.tx_hash,
-        block_hash: parsed.block_hash,
-        block_number: parsed.block_number,
+        tx_hash: parsed.tx_hash ?? null,
+        block_hash: parsed.block_hash ?? null,
+        block_number: parsed.block_number ?? null,
       })
       redirectUrl = put.url
     } catch {
