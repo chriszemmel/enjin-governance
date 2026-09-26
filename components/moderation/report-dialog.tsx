@@ -66,7 +66,7 @@ export function ReportDialog({
 
   return (
     <Dialog open={target != null} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-w-md rounded-2xl">
+      <DialogContent className="w-[calc(100%-3rem)] max-w-[calc(100%-3rem)] sm:max-w-md p-5 sm:p-6 gap-4 rounded-2xl">
         <DialogTitle className="flex items-center gap-2 text-base">
           <Flag className="w-4 h-4" />
           Report this {target ? NOUN[target.type] : "item"}
@@ -87,7 +87,9 @@ export function ReportDialog({
           </p>
         ) : (
           <>
-            <div role="radiogroup" className="grid grid-cols-2 gap-2">
+            {/* Equal rows: a label that wraps on a narrow phone grows every
+                option with it, never just one. */}
+            <div role="radiogroup" className="grid grid-cols-2 auto-rows-fr gap-2">
               {REPORT_CATEGORIES.map((c) => (
                 <button
                   key={c}
@@ -96,7 +98,7 @@ export function ReportDialog({
                   aria-checked={category === c}
                   onClick={() => setCategory(c)}
                   className={cn(
-                    "flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors",
+                    "flex h-full min-h-10 items-center gap-1.5 rounded-xl border px-2 py-2 text-left text-[11px] min-[375px]:text-xs leading-snug transition-colors",
                     category === c
                       ? "border-purple-border bg-primary/10 text-foreground"
                       : "border-border text-muted-foreground hover:text-foreground",
@@ -104,7 +106,7 @@ export function ReportDialog({
                 >
                   <span
                     className={cn(
-                      "h-3 w-3 flex-shrink-0 rounded-full border",
+                      "h-2.5 w-2.5 flex-shrink-0 rounded-full border",
                       category === c ? "border-primary bg-primary" : "border-muted-foreground",
                     )}
                   />

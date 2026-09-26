@@ -1,12 +1,7 @@
 "use client"
 
 import { ArrowDown, Check, Globe } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 
 type Props = {
   /** The address as typed, in another network's format. */
@@ -43,7 +38,10 @@ export function AddressFormatDialog({
 
   return (
     <Dialog open={input != null} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent showCloseButton={false} className="max-w-md rounded-2xl">
+      <DialogContent
+        showCloseButton={false}
+        className="w-[calc(100%-3rem)] max-w-[calc(100%-3rem)] sm:max-w-md p-5 sm:p-6 gap-4 rounded-2xl"
+      >
         <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
           <Globe className="w-5 h-5 text-amber-500" />
         </div>
@@ -52,8 +50,8 @@ export function AddressFormatDialog({
         </DialogTitle>
         <DialogDescription className="text-xs leading-relaxed">
           Treasury payouts happen on{" "}
-          <span className="text-foreground font-medium">{chainShortName}</span>. Here is
-          the matching {chainShortName} address for the same wallet.
+          <span className="text-foreground font-medium">{chainShortName}</span>. Here is the
+          matching {chainShortName} address for the same wallet.
         </DialogDescription>
 
         <div className="space-y-2">
