@@ -27,6 +27,14 @@ export const env = createEnv({
     // others from /moderation; those grants live in the database.
     GOVERNANCE_ADMIN_PUBLIC_KEYS: z.string().optional(),
 
+    // Legal pages (Imprint / Privacy / Terms). The operator's details live
+    // in the environment, not in the repository.
+    LEGAL_OPERATOR_NAME: z.string().optional(),
+    LEGAL_OPERATOR_ADDRESS: z.string().optional(),
+    LEGAL_CONTACT_EMAIL: z.string().optional(),
+    LEGAL_CONTACT_PHONE: z.string().optional(),
+    LEGAL_VAT_ID: z.string().optional(),
+
     // Automatic content checks (Claude). Off unless CONTENT_SCAN=ON and an
     // API key is set. Images are checked at upload; text is only flagged
     // for moderators, never hidden automatically.
@@ -48,6 +56,11 @@ export const env = createEnv({
 
   client: {
     NEXT_PUBLIC_APP_URL: httpOrHttpsUrl.default("http://localhost:3000"),
+
+    // Shown in the footer. The source link is required by the AGPL for
+    // people using the running site.
+    NEXT_PUBLIC_SITE_MAINTAINER: z.string().default("Chris Zemmel"),
+    NEXT_PUBLIC_SOURCE_URL: httpOrHttpsUrl.default("https://github.com/chriszemmel/enjin-governance"),
 
     NEXT_PUBLIC_DEFAULT_NETWORK: z
       .enum(["enjin-relay", "canary-relay"])
@@ -88,6 +101,11 @@ export const env = createEnv({
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
     GOVERNANCE_ADMIN_PUBLIC_KEYS: process.env.GOVERNANCE_ADMIN_PUBLIC_KEYS,
     CONTENT_SCAN: process.env.CONTENT_SCAN,
+    LEGAL_OPERATOR_NAME: process.env.LEGAL_OPERATOR_NAME,
+    LEGAL_OPERATOR_ADDRESS: process.env.LEGAL_OPERATOR_ADDRESS,
+    LEGAL_CONTACT_EMAIL: process.env.LEGAL_CONTACT_EMAIL,
+    LEGAL_CONTACT_PHONE: process.env.LEGAL_CONTACT_PHONE,
+    LEGAL_VAT_ID: process.env.LEGAL_VAT_ID,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
 
     R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
@@ -98,6 +116,8 @@ export const env = createEnv({
     R2_PUBLIC_URL: process.env.R2_PUBLIC_URL,
 
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    NEXT_PUBLIC_SITE_MAINTAINER: process.env.NEXT_PUBLIC_SITE_MAINTAINER,
+    NEXT_PUBLIC_SOURCE_URL: process.env.NEXT_PUBLIC_SOURCE_URL,
     NEXT_PUBLIC_DEFAULT_NETWORK: process.env.NEXT_PUBLIC_DEFAULT_NETWORK,
     NEXT_PUBLIC_ENJIN_RELAY_WSS: process.env.NEXT_PUBLIC_ENJIN_RELAY_WSS,
     NEXT_PUBLIC_ENJIN_RELAY_FALLBACK_WSS: process.env.NEXT_PUBLIC_ENJIN_RELAY_FALLBACK_WSS,
