@@ -1,28 +1,39 @@
 <p align="center">
-  <img src="public/brand/enjin-mark.svg" alt="Enjin" width="220" />
+  <img src="public/brand/enjin-mark.svg" alt="Enjin" width="120" />
 </p>
 
 <h1 align="center">Enjin Governance</h1>
 
 <p align="center">
-  Production-grade web client for <a href="https://docs.enjin.io/">Enjin OpenGov</a>.<br/>
-  Browse referenda, cast conviction votes, file treasury requests, comment,
-  and manage a profile - all from the browser, all backed by live chain RPC.
+  <b>The web client for <a href="https://docs.enjin.io/">Enjin OpenGov</a>.</b><br/>
+  Browse referenda, vote with conviction, file treasury and admin proposals,
+  discuss them and keep the space clean - from the browser, backed by live chain RPC.
 </p>
 
 <p align="center">
+  <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
+  <img alt="Tests" src="https://img.shields.io/badge/tests-526%20passing-22c55e?style=flat-square" />
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" />
   <img alt="Polkadot.js" src="https://img.shields.io/badge/Polkadot.js-16-e6007a?style=flat-square&logo=polkadot&logoColor=white" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-487%20passing-22c55e?style=flat-square" />
 </p>
 
 <p align="center">
-  <a href="https://enjin-governance.vercel.app">Live (Vercel)</a> ·
+  <a href="https://gov.enjin.cloud"><b>gov.enjin.cloud</b></a> ·
+  <a href="#quick-start">Quick start</a> ·
   <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-  <a href="docs/GOVERNANCE_FLOW.md">Governance flow</a> ·
+  <a href="#the-egov1-metadata-standard">EGOV1</a> ·
+  <a href="#moderation">Moderation</a> ·
   <a href="#changelog">Changelog</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/proposal-dark.png" />
+    <img src="docs/screenshots/proposal-light.png" alt="A treasury proposal: title, summary, lifecycle and the treasury request" width="100%" />
+  </picture>
 </p>
 
 > Independent, community-maintained interface for Enjin on-chain governance,
@@ -32,7 +43,81 @@
 
 ---
 
-## Highlights
+## At a glance
+
+<table>
+  <tr>
+    <td width="33%" valign="top"><b>Read the chain</b><br/>Referenda, tallies, voters and history straight from Enjin's RPC and archive nodes. No indexer required.</td>
+    <td width="33%" valign="top"><b>Vote and delegate</b><br/>Conviction voting, delegation per track or across all, lock and deposit reclaims. Six wallets, including Enjin Wallet.</td>
+    <td width="33%" valign="top"><b>Propose</b><br/>Treasury requests and admin calls - runtime upgrades, cancels, whitelists, raw calls - in one signature each.</td>
+  </tr>
+  <tr>
+    <td valign="top"><b>Write for voters</b><br/>Markdown, inline images, PDFs and checksum-validated address chips, with a live preview of what voters will see.</td>
+    <td valign="top"><b>Verifiable records</b><br/>Every proposal's text is pinned on chain with an EGOV1 hash, so anyone can check it hasn't been swapped.</td>
+    <td valign="top"><b>Moderation built in</b><br/>Reports, a review queue, roles by wallet, a public log and optional AI pre-checks with a hard daily cost cap.</td>
+  </tr>
+</table>
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/proposals-dark.png" />
+        <img src="docs/screenshots/proposals-light.png" alt="The proposals list with live referenda" />
+      </picture>
+      <p align="center"><sub><b>Proposals</b> - live referenda, browsable without a wallet</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/proposal-text-dark.png" />
+        <img src="docs/screenshots/proposal-text-light.png" alt="Proposal text with Markdown, an inline image and an address chip, marked EGOV1 verified" />
+      </picture>
+      <p align="center"><sub><b>Proposal text</b> - Markdown, images, address chips, EGOV1-verified</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/advanced-dark.png" />
+        <img src="docs/screenshots/advanced-light.png" alt="Reviewing a runtime upgrade proposal before signing" />
+      </picture>
+      <p align="center"><sub><b>Advanced proposals</b> - a runtime upgrade, reviewed before signing</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/moderation-dark.png" />
+        <img src="docs/screenshots/moderation-light.png" alt="The moderation queue with an upload held by the automatic check" />
+      </picture>
+      <p align="center"><sub><b>Moderation</b> - one queue for reports and automatic checks</sub></p>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phones-dark.png" />
+    <img src="docs/screenshots/phones-light.png" alt="The app on a phone: proposals, a proposal, its tally and text, and the report dialog" width="100%" />
+  </picture>
+  <br/><sub>Every page works on a phone.</sub>
+</p>
+
+<sub>Screenshots show test data on Canary.</sub>
+
+## Contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Stack](#stack) · [Scripts](#scripts) · [Project structure](#project-structure)
+- [The EGOV1 metadata standard](#the-egov1-metadata-standard)
+- [Documentation](#documentation) · [Vercel deploy](#vercel-deploy)
+- [Moderation](#moderation) · [Networks](#networks)
+- [Contributing](#contributing) · [Changelog](#changelog) · [License](#license)
+
+---
+
+## Features
 
 ### Read the chain
 
@@ -106,16 +191,21 @@
   lists, tables, code, links and inline images from the proposal's own
   attachments. SS58 addresses render as compact, checksum-validated
   chips. A live preview shows exactly what voters will see.
-- **Images and PDFs** - drag-and-drop uploads; images are re-encoded
-  (metadata such as GPS stripped), get WebP thumbnails and open in a
-  viewer. Proposers can remove their own attachments at any time.
+- **Images and PDFs** - drag-and-drop uploads of up to 4 MB each (the
+  request limit on Vercel); larger photos are shrunk in the browser
+  first. Images are re-encoded (metadata such as GPS stripped), get WebP
+  thumbnails and open in a viewer. Proposers can remove their own
+  attachments at any time.
+- **Attachment details checked** - the size, type and hash written into
+  a proposal's JSON must match the stored file, and file names lose
+  characters that could disguise them.
 - **Advanced proposals with a record** - proposals from
   `/create/advanced` carry a title, description and an EGOV1 record like
   treasury proposals; EGOV1 1.2.0 adds the optional `call` and
   `enactment` sections so the enacted call is documented next to the
   text.
 
-### Moderation
+### Moderation tools
 
 - **Reports and one review queue** - anyone signed in can report a
   proposal, an image or a comment. Moderators keep, blur, hide or restore
@@ -130,14 +220,15 @@
   choose the model (Haiku 4.5 by default), what is checked, how clear
   violations are handled and a daily limit, and see this month's usage
   and cost. Text is only ever flagged for a human, never hidden
-  automatically. See [Moderation](#moderation-1).
+  automatically. See [Moderation](#moderation).
 
 ### Legal
 
 - **Imprint, privacy policy and terms** - `/imprint`, `/privacy` and
   `/terms`, filled from `LEGAL_*` environment variables. Without a
-  postal address the pages say it is available on request by email. The footer links all of them, the content policy, the
-  moderation log and the AGPL source code.
+  postal address the pages say it is available on request by email.
+  The footer links all of them, the content policy, the moderation log
+  and the AGPL source code.
 
 ### Identity + community
 
@@ -153,6 +244,9 @@
   voter's profile, or fall back to the SS58.
 
 ### Pages
+
+<details>
+<summary>Every route and what it is for</summary>
 
 - **`/proposals`** - list with text search + status filter (All /
   Active / Approved / Rejected / Cancelled / Timed out). Cards show
@@ -193,6 +287,8 @@
 - **`/docs`** - user guide, including the content policy.
 - **`/imprint`** · **`/privacy`** · **`/terms`** - legal pages.
 
+</details>
+
 ### Infra
 
 - **In-app network switcher** - flip Canary ↔ Mainnet at runtime, no
@@ -211,7 +307,7 @@
   on the site-access password gate, input-size caps on the batch-read
   endpoints, and a honeypot on the public disclosure form that silently
   drops bots.
-- **Open-source ready** - TS strict, ESLint clean, knip-clean, 487
+- **Open-source ready** - TS strict, ESLint clean, knip-clean, 526
   vitest tests, CI on every push.
 
 ---
@@ -221,8 +317,8 @@
 | | |
 |---|---|
 | TypeScript source files (excl. vendored shadcn) | **~260** |
-| Docs files | **6** |
-| Unit tests | **487** (45 files) |
+| Docs files | **7** |
+| Unit tests | **526** (50 files) |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
 | External indexer dependencies | **0 required** (Subscan optional, only for very old finalised refs) |
@@ -291,13 +387,16 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (487 tests)
+pnpm test         # Vitest (526 tests)
 pnpm test:watch   # Vitest watch
 ```
 
 ---
 
 ## Project structure
+
+<details>
+<summary>Folders and what lives in them</summary>
 
 ```
 app/                   Next.js routes (live RPC reads via React Query)
@@ -361,6 +460,8 @@ lib/
   moderation/          Policy (roles, actions, states), automatic checks
                        (scan + auto-flag), check settings + usage
   legal/               Operator details for the legal pages
+  uploads/             Upload limit shared by browser and server, and
+                       in-browser shrinking of large photos
   rate-limit.ts        Fixed-window limiter (pure core + in-process store)
   db/                  Neon client + users, sessions, profiles, comments,
                        proposals, attachments, security-disclosures
@@ -382,10 +483,12 @@ lib/
   config.ts            App constants
 docs/                  ARCHITECTURE · CHAIN_FLOW · GOVERNANCE_FLOW ·
                        WALLET_INTEGRATION · ENVIRONMENT · DEPLOYMENT ·
-                       HANDOVER
-scripts/               SQL migrations (004-012) + run-migrations.mjs
+                       HANDOVER · screenshots/ (README images)
+scripts/               SQL migrations (004-013) + run-migrations.mjs
 .github/workflows/     CI
 ```
+
+</details>
 
 ---
 
@@ -530,6 +633,13 @@ further moderators and admins under **Moderation → Roles**.
 | Delete a file, pause posting for a wallet | | | ✓ |
 | Roles, content-check settings | | | ✓ |
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-dark.png" />
+    <img src="docs/screenshots/settings-light.png" alt="Content-check settings: model, what is checked, how clear violations are handled, daily limit and this month's cost" width="90%" />
+  </picture>
+</p>
+
 **Automatic checks.** Off until an admin switches them on in
 **Moderation → Settings** (and `ANTHROPIC_API_KEY` is set). Each upload,
 proposal text or comment goes to the chosen model in one request with a
@@ -603,6 +713,7 @@ open an issue first to align on approach.
 
 | Version | What changed |
 |---|---|
+| **1.8** | Uploads capped at 4 MB to match the host's request limit, with large photos shrunk in the browser first. Attachment size, type and hash are checked against the stored file. Fixes from a security review: every staged draft version is kept, a copied EGOV1 envelope can't block or claim a submission, unsigned drafts are private to their proposer, and the daily check limit is a hard cap. |
 | **1.7** | Content-check settings for admins: on/off, model (Haiku 4.5 default, Sonnet 5, Opus 5), what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migrations `012` and `013`. New reports are posted to Telegram. |
 | **1.6** | Imprint, privacy policy and terms (filled from `LEGAL_*`), footer with legal links, disclaimer and AGPL source link. |
 | **1.5** | Automatic checks of uploads, proposal text and comments; borderline items go to the review queue. |
