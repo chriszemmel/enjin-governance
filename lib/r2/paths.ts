@@ -35,6 +35,41 @@ export function proposalMediaKey(
   return `proposals/${network}/${proposalUuid}/media/${sanitiseFilename(filename)}`
 }
 
+/** Folder every object of one proposal lives under (JSON + media). */
+export function proposalPrefix(network: string, proposalUuid: string): string {
+  return `proposals/${network}/${proposalUuid}/`
+}
+
+/**
+ * Canonicalise a client-supplied attachment key and confirm it sits in this
+ * proposal's own media folder. Returns the key to store, or null when it
+ * points anywhere else.
+ *
+ * Attachment keys arrive from the browser, and the delete route removes every
+ * stored key from the bucket - so an unchecked key would let a draft claim
+ * (and later delete) objects that belong to other proposals or users.
+ *
+ * The edit page derives keys from public URLs, which for app-origin URLs
+ * still carry the `/r` read-route segment (`r/proposals/...`), so one
+ * leading `r/` is stripped before the check. The file name must use the same
+ * charset sanitiseFilename produces.
+ */
+export function ownMediaKey(
+  raw: string,
+  network: string,
+  proposalUuid: string,
+): string | null {
+  const key = raw.startsWith("r/") ? raw.slice(2) : raw
+  const mediaPrefix = `${proposalPrefix(network, proposalUuid)}media/`
+  if (!key.startsWith(mediaPrefix)) return null
+  // The media route only ever stores sanitised names (see sanitiseFilename),
+  // so anything outside that charset - slashes, %, spaces, "." / ".." - is
+  // not a real upload. "a..b.pdf" stays valid.
+  const name = key.slice(mediaPrefix.length)
+  if (!/^[A-Za-z0-9._-]{1,120}$/.test(name) || name === "." || name === "..") return null
+  return key
+}
+
 export function proposalIndexRedirectKey(
   network: ChainId,
   referendumIndex: number,
