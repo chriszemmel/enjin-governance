@@ -18,11 +18,16 @@ import {
 import { useReferendumVoteExtrinsics } from "@/lib/query/hooks/use-referendum-vote-extrinsics"
 import { usePrefetchPoolNfts } from "@/lib/query/hooks/use-prefetch-pool-nfts"
 import {
+  convictionLockBlocks,
+  getVoteLockingPeriod,
+} from "@/lib/governance/conviction-voting"
+import {
   decodeCurrency,
   decodeVote,
   formatCurrencyLabel,
 } from "@/lib/governance/vote-decode"
 import { type Conviction } from "@/lib/governance/types"
+import { useApi } from "@/lib/query/hooks/use-api"
 import { EnjAvatar } from "./enj-avatar"
 import { PoolNftAvatar } from "./pool-nft-avatar"
 import { VoteDetailModal } from "./vote-detail-modal"
@@ -50,15 +55,21 @@ function normaliseVoterAddress(addr: string, chain: ChainConfig): string {
 interface VotesListProps {
   referendumIndex: number
   chain: ChainConfig
-  decisionPeriodBlocks: number | null
+  /**
+   * Unused - conviction locks run in the runtime's voteLockingPeriod, not
+   * the track's decision period. Kept until the proposal page stops
+   * passing it.
+   */
+  decisionPeriodBlocks?: number | null
 }
 
 export function VotesList({
   referendumIndex,
   chain,
-  decisionPeriodBlocks,
 }: VotesListProps) {
   const query = useReferendumVotes(referendumIndex)
+  // Conviction locks run in the runtime's voteLockingPeriod on every track.
+  const voteLockingPeriod = getVoteLockingPeriod(useApi(chain).data)
   const extrinsics = useReferendumVoteExtrinsics(referendumIndex, chain)
   const [expanded, setExpanded] = useState(false)
 
@@ -118,7 +129,7 @@ export function VotesList({
               key={`${row.voter}-${row.trackId}-${curKey}`}
               row={row}
               chain={chain}
-              decisionPeriodBlocks={decisionPeriodBlocks}
+              voteLockingPeriod={voteLockingPeriod}
               extrinsicIndex={subscan?.extrinsicIndex ?? null}
               subscanCurrencyRaw={subscan?.currencyRaw ?? null}
             />
@@ -140,13 +151,14 @@ export function VotesList({
 function VoteRow({
   row,
   chain,
-  decisionPeriodBlocks,
+  voteLockingPeriod,
   extrinsicIndex,
   subscanCurrencyRaw,
 }: {
   row: ReferendumVote
   chain: ChainConfig
-  decisionPeriodBlocks: number | null
+  /** The runtime's conviction-lock unit (`getVoteLockingPeriod`), in blocks. */
+  voteLockingPeriod: number
   /** Subscan-sourced "<block>-<event>" identifier for the vote extrinsic. */
   extrinsicIndex: string | null
   /** Subscan-sourced currency payload, used when the chain query came back null. */
@@ -172,7 +184,6 @@ function VoteRow({
   })()
   const aye = decoded?.aye ?? null
   const multiplier = decoded?.multiplier ?? null
-  const lockPeriods = decoded?.lockPeriods ?? 0
   // Prefer the chain-sourced currency, but fall back to Subscan's when
   // the chain returned null (storage-key-order quirk, voter manager
   // not populated, etc.). Either source produces the same decoded
@@ -182,11 +193,11 @@ function VoteRow({
     chainCurrency.kind === "Unknown"
       ? decodeCurrency(subscanCurrencyRaw)
       : chainCurrency
-  const lockBlocks = decisionPeriodBlocks != null ? decisionPeriodBlocks * lockPeriods : 0
+  const lockBlocks = conviction != null ? convictionLockBlocks(conviction, voteLockingPeriod) : 0
   const lockLabel =
     conviction === "None"
       ? "No lock"
-      : decisionPeriodBlocks != null && lockBlocks > 0
+      : lockBlocks > 0
         ? formatBlockDuration(lockBlocks)
         : null
 
@@ -278,8 +289,7 @@ function VoteRow({
           aye={aye}
           conviction={conviction}
           multiplier={multiplier}
-          lockPeriods={lockPeriods}
-          decisionPeriodBlocks={decisionPeriodBlocks}
+          lockBlocks={lockBlocks}
           balance={row.balance}
           currency={currency}
           extrinsicIndex={extrinsicIndex}

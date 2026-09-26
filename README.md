@@ -138,8 +138,8 @@
   the 0.1x-6x tiers. "One whale or many holders" at a glance.
 - **Lifecycle progress** - visual prepare/decide/confirm timeline,
   decision-deposit awaiting state, time-elapsed badges.
-- **Conviction voting** - lock periods compute from the live track's
-  decision period; never hardcoded.
+- **Conviction voting** - lock durations come from the runtime's
+  vote-locking period (the same on every track), never hardcoded.
 
 ### Write to the chain
 

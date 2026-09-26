@@ -43,7 +43,6 @@ export interface Connector {
   disconnect(session: ConnectedSession): Promise<void>
   getSigner(session: ConnectedSession, address: string): Promise<Signer>
   restore(): Promise<ConnectedSession | null>
-  wakeWallet?(session: ConnectedSession): void
 }
 
 export type ConnectedSession = {
@@ -56,9 +55,8 @@ export type ConnectedSession = {
 `ConnectorId` is one of `enjin-wallet`, `walletconnect`, `polkadot-js`,
 `talisman`, `subwallet-js` or `polkagate`. Display data (name, icon,
 install link, description) lives in the registry, not on the connector.
-The optional `wakeWallet` is implemented by the WalletConnect connectors
-but not called anywhere; the sign-request modal's button opens the wallet
-instead.
+Nothing opens the wallet app on its own: the sign-request modal's link,
+tapped by the user, does that.
 
 Components connect and disconnect through `useWalletActions()`, which
 also updates the store. `useExtrinsic` and `useSignIn` ask the active

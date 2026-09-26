@@ -31,8 +31,8 @@ interface VoteDetailModalProps {
   aye: boolean | null
   conviction: Conviction | null
   multiplier: number | null
-  lockPeriods: number
-  decisionPeriodBlocks: number | null
+  /** Blocks the vote stays locked after the referendum ends (0 = none / unknown). */
+  lockBlocks: number
   balance: bigint
   currency: ReturnType<typeof decodeCurrency>
   extrinsicIndex: string | null
@@ -52,17 +52,15 @@ export function VoteDetailModal({
   aye,
   conviction,
   multiplier,
-  lockPeriods,
-  decisionPeriodBlocks,
+  lockBlocks,
   balance,
   currency,
   extrinsicIndex,
 }: VoteDetailModalProps) {
-  const lockBlocks = decisionPeriodBlocks != null ? decisionPeriodBlocks * lockPeriods : 0
   const lockLabel =
     conviction === "None"
       ? "No lock"
-      : decisionPeriodBlocks != null && lockBlocks > 0
+      : lockBlocks > 0
         ? formatBlockDuration(lockBlocks)
         : "-"
 

@@ -17,7 +17,7 @@ import { formatError } from "@/lib/utils/format-error"
 export function useEnsureSignedIn({ isWalletConnect }: { isWalletConnect: boolean }) {
   const meQuery = useMe()
   // Mint a nonce in the background so the prompt can fire without a
-  // network hop in between (lets iOS Safari open the wallet deep link).
+  // network hop in between.
   const prefetchedNonce = useNoncePrefetch()
   const signIn = useSignIn(prefetchedNonce)
   const [open, setOpen] = useState(false)

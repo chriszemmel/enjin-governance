@@ -448,11 +448,15 @@ the composer warns about it.
 - **Preimage deposits** - one per noted preimage, so a proposal holds up
   to two: the call and the envelope. They can be reclaimed with
   `preimage.unnotePreimage` while the preimage is `Unrequested`.
-  In the stock pallet `setMetadata` doesn't request the preimage, so the
-  envelope stays `Unrequested` and is offered for reclaim. Unnoting it
-  removes the bytes that `MetadataOf` points to: the app still finds the
-  record through its database, but outside readers can no longer resolve
-  it from chain.
+  `setMetadata` doesn't request the envelope, so it stays `Unrequested`.
+  Unnoting it removes the bytes that `MetadataOf` points to: the app still
+  finds the record through its database, but outside readers can no
+  longer resolve it from chain. The Reserved deposits panel therefore
+  marks an envelope as the record of its referendum (its hash is a
+  referendum's `metadataOf`, or its bytes start with `EGOV1:`) and asks
+  for confirmation before unnoting it. The call of an ongoing referendum
+  is also `Unrequested` on Enjin's runtime; the panel holds it back as
+  "In use by a referendum" (`lib/governance/deposits.ts`).
 
 The treasury wizard only lets a proposer continue when their free balance
 covers the submission deposit, the track's decision deposit and 0.01 of a
@@ -505,9 +509,11 @@ votes on the same referendum.
 
 `CONVICTION_LOCK_PERIODS` in `lib/governance/types.ts` gives the lock
 length in periods: 0 for `None`, then 1, 2, 4, 8, 16 and 32 for `Locked1x`
-to `Locked6x`. The vote panel multiplies this by the track's
-`decisionPeriod`, read from chain, and shows the result as a duration.
-Nothing is hard-coded per track.
+to `Locked6x`. One period is the runtime constant
+`convictionVoting.voteLockingPeriod` (100,800 blocks, 7 days, on both
+networks), read by `getVoteLockingPeriod()`. The lock is the same on every
+track and starts when the referendum ends; `convictionLockBlocks()` turns
+it into blocks for the vote panel and the vote lists.
 
 ### Removing votes and unlocking
 
