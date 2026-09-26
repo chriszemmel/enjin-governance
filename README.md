@@ -226,6 +226,11 @@
   checks and the legal details. A check that fails because of the setup
   (bad key, retired model, no credit left) shows there and is reported
   to the moderators' Telegram chat once a day.
+- **Backups** - admins download one ZIP with the database, a restore
+  script, every proposal JSON file and, if they like, all uploaded files.
+  It is built in R2 and fetched through a link valid for five minutes;
+  the newest five are kept. See
+  [`docs/HANDOVER.md`](docs/HANDOVER.md#export-and-migration).
 
 ### Legal
 

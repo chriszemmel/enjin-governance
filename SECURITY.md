@@ -264,6 +264,13 @@ deposits panel on `/account` guards against that
   since a database error can name the host. Telegram failures are reported
   as fixed reasons, never as the error itself, because the request URL
   carries the bot token.
+- **Backups.** Only admins can create, list, download or delete a backup.
+  It contains profiles, comments, reports and the contacts left in
+  security reports, but never sign-in sessions or nonces. Backups are kept
+  under `backups/` in R2, which `/r` never serves; the routes accept only
+  keys of the exact shape they create, and a download is a signed link
+  valid for five minutes. Treat a downloaded backup like the production
+  database.
 
 ### Automatic content checks
 

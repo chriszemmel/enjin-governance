@@ -111,11 +111,25 @@ moderation.
 
 ### Export and migration
 
+- **Backup from the app:** admins open **Moderation → Status → Backup**
+  and create a ZIP with every table (except `wallet_sessions` and
+  `auth_nonces`) as JSON, `db/restore.sql`, every proposal JSON file and,
+  if ticked, the uploaded files, thumbnails and avatars. `manifest.json`
+  lists the app version, the migrations and the sha256 of every file;
+  `README.txt` explains the restore. Backups are kept in R2 under
+  `backups/`, which `/r` never serves. The newest 5 are kept, one can be
+  made every 10 minutes, and a download link is valid for 5 minutes.
+  Restore: run `pnpm db:migrate` on an empty database, then
+  `psql "$DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 -f db/restore.sql`,
+  then copy `bucket/` into the new bucket with the same keys (`rclone
+  copy` or `aws s3 sync`). A backup must finish within the function's
+  5 minutes; for a very large bucket, back up without uploaded files and
+  copy the bucket with rclone.
 - **Database:** `pg_dump "$DATABASE_URL_UNPOOLED" > backup.sql`, and restore
   with `psql`. Neon also offers branching and point-in-time restore.
-- **Personal data:** a dump contains session IP addresses and user agents,
-  profile data and the contacts left in security reports. Store it like
-  the production database. To leave sessions and nonces out, add
+- **Personal data:** a backup or dump contains profile data, comments,
+  reports and the contacts left in security reports (a dump also session
+  IP addresses and user agents). Store it like the production database. To leave sessions and nonces out, add
   `--exclude-table-data=wallet_sessions --exclude-table-data=auth_nonces`.
 - **Other Postgres hosts:** the dump restores into any Postgres, but the app
   connects through Neon's HTTP driver (`@neondatabase/serverless` in

@@ -149,6 +149,13 @@ are easier to audit.
 4. Set the `R2_*` variables in Vercel. `R2_PUBLIC_URL` must be set for
    storage to count as configured: use the bucket's public URL if it has
    one, otherwise any `https://` placeholder.
+5. Add a lifecycle rule that aborts incomplete multipart uploads after one
+   day. A backup that is cut off by the time limit leaves one behind.
+
+Backups (**Moderation → Status → Backup**) use the same token: they are
+written under `backups/`, which `/r` never serves, and downloaded through
+a signed link valid for five minutes. Building one may take up to five
+minutes, so the Vercel plan must allow a function to run that long.
 
 CORS on the bucket is not needed: every write goes through the app's API,
 and every read through its `/r` route.

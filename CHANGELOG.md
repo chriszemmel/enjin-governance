@@ -12,8 +12,8 @@ Highlights:
   address chips, a live preview, and a title, text and EGOV1 record for
   any call, not just treasury spends.
 - **Moderation:** reports, a review queue, roles by wallet, posting
-  pauses and a public moderation log, with optional automatic checks
-  and a status page for admins.
+  pauses and a public moderation log, with optional automatic checks,
+  a status page and one-click backups for admins.
 - **Legal pages:** imprint, privacy policy and terms.
 - **Safer by default:** a 4 MB upload limit, attachment details checked
   against the stored files, rate limits on every write, and several
@@ -37,6 +37,20 @@ Highlights:
    anything still missing.
 
 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
+
+### Since 1.9
+
+- **Backups:** admins download one ZIP from Moderation → Status → Backup
+  with every table, a restore script, every proposal JSON file and,
+  optionally, the uploaded files. Backups are kept in R2 (the newest
+  five) and downloaded through a five-minute link.
+- **Dependencies:** `pnpm audit` reports nothing; Vitest 5, and newer
+  ESLint and PostCSS.
+- **Phones:** proposal tables scroll again instead of squeezing a column
+  to one letter; sign-in prompts are one link that comes back to the
+  page; a dialog opened by touch no longer rings its close button; the
+  advanced proposal page says a wallet is needed before its fields
+  unlock; a shorter footer that shows the release.
 
 ## 1.9
 

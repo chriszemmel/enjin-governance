@@ -7,10 +7,12 @@ import { defineConfig, devices } from "@playwright/test"
  *   E2E_SKIP_BUILD=1 pnpm test:e2e    reuses the last build (CI builds in its own step)
  *
  * The build must have been made with NEXT_PUBLIC_APP_URL=http://localhost:3100.
+ * E2E_PORT picks another port (and that origin for the build), e.g. when a
+ * server already runs on 3100: a running server there would be reused.
  * PW_CHROMIUM_PATH points at a Chromium binary when Playwright's own
  * download isn't available. E2E_WS_RELAY=0: see e2e/support/chain-relay.ts.
  */
-const PORT = 3100
+const PORT = Number(process.env.E2E_PORT) || 3100
 const baseURL = `http://localhost:${PORT}`
 const CI = !!process.env.CI
 const executablePath = process.env.PW_CHROMIUM_PATH || undefined
