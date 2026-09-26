@@ -69,9 +69,12 @@ export function MarkdownView({
           return (
             // Proposal tables run wide (the GP stage ladder is 5 columns), so
             // the table scrolls inside its own box rather than forcing the
-            // whole card to scroll.
+            // whole card to scroll. The text around it may break words
+            // anywhere (long addresses), but inside a table that lets the
+            // browser squeeze a column to one letter instead of scrolling:
+            // cells only break between words, or a word that can't fit.
             <div key={i} className="overflow-x-auto">
-              <table className="w-full border-collapse text-xs">
+              <table className="w-full border-collapse text-xs [overflow-wrap:break-word]">
                 <thead>
                   <tr>
                     {b.head.map((cell, j) => (
