@@ -71,16 +71,15 @@ user-avatars/{user_uuid}.png
 ## Legal pages and footer
 
 The imprint (`/imprint`), privacy policy (`/privacy`) and terms (`/terms`)
-read the operator's details from the environment so nothing personal is
-committed. A missing value shows as an amber "not configured" placeholder
-on the page. The pages are prerendered, so **redeploy after changing
-these**.
+read the operator's details from the environment. Without an address the
+pages say the postal address is available on request by email. The pages
+are prerendered, so **redeploy after changing these**.
 
 | Variable | Notes |
 |---|---|
-| `LEGAL_OPERATOR_NAME` | Full name (or company) of the person responsible. |
-| `LEGAL_OPERATOR_ADDRESS` | Postal address for service. Separate lines with `\|` or newlines, e.g. `Street 1 \| 12345 City \| Germany`. |
-| `LEGAL_CONTACT_EMAIL` | Contact address, also used for reports and complaints. |
+| `LEGAL_OPERATOR_NAME` | Full name (or company) of the person responsible. Default: `NEXT_PUBLIC_SITE_MAINTAINER`. |
+| `LEGAL_OPERATOR_ADDRESS` | Optional postal address for service (for example a c/o address). Separate lines with `\|` or newlines, e.g. `Street 1 \| 12345 City \| Germany`. Unset: "on request by email". |
+| `LEGAL_CONTACT_EMAIL` | Contact address, also used for reports and complaints. Default `chris@zyric.de`. |
 | `LEGAL_CONTACT_PHONE` | Optional. |
 | `LEGAL_VAT_ID` | Optional; only if you have one. |
 | `NEXT_PUBLIC_SITE_MAINTAINER` | Name in the footer disclaimer. Default `Chris Zemmel`. |

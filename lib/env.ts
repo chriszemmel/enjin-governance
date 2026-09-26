@@ -31,7 +31,7 @@ export const env = createEnv({
     // in the environment, not in the repository.
     LEGAL_OPERATOR_NAME: z.string().optional(),
     LEGAL_OPERATOR_ADDRESS: z.string().optional(),
-    LEGAL_CONTACT_EMAIL: z.string().optional(),
+    LEGAL_CONTACT_EMAIL: z.string().default("chris@zyric.de"),
     LEGAL_CONTACT_PHONE: z.string().optional(),
     LEGAL_VAT_ID: z.string().optional(),
 

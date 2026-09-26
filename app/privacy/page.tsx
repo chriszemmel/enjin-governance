@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { LegalPage, Missing } from "@/components/legal/legal-page"
+import { LegalPage } from "@/components/legal/legal-page"
 import { getOperator } from "@/lib/legal/operator"
 
 export const metadata: Metadata = {
@@ -81,15 +81,9 @@ export default function PrivacyPage() {
         <h2>1. Who is responsible</h2>
         <p>
           The controller under the GDPR is {op.name}
-          {op.address.length > 0 ? `, ${op.address.join(", ")}` : ""}
-          {op.address.length === 0 && (
-            <>
-              , <Missing what="Postal address" />
-            </>
-          )}
-          . Contact:{" "}
-          {op.email ? <a href={`mailto:${op.email}`}>{op.email}</a> : <Missing what="Email" />}. See
-          also the <Link href="/imprint">imprint</Link>.
+          {op.address.length > 0 ? `, ${op.address.join(", ")}` : " (postal address on request)"}.
+          Contact: <a href={`mailto:${op.email}`}>{op.email}</a>. See also the{" "}
+          <Link href="/imprint">imprint</Link>.
         </p>
       </section>
 
@@ -183,13 +177,13 @@ export default function PrivacyPage() {
         <h2>9. Automatic content checks</h2>
         <p>
           If enabled, uploaded images and PDFs, proposal texts and comments are sent to Anthropic
-          PBC (USA) to be checked by an AI model for content that must not be published, for
-          example a readable wallet recovery phrase or someone else&apos;s ID document. Only the
-          item itself is sent (with a file name, if any), not your address or profile. The result
-          only blocks or holds an upload or places an item in the moderators&apos; queue; people
-          make the decisions on everything else. Under Anthropic&apos;s commercial terms, this
-          data is not used to train models. Legal basis: Art. 6(1)(f) GDPR (protecting users and
-          third parties from harmful content).
+          PBC (USA) to be checked by an AI model for content that must not be published, for example
+          a readable wallet recovery phrase or someone else&apos;s ID document. Only the item itself
+          is sent (with a file name, if any), not your address or profile. The result only blocks or
+          holds an upload or places an item in the moderators&apos; queue; people make the decisions
+          on everything else. Under Anthropic&apos;s commercial terms, this data is not used to
+          train models. Legal basis: Art. 6(1)(f) GDPR (protecting users and third parties from
+          harmful content).
         </p>
       </section>
 

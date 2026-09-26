@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { LegalPage, Missing } from "@/components/legal/legal-page"
+import { LegalPage } from "@/components/legal/legal-page"
 import { env } from "@/lib/env"
 import { getOperator } from "@/lib/legal/operator"
 
@@ -11,11 +11,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   const op = getOperator()
-  const contact = op.email ? (
-    <a href={`mailto:${op.email}`}>{op.email}</a>
-  ) : (
-    <Missing what="Email" />
-  )
+  const contact = <a href={`mailto:${op.email}`}>{op.email}</a>
   return (
     <LegalPage title="Terms of use" subtitle="Nutzungsbedingungen" updated="26 September 2026">
       <section className="space-y-2">

@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { LegalPage, Missing } from "@/components/legal/legal-page"
+import { LegalPage } from "@/components/legal/legal-page"
 import { getOperator } from "@/lib/legal/operator"
 
 export const metadata: Metadata = {
@@ -23,7 +23,8 @@ export default function ImprintPage() {
           op.address.map((line) => <p key={line}>{line}</p>)
         ) : (
           <p>
-            <Missing what="Postal address" />
+            Postal address on request by email / Anschrift auf Anfrage per E-Mail:{" "}
+            <a href={`mailto:${op.email}`}>{op.email}</a>
           </p>
         )}
       </section>
@@ -31,8 +32,7 @@ export default function ImprintPage() {
       <section className="space-y-1">
         <h2>Contact / Kontakt</h2>
         <p>
-          Email:{" "}
-          {op.email ? <a href={`mailto:${op.email}`}>{op.email}</a> : <Missing what="Email" />}
+          Email: <a href={`mailto:${op.email}`}>{op.email}</a>
         </p>
         {op.phone && <p>Phone / Telefon: {op.phone}</p>}
         <p>

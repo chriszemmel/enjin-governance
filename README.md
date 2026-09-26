@@ -135,9 +135,8 @@
 ### Legal
 
 - **Imprint, privacy policy and terms** - `/imprint`, `/privacy` and
-  `/terms`, filled from `LEGAL_*` environment variables (nothing
-  personal in the repository). Missing details show as a visible
-  placeholder. The footer links all of them, the content policy, the
+  `/terms`, filled from `LEGAL_*` environment variables. Without a
+  postal address the pages say it is available on request by email. The footer links all of them, the content policy, the
   moderation log and the AGPL source code.
 
 ### Identity + community
@@ -483,9 +482,9 @@ Moderation and legal pages:
 
 ```
 GOVERNANCE_ADMIN_PUBLIC_KEYS=<your wallet>   # SS58 (any network) or 0x public key; comma separated
-LEGAL_OPERATOR_NAME=<your name>              # imprint + privacy policy
-LEGAL_OPERATOR_ADDRESS=<street | postcode city | country>
-LEGAL_CONTACT_EMAIL=<contact address>
+LEGAL_OPERATOR_NAME=<your name>              # default: NEXT_PUBLIC_SITE_MAINTAINER
+LEGAL_OPERATOR_ADDRESS=<street | postcode city | country>   # optional, e.g. a c/o address
+LEGAL_CONTACT_EMAIL=<contact address>        # default: chris@zyric.de
 NEXT_PUBLIC_SITE_MAINTAINER=<name shown in the footer>
 NEXT_PUBLIC_SOURCE_URL=<public repository URL>   # AGPL source offer in the footer
 ```

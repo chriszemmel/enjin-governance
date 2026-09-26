@@ -31,12 +31,3 @@ export function LegalPage({
     </div>
   )
 }
-
-/** A value the operator still has to configure. */
-export function Missing({ what }: { what: string }) {
-  return (
-    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-xs text-amber-700 dark:text-amber-300">
-      [{what} not configured]
-    </span>
-  )
-}

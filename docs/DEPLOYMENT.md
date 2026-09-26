@@ -22,7 +22,7 @@ The path of least resistance is **Vercel + Neon + Cloudflare R2 + Reown
    | `R2_PUBLIC_URL` | `https://<bucket>.r2.dev` or custom domain | Production, Preview |
    | `SUBSCAN_API_KEY` | optional, from `pro.subscan.io` | Production |
    | `GOVERNANCE_ADMIN_PUBLIC_KEYS` | your wallet address(es), comma separated | Production, Preview |
-   | `LEGAL_OPERATOR_NAME` / `LEGAL_OPERATOR_ADDRESS` / `LEGAL_CONTACT_EMAIL` | imprint + privacy policy | Production, Preview |
+   | `LEGAL_OPERATOR_NAME` / `LEGAL_OPERATOR_ADDRESS` / `LEGAL_CONTACT_EMAIL` | optional overrides for imprint + privacy policy | Production, Preview |
    | `LEGAL_CONTACT_PHONE` / `LEGAL_VAT_ID` | optional, imprint | Production, Preview |
    | `NEXT_PUBLIC_SITE_MAINTAINER` / `NEXT_PUBLIC_SOURCE_URL` | footer (defaults set) | Production, Preview |
    | `ANTHROPIC_API_KEY` | optional, automatic content checks | Production |
