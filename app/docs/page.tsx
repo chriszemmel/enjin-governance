@@ -191,7 +191,7 @@ export default function DocsPage() {
               <li>
                 Non-ASCII characters are emitted{" "}
                 <strong>literally as UTF-8</strong>, never as{" "}
-                <Code>\uXXXX</Code> escapes. This is the second way a
+                <Code>\uXXXX</Code>{" "}escapes. This is the second way a
                 reimplementation silently diverges: Python&apos;s{" "}
                 <Code>json.dumps</Code> escapes non-ASCII by default, so any
                 proposal containing an em dash, a curly quote or an accented
@@ -309,7 +309,7 @@ export default function DocsPage() {
                 the JSON committed on chain at <Code>h</Code>; if the
                 proposer edited later (see{" "}
                 <A href="#editing">Editing &amp; withdrawal</A>) the bucket
-                bytes will differ from <Code>h</Code> - that&apos;s the
+                bytes will differ from <Code>h</Code>{" "}- that&apos;s the
                 public signal an edit happened.
               </li>
               <li>
@@ -349,11 +349,11 @@ export default function DocsPage() {
             <p>
               <strong>Withdraw</strong>{" "}is the social signal for &quot;I
               filed this in error, please vote NAY&quot;: it records a{" "}
-              <Code>withdrawn_at</Code> timestamp plus an optional reason, and
+              <Code>withdrawn_at</Code>{" "}timestamp plus an optional reason, and
               the detail page renders a destructive-tone banner. The on-chain
               referendum is unchanged - substrate&apos;s{" "}
               <Code>referenda.cancel</Code> is locked to the{" "}
-              <Code>ReferendumCanceller</Code> origin, not the proposer. To
+              <Code>ReferendumCanceller</Code>{" "}origin, not the proposer. To
               actually move the tally you can vote NAY yourself with high
               conviction, file a separate cancellation referendum, or wait
               for the decision period to expire if the deposit isn&apos;t
@@ -390,7 +390,7 @@ export default function DocsPage() {
                 <strong>Change a vote</strong> - re-submit{" "}
                 <Code>vote</Code> for the same referendum to swap the
                 verdict, conviction, or source. The chain overwrites the
-                previous <Code>AccountVote</Code> in the same lock class
+                previous <Code>AccountVote</Code>{" "}in the same lock class
                 - no separate &quot;edit&quot; extrinsic.
               </li>
               <li>
@@ -654,13 +654,13 @@ export default function DocsPage() {
               Connecting a wallet only proves the wallet exposed an address;
               signing a server-issued nonce proves the wallet controls the
               private key. The sign-in flow follows the SIWE pattern adapted
-              for Substrate: <Code>POST /api/auth/nonce</Code> hands back a
+              for Substrate: <Code>POST /api/auth/nonce</Code>{" "}hands back a
               16-byte hex nonce, the client builds a plain-text message
               (&quot;Enjin Governance - sign in&quot; + address +
               nonce + issued timestamp), the wallet signs it, and{" "}
               <Code>POST /api/auth/verify</Code> checks the signature with{" "}
               <Code>@polkadot/util-crypto</Code>&apos;s{" "}
-              <Code>signatureVerify</Code> (accepts the wallet&apos;s{" "}
+              <Code>signatureVerify</Code>{" "}(accepts the wallet&apos;s{" "}
               <Code>&lt;Bytes&gt;</Code> wrapping, plain, and{" "}
               <Code>0x</Code>-hex forms).
             </p>
@@ -669,7 +669,7 @@ export default function DocsPage() {
               the <Code>enjin-governance:session</Code> cookie
               (<Code>HttpOnly</Code>, <Code>Secure</Code> in production,{" "}
               <Code>SameSite=Lax</Code>, 30-day TTL). Only the SHA-256 hash
-              of the token lives in <Code>wallet_sessions</Code> - the
+              of the token lives in <Code>wallet_sessions</Code>{" "}- the
               raw secret never persists, so a DB leak doesn&apos;t hand out
               live sessions. Sessions never authorise on-chain transactions;
               they only gate the off-chain social writes below.
@@ -694,7 +694,7 @@ export default function DocsPage() {
                 <strong>Bio</strong> - up to 500 chars.
               </li>
               <li>
-                <strong>Avatar</strong> - PNG/JPEG/WebP/GIF up to
+                <strong>Avatar</strong>{" "}- PNG/JPEG/WebP/GIF up to
                 6 MB, transcoded server-side to a 150&times;150 PNG with
                 EXIF stripped, stored in R2 at{" "}
                 <Code>user-avatars/&#123;user_uuid&#125;.png</Code>.
@@ -706,7 +706,7 @@ export default function DocsPage() {
               (no auth, cached 60s edge / 600s stale-while-revalidate) and
               written only by the owner via{" "}
               <Code>PATCH /api/users/me</Code>. A separate{" "}
-              <Code>is_verified</Code> boolean is reserved for manual
+              <Code>is_verified</Code>{" "}boolean is reserved for manual
               attestation by the maintainers - there&apos;s no
               self-service path to turn it on.
             </p>
@@ -717,7 +717,7 @@ export default function DocsPage() {
             <p>
               Each referendum carries a flat comment thread.{" "}
               <Code>GET /api/proposals/&#123;uuid&#125;/comments</Code> is
-              public; <Code>POST</Code> requires a valid session, accepts
+              public; <Code>POST</Code>{" "}requires a valid session, accepts
               1-10,000 chars of markdown, and stamps the comment with
               the signer&apos;s <Code>user_id</Code> and{" "}
               <Code>address</Code> so authorship is always traceable to a
@@ -841,7 +841,7 @@ export default function DocsPage() {
               </li>
               <li>
                 <strong>Off-chain withdrawal</strong> (this app) - the
-                Withdraw button sets <Code>withdrawn_at</Code> and surfaces a
+                Withdraw button sets <Code>withdrawn_at</Code>{" "}and surfaces a
                 banner. Doesn&apos;t change on-chain state, but tells voters
                 clearly to vote NAY.
               </li>
@@ -871,7 +871,7 @@ export default function DocsPage() {
               <li>Illegal content and spam.</li>
             </ul>
             <p>
-              <strong>How it works.</strong> Anyone signed in can report a proposal
+              <strong>How it works.</strong>{" "}Anyone signed in can report a proposal
               (the &quot;…&quot; menu on its About card), an image (in the image
               viewer) or a comment. Moderators review reports in one queue and can
               keep, blur, hide or restore content; only admins can delete a file, for
@@ -883,7 +883,7 @@ export default function DocsPage() {
               . Proposers can remove their own attachments at any time.
             </p>
             <p>
-              <strong>Automatic checks</strong> (when enabled): uploaded images and
+              <strong>Automatic checks</strong>{" "}(when enabled): uploaded images and
               PDFs are checked by an AI model (Anthropic&apos;s Claude) before they
               are stored. Clear violations, such as a readable recovery phrase, are
               rejected or held, depending on the admins&apos; setting; borderline
@@ -895,9 +895,9 @@ export default function DocsPage() {
               unchecked and moderated by reports as usual.
             </p>
             <p>
-              <strong>What moderation never does:</strong> nobody can rewrite someone
+              <strong>What moderation never does:</strong>{" "}nobody can rewrite someone
               else&apos;s text, and referenda, votes and on-chain records are never
-              touched. A proposal&apos;s <Code>proposal.json</Code> stays byte-identical,
+              touched. A proposal&apos;s <Code>proposal.json</Code>{" "}stays byte-identical,
               so its EGOV1 verification keeps working even when an image is hidden or
               removed. Hidden images are no longer served by this site; deleted files
               are removed from storage itself. Older proposals may still link straight
