@@ -6,6 +6,7 @@ import { ArrowRight, Bot, Eye, FileText, Loader2, ShieldCheck, Trash2, UserX } f
 import { toast } from "sonner"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
+import { BackupPanel } from "@/components/moderation/backup-panel"
 import { ScanSettingsPanel } from "@/components/moderation/scan-settings-panel"
 import { ScanHealthBanner, StatusPanel } from "@/components/moderation/status-panel"
 import { useActiveChain } from "@/lib/chain/use-chain"
@@ -148,7 +149,10 @@ export default function ModerationPage() {
               <ScanSettingsPanel />
             </div>
           ) : tab === "status" && role === "admin" ? (
-            <StatusPanel />
+            <div className="space-y-4">
+              <StatusPanel />
+              <BackupPanel />
+            </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1fr] gap-4">
               <div className="rounded-2xl bg-card border border-border overflow-hidden">

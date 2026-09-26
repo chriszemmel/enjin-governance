@@ -35,6 +35,11 @@ describe("isPublicReadableKey", () => {
     expect(isPublicReadableKey("")).toBe(false)
   })
 
+  it("never serves backups", () => {
+    expect(isPublicReadableKey(`backups/2026-09-26T09:00:00Z-${"0".repeat(32)}.zip`)).toBe(false)
+    expect(isPublicReadableKey("proposals/../backups/x.zip")).toBe(false)
+  })
+
   it("rejects path traversal and absolute paths", () => {
     expect(isPublicReadableKey("proposals/../secrets/x")).toBe(false)
     expect(isPublicReadableKey("/proposals/enjin-relay/u/proposal.json")).toBe(false)

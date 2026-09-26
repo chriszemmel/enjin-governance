@@ -141,7 +141,8 @@ export function publicUrlFor(publicBase: string, key: string): string {
  * objects straight from the bucket, so this allowlist is what stops it
  * being an open proxy onto everything in R2: only the genuinely public
  * object families (proposal JSON / media, user avatars) are readable, and
- * any path-traversal attempt is rejected.
+ * any path-traversal attempt is rejected. Admin backups (`backups/`, see
+ * lib/backup/keys.ts) hold personal data and must never be added here.
  */
 const PUBLIC_READ_PREFIXES = ["proposals/", "user-avatars/"]
 

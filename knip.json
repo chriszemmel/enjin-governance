@@ -71,7 +71,6 @@
     "react-resizable-panels",
     "recharts",
     "vaul",
-    "postcss-load-config",
-    "@aws-sdk/s3-request-presigner"
+    "postcss-load-config"
   ]
 }
