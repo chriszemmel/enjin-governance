@@ -14,8 +14,8 @@
 
 import "server-only"
 import { after } from "next/server"
-import { insertReport, setState } from "@/lib/db/moderation"
-import { categoryFor, scanEnabled, scanImage, scanText, type ScanOutcome } from "./scan"
+import { insertAction, insertReport, setState } from "@/lib/db/moderation"
+import { categoryFor, scanEnabled, scanImage, scanPdf, scanText, type ScanOutcome } from "./scan"
 import type { ModerationTarget } from "./policy"
 
 type UploadDecision =
@@ -24,13 +24,16 @@ type UploadDecision =
   | { action: "reject"; message: string }
 
 export async function checkUpload(
-  jpeg: () => Promise<Buffer>,
+  content: { kind: "image"; jpeg: () => Promise<Buffer> } | { kind: "pdf"; bytes: Buffer },
   fileName: string,
 ): Promise<UploadDecision> {
   if (!scanEnabled()) return { action: "store" }
   let outcome: ScanOutcome
   try {
-    outcome = await scanImage(await jpeg(), { fileName })
+    outcome =
+      content.kind === "pdf"
+        ? await scanPdf(content.bytes, { fileName })
+        : await scanImage(await content.jpeg(), { fileName })
   } catch {
     return { action: "store" }
   }
@@ -40,7 +43,7 @@ export async function checkUpload(
   if (v.decision === "block") {
     return {
       action: "reject",
-      message: `This image can't be published: ${v.explanation} If you think this is wrong, ask a moderator.`,
+      message: `This file can't be published: ${v.explanation} If you think this is wrong, ask a moderator.`,
     }
   }
   return v.decision === "review" ? { action: "store_blurred", outcome } : { action: "store" }
@@ -75,6 +78,19 @@ export async function queueBlurredUpload(
     state: "blurred",
     reason: details.explanation,
     source: "automatic",
+  })
+  // On the public log too, like every other state change.
+  await insertAction({
+    targetType: "attachment",
+    targetId: key,
+    proposalId,
+    network: key.split("/")[1] ?? null,
+    referendumIndex: null,
+    action: "blur",
+    reason: "Held for a moderator by the automatic check.",
+    source: "automatic",
+    actorPublicKey: null,
+    actorLabel: "automatic check",
   })
   await insertReport({
     targetType: "attachment",

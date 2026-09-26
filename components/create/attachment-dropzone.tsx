@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
-import { FileText, Loader2, Plus, Trash2, Upload } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Clock, FileText, Loader2, Plus, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { MediaThumb, formatBytes } from "@/components/governance/attachment-gallery"
 import type { ChainId } from "@/lib/chain/chains"
@@ -17,6 +17,8 @@ export type UploadedAttachment = {
   size_bytes: number
   content_type: string
   name: string
+  /** Held by the automatic check until a moderator looks (not served). */
+  pending_review?: boolean
 }
 
 type Props = {
@@ -58,6 +60,12 @@ export function AttachmentDropzone({
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
+  // Uploads can take a while; merge their results into the list as it is
+  // when they finish, not as it was when they started.
+  const latest = useRef(attachments)
+  useEffect(() => {
+    latest.current = attachments
+  }, [attachments])
 
   const upload = useCallback(
     async (files: FileList) => {
@@ -77,7 +85,7 @@ export function AttachmentDropzone({
       if (accepted.length === 0) return
 
       setUploading(true)
-      const next: UploadedAttachment[] = [...attachments]
+      const added: UploadedAttachment[] = []
       for (const file of accepted) {
         const form = new FormData()
         form.set("file", file)
@@ -106,16 +114,17 @@ export function AttachmentDropzone({
           if (json.moderation === "blurred") {
             toast.info(`${file.name} was sent to moderators`, {
               description:
-                "The automatic check wants a human to look at it. Until then it shows blurred.",
+                "The automatic check wants a human to look at it first. Until then it isn't shown.",
             })
           }
-          next.push({
+          added.push({
             bucket_key: json.bucket_key,
             url: json.url,
             sha256: json.sha256,
             size_bytes: json.size_bytes,
             content_type: json.content_type,
             name: json.name,
+            pending_review: json.moderation === "blurred" || undefined,
           })
         } catch (e) {
           toast.error(`Upload failed: ${file.name}`, {
@@ -124,7 +133,7 @@ export function AttachmentDropzone({
         }
       }
       setUploading(false)
-      onChange(next)
+      if (added.length > 0) onChange([...latest.current, ...added])
     },
     [attachments, beforeUpload, disabled, network, onChange, proposalId],
   )
@@ -213,7 +222,14 @@ export function AttachmentDropzone({
                 key={att.bucket_key}
                 className="flex items-center gap-3 p-2.5 rounded-xl bg-surface-1 border border-border"
               >
-                {m?.isImage ? (
+                {att.pending_review ? (
+                  <span
+                    className="w-11 h-11 rounded-lg border border-amber-500/30 bg-amber-500/10 flex items-center justify-center flex-shrink-0"
+                    title="Waiting for a moderator"
+                  >
+                    <Clock className="w-4 h-4 text-amber-500" />
+                  </span>
+                ) : m?.isImage ? (
                   <MediaThumb
                     media={m}
                     className="w-11 h-11 rounded-lg object-cover border border-border bg-surface-2 flex-shrink-0"
@@ -233,7 +249,9 @@ export function AttachmentDropzone({
                     {att.name}
                   </a>
                   <p className="text-[11px] text-muted-foreground font-mono truncate">
-                    {formatBytes(att.size_bytes)} · sha256 {att.sha256.slice(0, 8)}…
+                    {att.pending_review
+                      ? "waiting for a moderator's check"
+                      : `${formatBytes(att.size_bytes)} · sha256 ${att.sha256.slice(0, 8)}…`}
                   </p>
                 </div>
                 {onInsert && (
@@ -255,7 +273,7 @@ export function AttachmentDropzone({
                 <button
                   type="button"
                   onClick={() => remove(att.bucket_key)}
-                  disabled={disabled}
+                  disabled={disabled || uploading}
                   className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-40 flex-shrink-0"
                   title="Remove attachment"
                   aria-label={`Remove ${att.name}`}

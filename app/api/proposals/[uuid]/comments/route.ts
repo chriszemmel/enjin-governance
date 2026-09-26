@@ -90,7 +90,7 @@ export async function POST(
     )
   }
 
-  const suspended = postingSuspendedResponse(me)
+  const suspended = await postingSuspendedResponse(me)
   if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.commentCreate, identity: me.id })

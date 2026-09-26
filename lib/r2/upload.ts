@@ -6,7 +6,12 @@
 
 import "server-only"
 import { createHash } from "node:crypto"
-import { DeleteObjectsCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3"
 import { getR2Client, r2Bucket, publicAssetBase } from "./client"
 import { stringifyStable } from "./json"
 import { publicUrlFor } from "./paths"
@@ -105,6 +110,18 @@ export async function readObjectText(key: string): Promise<string | null> {
   } catch (err) {
     const name = (err as { name?: string } | null)?.name
     if (name === "NoSuchKey" || name === "NotFound") return null
+    throw err
+  }
+}
+
+/** Whether an object exists (HEAD request). */
+export async function objectExists(key: string): Promise<boolean> {
+  try {
+    await getR2Client().send(new HeadObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    return true
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    if (name === "NotFound" || name === "NoSuchKey") return false
     throw err
   }
 }

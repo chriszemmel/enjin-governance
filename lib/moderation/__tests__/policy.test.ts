@@ -39,11 +39,13 @@ describe("roles and actions", () => {
     expect(reportStatusAfter("hide")).toBe("resolved")
   })
 
-  it("serves blurred media but not hidden or removed media", () => {
+  it("serves moderator-blurred media, but not hidden, removed or auto-blurred media", () => {
     expect(mediaServable(null)).toBe(true)
-    expect(mediaServable("blurred")).toBe(true)
-    expect(mediaServable("hidden")).toBe(false)
-    expect(mediaServable("removed")).toBe(false)
+    expect(mediaServable({ state: "blurred", source: "moderator" })).toBe(true)
+    expect(mediaServable({ state: "blurred", source: "automatic" })).toBe(false)
+    expect(mediaServable({ state: "hidden", source: "moderator" })).toBe(false)
+    expect(mediaServable({ state: "removed", source: "proposer" })).toBe(false)
+    expect(mediaServable({ state: "visible", source: "moderator" })).toBe(true)
   })
 })
 

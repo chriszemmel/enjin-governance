@@ -57,7 +57,7 @@ type ComposeProps = {
   network: "enjin-relay" | "enjin-matrix" | "canary-relay" | "canary-matrix"
   attachments: UploadedAttachment[]
   onAttachmentsChange: (v: UploadedAttachment[]) => void
-  beforeUpload?: () => Promise<boolean>
+  beforeUpload?: (opts?: { fresh?: boolean }) => Promise<boolean>
   enactment: EnactmentChoice
   enactmentError: string | null
   minEnactment: number | null

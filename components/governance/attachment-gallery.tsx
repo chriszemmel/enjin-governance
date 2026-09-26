@@ -181,7 +181,7 @@ export function ImageLightbox({
                   <button
                     type="button"
                     onClick={() => go(-1)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/60 hover:bg-black/80 border border-white/30 text-white flex items-center justify-center"
                     aria-label="Previous image"
                   >
                     <ChevronLeft className="w-5 h-5" />
@@ -189,7 +189,7 @@ export function ImageLightbox({
                   <button
                     type="button"
                     onClick={() => go(1)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/60 hover:bg-black/80 border border-white/30 text-white flex items-center justify-center"
                     aria-label="Next image"
                   >
                     <ChevronRight className="w-5 h-5" />

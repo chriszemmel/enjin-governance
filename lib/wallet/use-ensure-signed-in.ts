@@ -23,30 +23,35 @@ export function useEnsureSignedIn({ isWalletConnect }: { isWalletConnect: boolea
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const ensureSignedIn = useCallback(async (): Promise<boolean> => {
-    if (meQuery.data) return true
-    // The /api/auth/me poll can trail a fresh cookie by up to 60s - re-check
-    // before forcing a signature the user may not actually need.
-    try {
-      const refreshed = await meQuery.refetch()
-      if (refreshed.data) return true
-    } catch {
-      // fall through to the sign-in prompt
-    }
-    setError(null)
-    if (isWalletConnect) setOpen(true)
-    try {
-      await signIn.submit()
-      setOpen(false)
-      toast.success("Signed in")
-      return true
-    } catch (e) {
-      const message = formatError(e)
-      setError(message)
-      if (!isWalletConnect) toast.error("Sign-in required", { description: message })
-      return false
-    }
-  }, [meQuery, isWalletConnect, signIn])
+  const ensureSignedIn = useCallback(
+    async (opts?: { fresh?: boolean }): Promise<boolean> => {
+      // `fresh`: the server just answered 401, so the cached "signed in"
+      // can't be trusted - re-check (and sign in again if needed).
+      if (meQuery.data && !opts?.fresh) return true
+      // The /api/auth/me poll can trail a fresh cookie by up to 60s - re-check
+      // before forcing a signature the user may not actually need.
+      try {
+        const refreshed = await meQuery.refetch()
+        if (refreshed.data) return true
+      } catch {
+        // fall through to the sign-in prompt
+      }
+      setError(null)
+      if (isWalletConnect) setOpen(true)
+      try {
+        await signIn.submit()
+        setOpen(false)
+        toast.success("Signed in")
+        return true
+      } catch (e) {
+        const message = formatError(e)
+        setError(message)
+        if (!isWalletConnect) toast.error("Sign-in required", { description: message })
+        return false
+      }
+    },
+    [meQuery, isWalletConnect, signIn],
+  )
 
   const signInModal = {
     open,

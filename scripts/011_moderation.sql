@@ -12,9 +12,11 @@
 --   moderation_actions  the public log. Every change carries a reason.
 --   moderation_reports  user reports and automatic flags, open until a
 --                       moderator decides.
---   users.posting_suspended_until
+--   moderation_suspensions
 --                       admins can pause someone's posting (comments,
---                       drafts, uploads).
+--                       drafts, edits, uploads). Keyed by public key, so a
+--                       pause holds whatever network format the wallet
+--                       signs in with.
 --
 -- Nothing here touches referenda, votes or on-chain data, and moderation
 -- never rewrites anyone's text: proposal.json stays byte-identical, so its
@@ -97,9 +99,18 @@ CREATE TABLE IF NOT EXISTS moderation_reports (
 
 CREATE INDEX IF NOT EXISTS idx_moderation_reports_open
   ON moderation_reports(status, created_at DESC);
--- One open report per person per item.
+-- One open report per person per item, and one open automatic flag.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_moderation_reports_open_reporter
   ON moderation_reports(target_type, target_id, reporter_user_id)
   WHERE status = 'open' AND reporter_user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_moderation_reports_open_automatic
+  ON moderation_reports(target_type, target_id)
+  WHERE status = 'open' AND source = 'automatic';
 
-ALTER TABLE users ADD COLUMN IF NOT EXISTS posting_suspended_until TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS moderation_suspensions (
+  public_key  TEXT        PRIMARY KEY,
+  until       TIMESTAMPTZ NOT NULL,
+  created_by  TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT moderation_suspensions_key CHECK (public_key ~ '^0x[0-9a-f]{64}$')
+);

@@ -505,7 +505,10 @@ function DraftListItem({
 }) {
   const isOnChain = draft.status === "on_chain" && draft.referendum_index != null
   const isCancelled = draft.status === "cancelled"
-  const isDraft = draft.status === "draft" || draft.status === "submitted"
+  // Only treasury drafts can be reopened in the treasury wizard; drafts
+  // from the advanced composer carry a call it doesn't edit.
+  const isDraft =
+    (draft.status === "draft" || draft.status === "submitted") && draft.is_treasury !== false
   const subtitle = `${draftStatusLabel(draft)} · ${new Date(draft.created_at).toLocaleDateString()}`
   return (
     <li className="flex items-center gap-3 p-3 rounded-lg bg-surface-1 border border-border">

@@ -5,11 +5,15 @@ import { Ban, Eye } from "lucide-react"
 import type { ModerationInfo } from "@/lib/query/hooks/use-moderation"
 import { cn } from "@/lib/utils"
 
+/** Not shown to readers: hidden, removed, or held by the automatic check. */
 export function isWithheld(info: ModerationInfo | null | undefined): boolean {
-  return info?.state === "hidden" || info?.state === "removed"
+  if (!info) return false
+  if (info.state === "hidden" || info.state === "removed") return true
+  return info.state === "blurred" && info.source === "automatic"
 }
 
 function who(info: ModerationInfo): string {
+  if (info.source === "automatic") return "Waiting for a moderator's check"
   if (info.source === "proposer") return "Removed by the proposer"
   if (info.state === "hidden") return "Hidden by moderators"
   return "Removed by moderators"
@@ -26,7 +30,7 @@ export function WithheldMedia({ info, className }: { info: ModerationInfo; class
     >
       <Ban className="w-4 h-4 text-muted-foreground" />
       <p className="text-xs font-medium text-foreground">{who(info)}</p>
-      {info.reason && info.source !== "proposer" && (
+      {info.reason && info.source === "moderator" && (
         <p className="text-[11px] text-muted-foreground line-clamp-2">Reason: {info.reason}</p>
       )}
       <p className="text-[11px] text-muted-foreground">

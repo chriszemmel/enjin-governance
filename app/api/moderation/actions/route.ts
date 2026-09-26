@@ -15,9 +15,9 @@
 
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
-import { requireRole } from "@/lib/auth/roles"
-import { getUserByAddress } from "@/lib/db/users"
-import { closeReports, insertAction, setPostingSuspended, setState } from "@/lib/db/moderation"
+import { publicKeyHex, requireRole } from "@/lib/auth/roles"
+import { initializeWasm, isValidSs58 } from "@/lib/chain/ss58"
+import { closeReports, insertAction, setState, setSuspension } from "@/lib/db/moderation"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import {
   allowedActions,
@@ -79,18 +79,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (mod.role !== "admin") {
       return NextResponse.json({ ok: false, error: "Admins only." }, { status: 403 })
     }
-    const user = await getUserByAddress(parsed.target_id)
-    if (!user) return NextResponse.json({ ok: false, error: "Unknown account." }, { status: 404 })
+    // Paused by public key: holds whatever network format the wallet
+    // signs in with next.
+    await initializeWasm()
+    if (!isValidSs58(parsed.target_id)) {
+      return NextResponse.json({ ok: false, error: "Unknown account." }, { status: 404 })
+    }
+    const key = publicKeyHex(parsed.target_id)
     const until =
       parsed.action === "suspend"
         ? new Date(Date.now() + (parsed.days ?? 7) * 24 * 60 * 60 * 1000)
         : null
-    await setPostingSuspended(user.id, until)
+    await setSuspension(key, until, mod.publicKey)
     await insertAction({
       targetType: "user",
-      targetId: user.address,
+      targetId: key,
       proposalId: null,
-      network: user.network,
+      network: null,
       referendumIndex: null,
       action: parsed.action,
       reason: parsed.reason,
@@ -134,7 +139,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   await setState({
     targetType: target.type,
     targetId: target.id,
-    proposalId: target.proposal.id,
+    proposalId: target.proposal?.id ?? null,
     state: stateAfter(action),
     reason: parsed.reason,
     source: "moderator",
@@ -143,9 +148,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   await insertAction({
     targetType: target.type,
     targetId: target.id,
-    proposalId: target.proposal.id,
-    network: target.proposal.network,
-    referendumIndex: target.proposal.referendum_index,
+    proposalId: target.proposal?.id ?? null,
+    network: target.network,
+    referendumIndex: target.proposal?.referendum_index ?? null,
     action,
     reason: parsed.reason,
     source: "moderator",

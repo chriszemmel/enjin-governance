@@ -42,17 +42,31 @@ export async function GET(
   const key = (segments ?? []).map((s) => decodeURIComponent(s)).join("/")
   if (!isPublicReadableKey(key)) return notFound()
 
-  // Proposal media (and its thumbnail) can be hidden by moderators. The
+  // Proposal media (and its thumbnail) can be withheld by moderators. The
   // state lives in the DB; the proposal JSON itself is never withheld.
-  const mediaKey = key.endsWith(".thumb.webp") ? key.slice(0, -".thumb.webp".length) : key
-  const isMedia = parseMediaKey(mediaKey) != null
+  // Both the key and, for thumbnails, the file it belongs to are checked.
+  const isMedia = parseMediaKey(key) != null
   if (isMedia && isDbConfigured()) {
-    const state = await getState("attachment", mediaKey).catch(() => null)
-    if (!mediaServable(state?.state)) {
-      return NextResponse.json(
-        { ok: false, error: "Removed by moderators" },
-        { status: 404, headers: { "Cache-Control": "no-store" } },
-      )
+    const candidates = key.endsWith(".thumb.webp") ? [key, key.slice(0, -".thumb.webp".length)] : [key]
+    for (const candidate of candidates) {
+      let state: Awaited<ReturnType<typeof getState>>
+      try {
+        state = await getState("attachment", candidate)
+      } catch (err) {
+        // Before migration 011 the table doesn't exist: nothing is moderated.
+        // Any other failure must not serve something that may be hidden.
+        if ((err as { code?: string } | null)?.code === "42P01") break
+        return NextResponse.json(
+          { ok: false, error: "Temporarily unavailable" },
+          { status: 503, headers: { "Cache-Control": "no-store" } },
+        )
+      }
+      if (!mediaServable(state)) {
+        return NextResponse.json(
+          { ok: false, error: "Withheld by moderators" },
+          { status: 404, headers: { "Cache-Control": "no-store" } },
+        )
+      }
     }
   }
 

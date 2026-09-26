@@ -11,7 +11,7 @@ vi.hoisted(() => {
   process.env.ANTHROPIC_API_KEY = "test-key"
 })
 
-import { categoryFor, scanImage, scanText } from "@/lib/moderation/scan"
+import { categoryFor, scanImage, scanPdf, scanText } from "@/lib/moderation/scan"
 
 type Call = { body: Record<string, unknown>; options: Record<string, unknown> }
 
@@ -93,6 +93,27 @@ describe("scanImage", () => {
       kind: "unavailable",
       reason: "API 500",
     })
+  })
+})
+
+describe("scanPdf", () => {
+  it("sends the PDF as a document and shortens a long explanation", async () => {
+    const { client, calls } = fakeClient(() =>
+      answer({
+        decision: "review",
+        severity: "medium",
+        labels: ["id_document"],
+        explanation: "x".repeat(900),
+      }),
+    )
+    const out = await scanPdf(Buffer.from("%PDF-1.4"), { client, fileName: "passport.pdf" })
+    expect(out.kind === "verdict" && out.verdict.explanation.length).toBe(400)
+    const block = (
+      calls[0]!.body as {
+        messages: { content: { type: string; source?: { media_type: string } }[] }[]
+      }
+    ).messages[0]!.content[0]!
+    expect(block).toMatchObject({ type: "document", source: { media_type: "application/pdf" } })
   })
 })
 

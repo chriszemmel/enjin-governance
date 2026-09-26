@@ -286,6 +286,25 @@ export async function queueStats(): Promise<{ open: number; auto_blurred_today: 
 
 // ---- posting suspension --------------------------------------------------------
 
-export async function setPostingSuspended(userId: string, until: Date | null): Promise<void> {
-  await getSql()`UPDATE users SET posting_suspended_until = ${until} WHERE id = ${userId}`
+/** When a wallet's posting pause ends, or null when it may post. */
+export async function getSuspension(publicKey: string): Promise<Date | null> {
+  const rows = (await getSql()`
+    SELECT until FROM moderation_suspensions
+     WHERE public_key = ${publicKey} AND until > NOW()
+     LIMIT 1
+  `) as { until: Date }[]
+  return rows[0] ? new Date(rows[0].until) : null
+}
+
+export async function setSuspension(publicKey: string, until: Date | null, by: string): Promise<void> {
+  const sql = getSql()
+  if (!until) {
+    await sql`DELETE FROM moderation_suspensions WHERE public_key = ${publicKey}`
+    return
+  }
+  await sql`
+    INSERT INTO moderation_suspensions (public_key, until, created_by)
+    VALUES (${publicKey}, ${until}, ${by})
+    ON CONFLICT (public_key) DO UPDATE SET until = EXCLUDED.until, created_by = EXCLUDED.created_by
+  `
 }

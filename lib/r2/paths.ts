@@ -42,7 +42,9 @@ export function proposalMediaKey(
  * serving the old bytes). Capped so the thumbnail key still fits.
  */
 export function uniqueMediaName(original: string, random: string): string {
-  const base = sanitiseFilename(original).slice(0, 90) || "file"
+  // Never end in the thumbnail suffix: "x.thumb.webp" would read as the
+  // thumbnail of "x", and a check on one could miss the other.
+  const base = (sanitiseFilename(original).slice(0, 90) || "file").replace(/\.thumb\.webp$/i, "-thumb.webp")
   return `${random}-${base}`
 }
 

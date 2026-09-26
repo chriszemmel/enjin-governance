@@ -75,9 +75,18 @@ export function reportStatusAfter(action: ContentAction): "resolved" | "dismisse
   return action === "keep" ? "dismissed" : "resolved"
 }
 
-/** Whether the public may load the bytes of an attachment in this state. */
-export function mediaServable(state: ModerationStateValue | null | undefined): boolean {
-  return state !== "hidden" && state !== "removed"
+/**
+ * Whether the public may load the bytes of an attachment. Hidden and
+ * removed files never; an image the automatic check blurred waits for a
+ * moderator (the blur alone is only an overlay in the page). A blur a
+ * moderator chose is served, behind the tap-to-show cover.
+ */
+export function mediaServable(
+  state: { state: ModerationStateValue; source?: string | null } | null | undefined,
+): boolean {
+  if (!state) return true
+  if (state.state === "hidden" || state.state === "removed") return false
+  return !(state.state === "blurred" && state.source === "automatic")
 }
 
 /**

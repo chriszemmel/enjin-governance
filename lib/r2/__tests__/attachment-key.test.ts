@@ -83,6 +83,10 @@ describe("uniqueMediaName", () => {
     expect(uniqueMediaName("image.png", "ab12cd34")).not.toBe(uniqueMediaName("image.png", "ef56ab78"))
   })
 
+  it("never produces a name that looks like another file's thumbnail", () => {
+    expect(uniqueMediaName("seed.thumb.webp", "ab12cd34")).toBe("ab12cd34-seed-thumb.webp")
+  })
+
   it("falls back to 'file' and stays a valid media key with room for a thumbnail", () => {
     expect(uniqueMediaName("???", "ab12cd34")).toBe("ab12cd34-file")
     const name = uniqueMediaName("x".repeat(500) + ".png", "ab12cd34")

@@ -21,7 +21,7 @@ type Props = {
    * and link are write endpoints, so they run it first instead of failing
    * with a 401.
    */
-  ensureSignedIn?: () => Promise<boolean>
+  ensureSignedIn?: (opts?: { fresh?: boolean }) => Promise<boolean>
 }
 
 /**
@@ -98,7 +98,11 @@ export function MyDraftsPanel({ address, network, ensureSignedIn }: Props) {
             onLink={async (referendumIndex) => {
               if (!(await signedIn())) return
               link.mutate(
-                { id: d.id, referendumIndex, onUnauthorized: ensureSignedIn },
+                {
+                  id: d.id,
+                  referendumIndex,
+                  onUnauthorized: ensureSignedIn ? () => ensureSignedIn({ fresh: true }) : undefined,
+                },
                 {
                   onSuccess: () =>
                     toast.success(`Linked to referendum #${referendumIndex}`),

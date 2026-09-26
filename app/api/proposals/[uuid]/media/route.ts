@@ -41,11 +41,13 @@ import { checkUpload, queueBlurredUpload } from "@/lib/moderation/auto-flag"
 import { ownMediaKey, proposalMediaKey, uniqueMediaName } from "@/lib/r2/paths"
 import { sniffMediaMime } from "@/lib/r2/sniff"
 import { deleteObjects, putObject, sha256Hex } from "@/lib/r2/upload"
-import { insertAction, setState } from "@/lib/db/moderation"
+import { closeReports, insertAction, setState } from "@/lib/db/moderation"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
+// Room for the automatic check on large images and PDFs.
+export const maxDuration = 60
 
 const NETWORK_VALUES = [
   "enjin-relay",
@@ -85,7 +87,8 @@ export async function POST(
       { status: 400 },
     )
   }
-  const proposalUuid = uuidParse.data
+  // Keys are always lower-case, whatever case the URL used.
+  const proposalUuid = uuidParse.data.toLowerCase()
 
   const url = new URL(request.url)
   const networkParse = networkSchema.safeParse(url.searchParams.get("network"))
@@ -107,7 +110,7 @@ export async function POST(
     )
   }
 
-  const suspended = postingSuspendedResponse(me)
+  const suspended = await postingSuspendedResponse(me)
   if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.mediaUpload, identity: me.id })
@@ -204,10 +207,12 @@ export async function POST(
   // Automatic check (when enabled): clear violations - a readable recovery
   // phrase, say - are never stored; borderline images are stored blurred
   // and queued for a moderator.
-  const check =
+  const check = await checkUpload(
     sniffed === "application/pdf"
-      ? ({ action: "store" } as const)
-      : await checkUpload(() => scanCopy(body), file.name || "file")
+      ? { kind: "pdf", bytes: body }
+      : { kind: "image", jpeg: () => scanCopy(body) },
+    file.name || "file",
+  )
   if (check.action === "reject") {
     return NextResponse.json({ ok: false, error: check.message }, { status: 422 })
   }
@@ -275,7 +280,8 @@ export async function DELETE(
   if (!uuidParse.success || !networkParse.success) {
     return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 })
   }
-  const proposalUuid = uuidParse.data
+  // Keys are always lower-case, whatever case the URL used.
+  const proposalUuid = uuidParse.data.toLowerCase()
   const key = ownMediaKey(url.searchParams.get("key") ?? "", networkParse.data, proposalUuid)
   if (!key) {
     return NextResponse.json(
@@ -376,5 +382,7 @@ export async function DELETE(
       { status: 502 },
     )
   }
+  // An automatic flag on a file that is gone has nothing left to decide.
+  await closeReports("attachment", key, "resolved").catch(() => null)
   return NextResponse.json({ ok: true, deleted: true })
 }

@@ -371,6 +371,7 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
             onClick={() => setAction(a)}
             className={cn(
               "rounded-xl border px-3 py-2 text-xs font-medium transition-colors",
+              a === "delete_file" && "col-span-2 sm:col-span-4",
               action === a
                 ? a === "delete_file"
                   ? "border-destructive bg-destructive/10 text-destructive"
@@ -383,7 +384,7 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
             {a === "delete_file" ? (
               <span className="inline-flex items-center gap-1">
                 <Trash2 className="w-3 h-3" />
-                Delete file · Admin
+                Delete the file (admins, for legal takedowns)
               </span>
             ) : (
               ACTION_LABELS[a]

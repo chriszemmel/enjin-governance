@@ -883,12 +883,13 @@ export default function DocsPage() {
               . Proposers can remove their own attachments at any time.
             </p>
             <p>
-              <strong>Automatic checks</strong> (when enabled): uploaded images are
-              checked by an AI model before they are stored. Clear violations, such
-              as a readable recovery phrase, are rejected; borderline images are
-              stored blurred and sent to the moderators&apos; queue. Proposal text
-              and comments are only ever flagged for a human - the machine never
-              hides text on its own.
+              <strong>Automatic checks</strong> (when enabled): uploaded images and
+              PDFs are checked by an AI model before they are stored. Clear
+              violations, such as a readable recovery phrase, are rejected;
+              borderline files are held back and sent to the moderators&apos; queue,
+              and appear once a moderator has looked. Animated images are judged by
+              their first frame. Proposal text and comments are only ever flagged
+              for a human - the machine never hides text on its own.
             </p>
             <p>
               <strong>What moderation never does:</strong> nobody can rewrite someone
@@ -896,7 +897,9 @@ export default function DocsPage() {
               touched. A proposal&apos;s <Code>proposal.json</Code> stays byte-identical,
               so its EGOV1 verification keeps working even when an image is hidden or
               removed. Hidden images are no longer served by this site; deleted files
-              are removed from storage itself.
+              are removed from storage itself. Older proposals may still link straight
+              to the storage bucket, where a hidden (not deleted) file stays
+              reachable - legal takedowns therefore use &quot;delete file&quot;.
             </p>
           </Section>
 

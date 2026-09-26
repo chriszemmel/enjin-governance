@@ -71,7 +71,13 @@ export function MarkdownEditor({
     ref,
     () => ({
       insert(snippet, opts) {
-        const at = Math.min(cursor.current ?? value.length, value.length)
+        let at = Math.min(cursor.current ?? value.length, value.length)
+        // A block (an image) never splits the line the cursor is on - a
+        // table row or list item would break. It goes after that line.
+        if (opts?.block && at > 0 && value[at - 1] !== "\n") {
+          const eol = value.indexOf("\n", at)
+          at = eol === -1 ? value.length : eol
+        }
         let before = value.slice(0, at)
         let after = value.slice(at)
         if (opts?.block) {

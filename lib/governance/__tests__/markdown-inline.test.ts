@@ -81,6 +81,8 @@ describe("isSafeUrl", () => {
     expect(isSafeUrl("https://a.io")).toBe(true)
     expect(isSafeUrl("/proposals/1")).toBe(true)
     expect(isSafeUrl("//evil.io")).toBe(false)
+    expect(isSafeUrl("/\\evil.io")).toBe(false)
+    expect(isSafeUrl("/\t/evil.io")).toBe(false)
     expect(isSafeUrl("javascript:alert(1)")).toBe(false)
     expect(isSafeUrl("data:image/png;base64,AA")).toBe(false)
   })

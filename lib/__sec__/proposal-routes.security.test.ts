@@ -52,6 +52,8 @@ vi.mock("@/lib/db/moderation", () => ({
   insertAction: async (a: unknown) => void modLog.actions.push(a),
   listStatesForProposal: async () => [],
   getState: async () => null,
+  closeReports: async () => undefined,
+  getSuspension: async () => null,
 }))
 vi.mock("@/lib/r2/upload", async () => await import("./fake-bucket"))
 vi.mock("@/lib/db/proposals", async () => await import("./fake-db"))

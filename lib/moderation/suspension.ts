@@ -1,14 +1,24 @@
-import { NextResponse } from "next/server"
-
 /**
- * Posting pause set by an admin. Returns the 403 to send back, or null
- * when the user may post.
+ * Posting pause set by an admin, looked up by public key so it holds on
+ * every network format the wallet signs in with.
  */
-export function postingSuspendedResponse(user: {
-  posting_suspended_until?: Date | string | null
-}): NextResponse | null {
-  const until = user.posting_suspended_until ? new Date(user.posting_suspended_until) : null
-  if (!until || until.getTime() <= Date.now()) return null
+
+import "server-only"
+import { NextResponse } from "next/server"
+import { publicKeyHex } from "@/lib/auth/roles"
+import { getSuspension } from "@/lib/db/moderation"
+
+/** The 403 to send back, or null when the account may post. */
+export async function postingSuspendedResponse(user: {
+  address: string
+}): Promise<NextResponse | null> {
+  let until: Date | null
+  try {
+    until = await getSuspension(publicKeyHex(user.address))
+  } catch {
+    return null // migration 011 not applied yet, or an undecodable address
+  }
+  if (!until) return null
   return NextResponse.json(
     {
       ok: false,

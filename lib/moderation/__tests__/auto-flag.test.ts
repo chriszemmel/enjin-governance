@@ -16,7 +16,7 @@ vi.mock("@/lib/db/moderation", () => ({
 
 import { checkUpload } from "@/lib/moderation/auto-flag"
 
-const jpeg = async () => Buffer.from("jpeg")
+const image = { kind: "image" as const, jpeg: async () => Buffer.from("jpeg") }
 const verdict = (decision: "allow" | "review" | "block") => ({
   kind: "verdict",
   verdict: {
@@ -34,25 +34,30 @@ describe("checkUpload", () => {
 
   it("rejects clear violations before anything is stored", async () => {
     scan.next = verdict("block")
-    const d = await checkUpload(jpeg, "wallet.png")
+    const d = await checkUpload(image, "wallet.png")
     expect(d.action).toBe("reject")
     expect(d.action === "reject" && d.message).toContain("recovery phrase")
   })
 
   it("stores borderline images blurred, and treats a refusal the same way", async () => {
     scan.next = verdict("review")
-    expect((await checkUpload(jpeg, "a.png")).action).toBe("store_blurred")
+    expect((await checkUpload(image, "a.png")).action).toBe("store_blurred")
     scan.next = { kind: "refused" }
-    expect((await checkUpload(jpeg, "a.png")).action).toBe("store_blurred")
+    expect((await checkUpload(image, "a.png")).action).toBe("store_blurred")
   })
 
   it("never blocks an upload because the check itself failed", async () => {
     scan.next = { kind: "unavailable", reason: "timeout" }
-    expect((await checkUpload(jpeg, "a.png")).action).toBe("store")
+    expect((await checkUpload(image, "a.png")).action).toBe("store")
     scan.next = verdict("allow")
-    expect((await checkUpload(jpeg, "a.png")).action).toBe("store")
+    expect((await checkUpload(image, "a.png")).action).toBe("store")
     expect(
-      (await checkUpload(async () => Promise.reject(new Error("sharp")), "a.png")).action,
+      (
+        await checkUpload(
+          { kind: "image", jpeg: async () => Promise.reject(new Error("sharp")) },
+          "a.png",
+        )
+      ).action,
     ).toBe("store")
   })
 })

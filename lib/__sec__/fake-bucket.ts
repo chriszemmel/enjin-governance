@@ -76,3 +76,7 @@ export async function deleteObjects(keys: string[]): Promise<void> {
 export async function readObjectText(key: string): Promise<string | null> {
   return bucket.get(key)?.body ?? null
 }
+
+export async function objectExists(key: string): Promise<boolean> {
+  return bucket.has(key)
+}

@@ -443,7 +443,11 @@ export default function AdvancedCreatePage() {
         (resolvedOrigin == null ? "No valid submission origin for this amount." : null) ??
         preview?.error ??
         (preview ? null : "Connecting to the chain…"))
-  const canReview = isConnected && !detailsError && !callError && callMeta != null && !staging
+  // Existing referenda by hash: wait until the call is decoded, or the
+  // record would say "unknown.unknown".
+  const existingCallLoading = mode === "existing" && existingRef != null && existingPreimage.isPending
+  const canReview =
+    isConnected && !detailsError && !callError && callMeta != null && !staging && !existingCallLoading
 
   // ---- stage the EGOV1 record ------------------------------------------------
   const stage = useCallback(async () => {
@@ -460,7 +464,9 @@ export default function AdvancedCreatePage() {
         body: JSON.stringify({
           proposal_id: proposalId,
           network: chain.id,
-          proposer_address: activeAddress,
+          // Same encoding as the treasury wizard, so the draft shows up in the
+          // drafts panel (which matches addresses exactly).
+          proposer_address: ownAddress ?? activeAddress,
           title: title.trim(),
           summary: summary.trim() || null,
           body_markdown: body,
@@ -489,6 +495,7 @@ export default function AdvancedCreatePage() {
     }
   }, [
     activeAddress,
+    ownAddress,
     callMeta,
     ensureSignedIn,
     mode,
@@ -572,7 +579,7 @@ export default function AdvancedCreatePage() {
           block_hash: blockHash,
           block_number: blockNumber,
         },
-        ensureSignedIn,
+        () => ensureSignedIn({ fresh: true }),
       ).catch((e) => formatError(e))
       setLinkState(error ? { kind: "failed", message: error } : { kind: "linked" })
     },

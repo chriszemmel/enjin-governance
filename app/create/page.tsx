@@ -187,6 +187,7 @@ function CreatePageInner() {
           body_markdown?: string
           proposer?: string
           spend?: { amount_planck?: string; beneficiary?: string } | null
+          call?: unknown
           attachments?: {
             name: string
             url: string
@@ -196,6 +197,15 @@ function CreatePageInner() {
           }[]
         }
         if (cancelled) return
+        // A draft from the advanced composer describes a call this wizard
+        // can't edit; re-staging it here would turn it into a treasury spend.
+        if (j.call) {
+          toast.error("This draft was made in the advanced composer", {
+            description: "Cancel it from your drafts, or file it again from the advanced composer.",
+          })
+          setPrefilled(true)
+          return
+        }
         const resumable = res.headers.get("x-proposal-status") === "draft"
         const sha = res.headers.get("x-proposal-sha256")
         if (resumable && sha) {
@@ -675,7 +685,7 @@ function CreatePageInner() {
             },
             // The session can run out while the batch finalises; sign in
             // again rather than leave a live referendum unlinked.
-            ensureSignedIn,
+            () => ensureSignedIn({ fresh: true }),
           )
         } catch (err) {
           confirmError = formatError(err)

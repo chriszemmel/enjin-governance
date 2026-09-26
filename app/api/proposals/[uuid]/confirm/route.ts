@@ -34,7 +34,9 @@ export const runtime = "nodejs"
  * outer backstop so the route always answers with its own status code
  * rather than being cut off by the platform's default function timeout.
  */
-export const maxDuration = 20
+// The chain read takes up to 8 s; the rest is room for the background text
+// check (next/server `after`) that runs once the proposal is public.
+export const maxDuration = 60
 
 type BindingCheck =
   | { ok: true }

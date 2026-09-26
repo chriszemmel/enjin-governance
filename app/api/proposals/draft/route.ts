@@ -159,7 +159,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 401 },
     )
   }
-  const suspended = postingSuspendedResponse(me)
+  const suspended = await postingSuspendedResponse(me)
   if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalDraft, identity: me.id })

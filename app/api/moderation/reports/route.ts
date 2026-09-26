@@ -57,7 +57,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const created = await insertReport({
     targetType: target.type,
     targetId: target.id,
-    proposalId: target.proposal.id,
+    proposalId: target.proposal?.id ?? null,
     source: "user",
     reporterUserId: me.id,
     category: parsed.category,

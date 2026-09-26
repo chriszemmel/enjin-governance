@@ -18,7 +18,8 @@ const auth = vi.hoisted(() => ({
 }))
 const mod = vi.hoisted(() => ({
   roles: new Map<string, "moderator" | "admin">(),
-  states: new Map<string, { state: string; reason: string }>(),
+  states: new Map<string, { state: string; reason: string; source?: string }>(),
+  suspensions: new Map<string, Date | null>(),
   actions: [] as Record<string, unknown>[],
   reports: [] as Record<string, unknown>[],
   closed: [] as unknown[],
@@ -52,8 +53,18 @@ vi.mock("@/lib/rate-limit", () => ({
 }))
 vi.mock("@/lib/db/moderation", () => ({
   getGrantedRole: async (k: string) => mod.roles.get(k) ?? null,
-  setState: async (a: { targetType: string; targetId: string; state: string; reason: string }) =>
-    void mod.states.set(`${a.targetType}:${a.targetId}`, { state: a.state, reason: a.reason }),
+  setState: async (a: {
+    targetType: string
+    targetId: string
+    state: string
+    reason: string
+    source: string
+  }) =>
+    void mod.states.set(`${a.targetType}:${a.targetId}`, {
+      state: a.state,
+      reason: a.reason,
+      source: a.source,
+    }),
   getState: async (t: string, id: string) => mod.states.get(`${t}:${id}`) ?? null,
   insertAction: async (a: Record<string, unknown>) => void mod.actions.push(a),
   insertReport: async (a: Record<string, unknown>) => {
@@ -61,7 +72,8 @@ vi.mock("@/lib/db/moderation", () => ({
     return true
   },
   closeReports: async (...a: unknown[]) => void mod.closed.push(a),
-  setPostingSuspended: async () => undefined,
+  setSuspension: async (key: string, until: Date | null) => void mod.suspensions.set(key, until),
+  getSuspension: async () => null,
 }))
 vi.mock("@/lib/db/comments", () => ({ getCommentById: async () => null }))
 vi.mock("@/lib/db/users", () => ({ getUserByAddress: async () => null }))
@@ -97,6 +109,7 @@ beforeEach(() => {
   mod.states.clear()
   mod.actions.length = 0
   mod.reports.length = 0
+  mod.suspensions.clear()
   mod.roles.set(`0x${publicKeyOf(MOD)}`, "moderator")
   db.seedProposal({
     id: PID,
@@ -227,5 +240,102 @@ describe("actions", () => {
       (await act({ target_type: "proposal", target_id: other, action: "hide", reason: "Spam" }))
         .status,
     ).toBe(404)
+  })
+})
+
+const read = (key: string) =>
+  READ(new NextRequest(`https://gov.test/r/${key}`), {
+    params: Promise.resolve({ key: key.split("/") }),
+  })
+
+describe("serving moderated media", () => {
+  it("holds images the automatic check blurred, but serves a moderator's blur", async () => {
+    mod.states.set(`attachment:${FILE}`, { state: "blurred", reason: "check", source: "automatic" })
+    expect((await read(FILE)).status).toBe(404)
+    expect((await read(`${FILE}.thumb.webp`)).status).toBe(404)
+    mod.states.set(`attachment:${FILE}`, {
+      state: "blurred",
+      reason: "sensitive",
+      source: "moderator",
+    })
+    expect((await read(FILE)).status).toBe(200)
+  })
+
+  it("checks a file named like a thumbnail under its own key too", async () => {
+    const odd = `proposals/${NET}/${PID}/media/ab12cd34-seed.thumb.webp`
+    bucketMod.bucket.set(odd, { body: "IMG", contentType: "image/webp" })
+    mod.states.set(`attachment:${odd}`, { state: "hidden", reason: "secret", source: "moderator" })
+    expect((await read(odd)).status).toBe(404)
+  })
+})
+
+describe("uploads without a saved draft", () => {
+  it("can still be hidden and deleted while the file exists", async () => {
+    const orphanId = "55555555-5555-4555-8555-555555555555"
+    const orphan = `proposals/${NET}/${orphanId}/media/cd34ab12-flyer.pdf`
+    bucketMod.bucket.set(orphan, { body: "PDF", contentType: "application/pdf" })
+    signIn(ADMIN)
+    expect(
+      (
+        await act({
+          target_type: "attachment",
+          target_id: orphan,
+          action: "hide",
+          reason: "Phishing flyer",
+        })
+      ).status,
+    ).toBe(200)
+    expect(mod.actions.at(-1)).toMatchObject({ proposalId: null, network: NET })
+    expect(
+      (
+        await act({
+          target_type: "attachment",
+          target_id: orphan,
+          action: "delete_file",
+          reason: "Phishing flyer",
+        })
+      ).status,
+    ).toBe(200)
+    expect(bucketMod.bucket.has(orphan)).toBe(false)
+    // Made-up keys in an unclaimed folder are still refused.
+    const missing = `proposals/${NET}/${orphanId}/media/ef56ab78-nothing.png`
+    expect(
+      (
+        await act({
+          target_type: "attachment",
+          target_id: missing,
+          action: "hide",
+          reason: "Not there",
+        })
+      ).status,
+    ).toBe(404)
+  })
+})
+
+describe("posting pauses", () => {
+  it("are stored by public key, whatever address format was given", async () => {
+    signIn(ADMIN)
+    const res = await act({
+      target_type: "user",
+      target_id: USER,
+      action: "suspend",
+      days: 7,
+      reason: "Repeated phishing links",
+    })
+    expect(res.status).toBe(200)
+    const [[key, until]] = [...mod.suspensions.entries()]
+    expect(key).toBe(`0x${publicKeyOf(USER)}`)
+    expect(until!.getTime()).toBeGreaterThan(Date.now())
+    signIn(MOD)
+    expect(
+      (
+        await act({
+          target_type: "user",
+          target_id: USER,
+          action: "unsuspend",
+          reason: "Appeal accepted",
+        })
+      ).status,
+    ).toBe(403)
   })
 })

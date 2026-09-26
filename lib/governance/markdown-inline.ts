@@ -22,6 +22,8 @@ export type InlineNode =
 
 /** Links may only be http(s) or same-site paths - no javascript: etc. */
 export function isSafeUrl(url: string): boolean {
+  // Browsers read "/\host" (and tab / newline tricks) as "//host".
+  if (url.includes("\\") || /[\u0000-\u001f\u007f]/.test(url)) return false
   return /^https?:\/\//i.test(url) || (url.startsWith("/") && !url.startsWith("//"))
 }
 
