@@ -34,7 +34,8 @@ const KIND_SHORT: Record<string, string> = {
 
 function usd(n: number): string {
   if (n === 0) return "$0"
-  if (n < 0.01) return `$${n.toFixed(4)}`
+  if (n < 0.001) return `$${n.toFixed(4)}`
+  if (n < 0.1) return `$${n.toFixed(3)}`
   return `$${n.toFixed(2)}`
 }
 
