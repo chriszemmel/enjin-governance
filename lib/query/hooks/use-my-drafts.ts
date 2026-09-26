@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
+import { confirmWithRetry } from "@/lib/governance/confirm-client"
+import { readApiError } from "@/lib/utils/api-error"
 
 export type MyDraftStatus =
   | "draft"
@@ -54,10 +56,7 @@ export function useCancelDraft() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(reason ? { reason } : {}),
       })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || `HTTP ${res.status}`)
-      }
+      if (!res.ok) throw new Error(await readApiError(res))
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["my-drafts"] })
@@ -72,10 +71,34 @@ export function useDeleteDraft() {
       const res = await fetch(`/api/proposals/${id}`, {
         method: "DELETE",
       })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || `HTTP ${res.status}`)
-      }
+      if (!res.ok) throw new Error(await readApiError(res))
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["my-drafts"] })
+    },
+  })
+}
+
+/**
+ * Link a draft to the referendum it already created on chain - for a
+ * submission that landed but whose confirm step never went through. The
+ * server only accepts it if that referendum's on-chain metadata is exactly
+ * this draft's envelope.
+ */
+export function useLinkDraft() {
+  const qc = useQueryClient()
+  return useMutation<
+    void,
+    Error,
+    { id: string; referendumIndex: number; onUnauthorized?: () => Promise<boolean> }
+  >({
+    mutationFn: async ({ id, referendumIndex, onUnauthorized }) => {
+      const error = await confirmWithRetry(
+        id,
+        { referendum_index: referendumIndex, tx_hash: null, block_hash: null, block_number: null },
+        onUnauthorized,
+      )
+      if (error) throw new Error(error)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["my-drafts"] })

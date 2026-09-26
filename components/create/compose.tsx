@@ -64,7 +64,11 @@ type ComposeProps = {
 export function Compose(p: ComposeProps) {
   return (
     <div className="space-y-5">
-      <MyDraftsPanel address={p.proposerAddress} network={p.network} />
+      <MyDraftsPanel
+        address={p.proposerAddress}
+        network={p.network}
+        ensureSignedIn={p.beforeUpload}
+      />
       <BeneficiaryCard
         isConnected={p.isConnected}
         accountName={p.accountName}

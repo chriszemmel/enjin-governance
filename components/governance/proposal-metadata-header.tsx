@@ -253,7 +253,7 @@ function MarkdownLite({ source }: { source: string }) {
   const blocks = parseMarkdownBlocks(source)
 
   return (
-    <div className="space-y-3 text-sm leading-relaxed">
+    <div className="space-y-3 text-sm leading-relaxed [overflow-wrap:anywhere]">
       {blocks.map((b, i) => {
         if (b.kind === "code") {
           return (

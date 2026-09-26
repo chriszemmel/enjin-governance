@@ -355,7 +355,7 @@ function ProposalDetailPageInner() {
             </h1>
 
             {metadataQuery.data?.summary && (
-              <p className="text-sm text-muted-foreground leading-relaxed">
+              <p className="text-sm text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
                 {metadataQuery.data.summary}
               </p>
             )}

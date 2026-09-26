@@ -88,7 +88,7 @@ export function ProposalCard({
 
       <h3
         className={cn(
-          "text-base font-semibold leading-snug mb-3 line-clamp-2",
+          "text-base font-semibold leading-snug mb-3 line-clamp-2 [overflow-wrap:anywhere]",
           isWithdrawn
             ? "text-muted-foreground line-through decoration-destructive/60 decoration-1"
             : "text-foreground",
