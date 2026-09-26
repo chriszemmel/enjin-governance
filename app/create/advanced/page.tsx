@@ -11,12 +11,13 @@ import { Footer } from "@/components/layout/footer"
 import { WalletModal } from "@/components/wallet/wallet-modal"
 import { SignRequestModal } from "@/components/wallet/sign-request-modal"
 import { PlaceDepositButton } from "@/components/governance/place-deposit-button"
+import { AddressFormatDialog } from "@/components/create/address-format-dialog"
 import { EnactmentField } from "@/components/create/enactment-field"
 import { cn } from "@/lib/utils"
 import { subscanExtrinsicUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { parseTokenAmount } from "@/lib/chain/format"
-import { isValidAddressForChain } from "@/lib/chain/ss58"
+import { encodeForChain, inspectAddress, isValidAddressForChain } from "@/lib/chain/ss58"
 import {
   buildProposalCall,
   PROPOSAL_KIND_META,
@@ -94,7 +95,7 @@ export default function AdvancedCreatePage() {
   const chain = useActiveChain()
   const apiQuery = useApi()
   const currentBlockQuery = useCurrentBlock()
-  const { status: walletStatus, session } = useWallet()
+  const { status: walletStatus, session, activeAddress } = useWallet()
   const isConnected = walletStatus === "connected"
   const walletMeta = walletDisplayFor(session ?? null)
   const sign = useSignFlow()
@@ -111,6 +112,19 @@ export default function AdvancedCreatePage() {
   const setField = (k: keyof Fields, v: string) =>
     setFields((f) => ({ ...f, [k]: v }))
 
+  const beneficiaryInspection = useMemo(
+    () => inspectAddress(fields.beneficiary, chain.id),
+    [fields.beneficiary, chain.id],
+  )
+  const ownAddress = useMemo(() => {
+    if (!activeAddress) return null
+    try {
+      return encodeForChain(activeAddress, chain.id)
+    } catch {
+      return activeAddress
+    }
+  }, [activeAddress, chain.id])
+
   // Build the proposal spec (and any field-level error) from the inputs.
   const { spec, fieldError } = useMemo<{
     spec: ProposalCallSpec | null
@@ -122,7 +136,14 @@ export default function AdvancedCreatePage() {
           if (!fields.amount.trim()) return { spec: null, fieldError: "Enter an amount." }
           const amount = parseTokenAmount(fields.amount, chain)
           if (amount <= 0n) return { spec: null, fieldError: "Amount must be positive." }
-          const beneficiary = fields.beneficiary.trim()
+          const inspected = inspectAddress(fields.beneficiary, chain.id)
+          if (inspected.status === "foreign") {
+            return {
+              spec: null,
+              fieldError: `Beneficiary is a ${inspected.networkLabel} address. Convert or clear it.`,
+            }
+          }
+          const beneficiary = inspected.status === "native" ? inspected.address : ""
           if (!beneficiary || !isValidAddressForChain(beneficiary, chain.id)) {
             return { spec: null, fieldError: "Enter a valid beneficiary address." }
           }
@@ -503,6 +524,17 @@ export default function AdvancedCreatePage() {
       <Footer />
 
       <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
+      {kind === "treasurySpend" && beneficiaryInspection.status === "foreign" && (
+        <AddressFormatDialog
+          input={beneficiaryInspection.input}
+          networkLabel={beneficiaryInspection.networkLabel}
+          convertedAddress={beneficiaryInspection.address}
+          chainShortName={chain.shortName}
+          isOwnWallet={beneficiaryInspection.address === ownAddress}
+          onConvert={() => setField("beneficiary", beneficiaryInspection.address)}
+          onCancel={() => setField("beneficiary", "")}
+        />
+      )}
       <SignRequestModal
         open={sign.isOpen}
         walletName={walletMeta.name}

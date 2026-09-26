@@ -14,6 +14,7 @@ import { SignRequestModal } from "@/components/wallet/sign-request-modal"
 import { useSignFlow } from "@/lib/wallet/use-sign-flow"
 import { type CallStatus } from "@/components/create/call-card"
 import { type UploadedAttachment } from "@/components/create/attachment-dropzone"
+import { AddressFormatDialog } from "@/components/create/address-format-dialog"
 import { Compose } from "@/components/create/compose"
 import { Stage } from "@/components/create/stage"
 import { SignAndDone } from "@/components/create/sign-and-done"
@@ -27,7 +28,11 @@ import {
 import { subscanExtrinsicUrl, subscanReferendumUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
-import { encodeForChain, isValidAddressForChain } from "@/lib/chain/ss58"
+import {
+  encodeForChain,
+  inspectAddress,
+  isValidAddressForChain,
+} from "@/lib/chain/ss58"
 import { extractReferendumIndex } from "@/lib/governance/referenda"
 import { hashCall } from "@/lib/governance/preimage"
 import { formatTrackName } from "@/lib/governance/display"
@@ -183,15 +188,19 @@ function CreatePageInner() {
     }
   }, [activeAddress, chain.id])
   const [beneficiaryInput, setBeneficiaryInput] = useState("")
-  const beneficiary = useMemo(() => {
-    const raw = beneficiaryInput.trim()
-    if (!raw) return proposerAddress // empty = pay self
-    try {
-      return encodeForChain(raw, chain.id)
-    } catch {
-      return raw
-    }
-  }, [beneficiaryInput, proposerAddress, chain.id])
+  // What was typed is never converted silently: an address in another
+  // network's format opens AddressFormatDialog, and the field only counts
+  // once it holds an address in this chain's own format.
+  const beneficiaryInspection = useMemo(
+    () => inspectAddress(beneficiaryInput, chain.id),
+    [beneficiaryInput, chain.id],
+  )
+  const beneficiary =
+    beneficiaryInspection.status === "empty"
+      ? proposerAddress // empty = pay self
+      : beneficiaryInspection.status === "native"
+        ? beneficiaryInspection.address
+        : null
   const beneficiaryValid =
     beneficiary != null && isValidAddressForChain(beneficiary, chain.id)
   const beneficiaryIsSelf =
@@ -398,9 +407,11 @@ function CreatePageInner() {
   }
   if (isConnected && !beneficiaryValid) {
     missingReasons.push(
-      beneficiaryInput.trim()
-        ? "Beneficiary address isn't valid on this chain"
-        : "Connected address isn't valid on this chain",
+      beneficiaryInspection.status === "foreign"
+        ? `Beneficiary is a ${beneficiaryInspection.networkLabel} address. Convert or clear it.`
+        : beneficiaryInput.trim()
+          ? "Beneficiary address isn't valid on this chain"
+          : "Connected address isn't valid on this chain",
     )
   }
   if (title.trim().length < 10) {
@@ -785,7 +796,12 @@ function CreatePageInner() {
             proposerAddress={proposerAddress}
             beneficiary={beneficiary}
             beneficiaryInput={beneficiaryInput}
-            beneficiaryValid={beneficiaryValid}
+            beneficiaryStatus={beneficiaryInspection.status}
+            beneficiaryNetworkLabel={
+              beneficiaryInspection.status === "foreign"
+                ? beneficiaryInspection.networkLabel
+                : null
+            }
             beneficiaryIsSelf={beneficiaryIsSelf}
             accountName={activeAccountName}
             chainShort={chain.shortName}
@@ -961,6 +977,17 @@ function CreatePageInner() {
       </div>
 
       <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
+      {step === "create" && beneficiaryInspection.status === "foreign" && (
+        <AddressFormatDialog
+          input={beneficiaryInspection.input}
+          networkLabel={beneficiaryInspection.networkLabel}
+          convertedAddress={beneficiaryInspection.address}
+          chainShortName={chain.shortName}
+          isOwnWallet={beneficiaryInspection.address === proposerAddress}
+          onConvert={() => setBeneficiaryInput(beneficiaryInspection.address)}
+          onCancel={() => setBeneficiaryInput("")}
+        />
+      )}
       <SignRequestModal
         open={sign.isOpen}
         walletName={walletMeta.name}

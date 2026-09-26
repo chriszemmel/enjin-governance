@@ -12,6 +12,7 @@ import {
   type UploadedAttachment,
 } from "@/components/create/attachment-dropzone"
 import type { EnactmentChoice } from "@/lib/governance/enactment"
+import type { AddressInspection } from "@/lib/chain/ss58"
 import { MyDraftsPanel } from "@/components/create/my-drafts-panel"
 import { BeneficiaryCard } from "./beneficiary-card"
 import { EnactmentField } from "./enactment-field"
@@ -26,7 +27,10 @@ type ComposeProps = {
   beneficiary: string | null
   /** Raw text in the beneficiary field ("" = pay self). */
   beneficiaryInput: string
-  beneficiaryValid: boolean
+  /** What the field holds - see inspectAddress. */
+  beneficiaryStatus: AddressInspection["status"]
+  /** Network name when the field holds another network's address format. */
+  beneficiaryNetworkLabel: string | null
   beneficiaryIsSelf: boolean
   accountName: string | null
   chainShort: string
@@ -89,22 +93,19 @@ export function Compose(p: ComposeProps) {
           spellCheck={false}
           className={cn(
             "w-full px-4 py-3 rounded-xl bg-surface-1 border text-sm text-foreground font-mono focus:outline-none focus:ring-1 transition-all disabled:opacity-50",
-            p.beneficiaryInput.trim() && !p.beneficiaryValid
+            p.beneficiaryStatus === "invalid"
               ? "border-destructive/50 focus:border-destructive focus:ring-destructive/30"
-              : "border-border focus:border-primary/50 focus:ring-primary/20",
+              : p.beneficiaryStatus === "foreign"
+                ? "border-amber-500/50 focus:border-amber-500 focus:ring-amber-500/30"
+                : "border-border focus:border-primary/50 focus:ring-primary/20",
           )}
         />
-        {p.beneficiaryInput.trim() && !p.beneficiaryValid ? (
-          <p className="text-[11px] text-destructive">
-            Not a valid address for {p.chainShort}.
-          </p>
-        ) : (
-          <p className="text-[11px] text-muted-foreground">
-            {p.beneficiaryIsSelf
-              ? "Treasury payout goes to your connected wallet. Enter another address to pay someone else."
-              : "Treasury payout goes to this address - not your wallet. Double-check it."}
-          </p>
-        )}
+        <BeneficiaryHint
+          status={p.beneficiaryStatus}
+          networkLabel={p.beneficiaryNetworkLabel}
+          isSelf={p.beneficiaryIsSelf}
+          chainShort={p.chainShort}
+        />
       </div>
 
       <Field
@@ -221,5 +222,48 @@ export function Compose(p: ComposeProps) {
         </ul>
       </details>
     </div>
+  )
+}
+
+function BeneficiaryHint({
+  status,
+  networkLabel,
+  isSelf,
+  chainShort,
+}: {
+  status: AddressInspection["status"]
+  networkLabel: string | null
+  isSelf: boolean
+  chainShort: string
+}) {
+  if (status === "invalid") {
+    return (
+      <p className="text-[11px] text-destructive">Not a valid address for {chainShort}.</p>
+    )
+  }
+  if (status === "foreign") {
+    return (
+      <p className="text-[11px] text-amber-600 dark:text-amber-400">
+        {networkLabel === "raw public key" ? "Raw public key" : `${networkLabel} address`}.
+        Convert it to {chainShort} format before staging.
+      </p>
+    )
+  }
+  if (status === "empty") {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        Treasury payout goes to your connected wallet. Enter another address to pay someone
+        else.
+      </p>
+    )
+  }
+  return isSelf ? (
+    <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+      {chainShort} address - this is your connected wallet.
+    </p>
+  ) : (
+    <p className="text-[11px] text-muted-foreground">
+      Treasury payout goes to this address - not your wallet. Double-check it.
+    </p>
   )
 }

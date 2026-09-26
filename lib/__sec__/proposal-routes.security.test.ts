@@ -120,6 +120,16 @@ describe("draft POST", () => {
     expect(db.proposals.size).toBe(1)
   })
 
+  it("rejects a beneficiary in another network's format", async () => {
+    // A valid Enjin Matrixchain address (prefix 1110), not Enjin Relay.
+    const matrix = "efRKnRAsiKi8pHp1LvbvokibcYgcdYMAQFRPgGZKarNzq7dB5"
+    const res = await POST(
+      req("https://gov.test/api/proposals/draft", "POST", draftBody({ beneficiary: matrix, amount_planck: "1" })),
+    )
+    expect(res.status).toBe(400)
+    expect(bucketMod.bucket.has(proposalJsonKey(NET, OWN_ID))).toBe(false)
+  })
+
   it("still saves a normal draft with its own attachment", async () => {
     const mediaKey = `proposals/${NET}/${OWN_ID}/media/roadmap.png`
     const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [att(mediaKey, "roadmap.png")] })))

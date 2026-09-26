@@ -29,7 +29,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
-import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
+import { initializeWasm, isValidAddressForChain, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import {
   getProposalById,
@@ -135,6 +135,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(
       { ok: false, error: "You can only file a proposal for your own wallet." },
       { status: 403 },
+    )
+  }
+
+  // The payout address must already be in this network's own format - the
+  // browser asks before converting, and the server doesn't convert either.
+  if (
+    parsed.beneficiary != null &&
+    !isValidAddressForChain(parsed.beneficiary, parsed.network)
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "Beneficiary must be a valid address for this network." },
+      { status: 400 },
     )
   }
 
