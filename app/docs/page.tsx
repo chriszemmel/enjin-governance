@@ -695,7 +695,8 @@ export default function DocsPage() {
               </li>
               <li>
                 <strong>Avatar</strong>{" "}- PNG/JPEG/WebP/GIF up to
-                6 MB, transcoded server-side to a 150&times;150 PNG with
+                4 MB (larger photos are shrunk in the browser first),
+                transcoded server-side to a 150&times;150 PNG with
                 EXIF stripped, stored in R2 at{" "}
                 <Code>user-avatars/&#123;user_uuid&#125;.png</Code>.
               </li>

@@ -2,6 +2,9 @@
 
 import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { fitForUpload } from "@/lib/uploads/fit-for-upload"
+import { MAX_UPLOAD_LABEL } from "@/lib/uploads/limits"
+import { readApiError } from "@/lib/utils/api-error"
 
 export type PublicProfile = {
   id: string
@@ -123,13 +126,22 @@ export function useUpdateProfile() {
 export function useUploadAvatar() {
   const qc = useQueryClient()
   return useMutation<{ avatar_url: string }, Error, File>({
-    mutationFn: async (file) => {
+    mutationFn: async (picked) => {
+      const fit = await fitForUpload(picked)
+      if (!fit.ok) throw new Error(fit.error)
       const form = new FormData()
-      form.set("file", file)
+      form.set("file", fit.file)
       const res = await fetch("/api/users/me/avatar", {
         method: "POST",
         body: form,
       })
+      if (!res.ok) {
+        throw new Error(
+          res.status === 413
+            ? `Images can be up to ${MAX_UPLOAD_LABEL}.`
+            : await readApiError(res),
+        )
+      }
       const json = (await res.json()) as
         | { ok: true; avatar_url: string }
         | { ok: false; error: string }

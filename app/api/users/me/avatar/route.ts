@@ -7,10 +7,10 @@ import { putObject } from "@/lib/r2/upload"
 import { transcodeAvatar } from "@/lib/r2/avatar"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/uploads/limits"
 
 export const runtime = "nodejs"
 
-const MAX_BYTES = 6 * 1024 * 1024
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -49,9 +49,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 400 },
     )
   }
-  if (file.size === 0 || file.size > MAX_BYTES) {
+  if (file.size === 0) {
+    return NextResponse.json({ ok: false, error: "Empty file" }, { status: 400 })
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json(
-      { ok: false, error: `File must be 1 - ${MAX_BYTES} bytes` },
+      { ok: false, error: `Images can be up to ${MAX_UPLOAD_LABEL}.` },
       { status: 413 },
     )
   }

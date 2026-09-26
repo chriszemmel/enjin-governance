@@ -15,8 +15,9 @@
 
 import "server-only"
 import sharp from "sharp"
+import { MAX_IMAGE_EDGE_PX } from "@/lib/uploads/limits"
 
-export const MAX_EDGE_PX = 2560
+export const MAX_EDGE_PX = MAX_IMAGE_EDGE_PX
 export const THUMB_EDGE_PX = 640
 /** Refuse decompression bombs early (~ 12000 x 10000 px). */
 const MAX_INPUT_PIXELS = 120_000_000

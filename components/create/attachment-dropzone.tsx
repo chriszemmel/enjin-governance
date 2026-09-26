@@ -6,6 +6,8 @@ import { toast } from "sonner"
 import { MediaThumb, formatBytes } from "@/components/governance/attachment-gallery"
 import type { ChainId } from "@/lib/chain/chains"
 import { resolveProposalMedia } from "@/lib/governance/proposal-media"
+import { fitForUpload } from "@/lib/uploads/fit-for-upload"
+import { MAX_UPLOAD_LABEL } from "@/lib/uploads/limits"
 import { cn } from "@/lib/utils"
 import { readApiError } from "@/lib/utils/api-error"
 import { formatError } from "@/lib/utils/format-error"
@@ -86,7 +88,15 @@ export function AttachmentDropzone({
 
       setUploading(true)
       const added: UploadedAttachment[] = []
-      for (const file of accepted) {
+      for (const picked of accepted) {
+        // Big photos are shrunk here; files that can't be are refused
+        // before they are sent, with a message that says why.
+        const fit = await fitForUpload(picked)
+        if (!fit.ok) {
+          toast.error(`Upload failed: ${picked.name}`, { description: fit.error })
+          continue
+        }
+        const file = fit.file
         const form = new FormData()
         form.set("file", file)
         try {
@@ -94,6 +104,15 @@ export function AttachmentDropzone({
             `/api/proposals/${proposalId}/media?network=${network}`,
             { method: "POST", body: form },
           )
+          if (!res.ok) {
+            toast.error(`Upload failed: ${picked.name}`, {
+              description:
+                res.status === 413
+                  ? `Files can be up to ${MAX_UPLOAD_LABEL}.`
+                  : await readApiError(res),
+            })
+            continue
+          }
           const json = (await res.json()) as
             | {
                 ok: true
@@ -108,11 +127,11 @@ export function AttachmentDropzone({
             | { ok: false; error: string }
           if (!res.ok || !("ok" in json) || !json.ok) {
             const err = "error" in json ? json.error : `HTTP ${res.status}`
-            toast.error(`Upload failed: ${file.name}`, { description: err })
+            toast.error(`Upload failed: ${picked.name}`, { description: err })
             continue
           }
           if (json.moderation === "blurred") {
-            toast.info(`${file.name} was sent to moderators`, {
+            toast.info(`${picked.name} was sent to moderators`, {
               description:
                 "The automatic check wants a human to look at it first. Until then it isn't shown.",
             })
@@ -127,7 +146,7 @@ export function AttachmentDropzone({
             pending_review: json.moderation === "blurred" || undefined,
           })
         } catch (e) {
-          toast.error(`Upload failed: ${file.name}`, {
+          toast.error(`Upload failed: ${picked.name}`, {
             description: formatError(e),
           })
         }
@@ -196,7 +215,7 @@ export function AttachmentDropzone({
               Drop images or PDFs here, or click to browse
             </span>
             <span className="text-[11px] text-muted-foreground">
-              PNG / JPG / WEBP / GIF / PDF · up to 20 MB · max {MAX_FILES} files
+              PNG / JPG / WEBP / GIF / PDF · up to {MAX_UPLOAD_LABEL} · max {MAX_FILES} files
             </span>
           </>
         )}

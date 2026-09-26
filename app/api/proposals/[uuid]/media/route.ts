@@ -12,7 +12,8 @@
  * draft endpoint inserts attachment rows after the proposals row exists.
  *
  * Hard limits:
- *   - 20 MB per file (matches the DB CHECK constraint)
+ *   - 4 MB per file (MAX_UPLOAD_BYTES: Vercel refuses larger request
+ *     bodies; the browser shrinks big photos first). The DB allows 20 MB.
  *   - image/png, image/jpeg, image/webp, image/gif, application/pdf
  *
  * DELETE /api/proposals/[uuid]/media?network=…&key=…
@@ -45,6 +46,7 @@ import { deleteObjects, putObject, sha256Hex } from "@/lib/r2/upload"
 import { closeReports, insertAction, setState } from "@/lib/db/moderation"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/uploads/limits"
 
 export const runtime = "nodejs"
 // Room for the automatic check on large images and PDFs.
@@ -57,7 +59,6 @@ const NETWORK_VALUES = [
   "canary-matrix",
 ] as const
 
-const MAX_BYTES = 20 * 1024 * 1024
 const ALLOWED_MIME = new Set([
   "image/png",
   "image/jpeg",
@@ -162,9 +163,9 @@ export async function POST(
   if (file.name.length > 255) {
     return NextResponse.json({ ok: false, error: "File name is too long." }, { status: 400 })
   }
-  if (file.size > MAX_BYTES) {
+  if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json(
-      { ok: false, error: `File exceeds ${MAX_BYTES} bytes` },
+      { ok: false, error: `Files can be up to ${MAX_UPLOAD_LABEL}.` },
       { status: 413 },
     )
   }
