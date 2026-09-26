@@ -884,12 +884,15 @@ export default function DocsPage() {
             </p>
             <p>
               <strong>Automatic checks</strong> (when enabled): uploaded images and
-              PDFs are checked by an AI model before they are stored. Clear
-              violations, such as a readable recovery phrase, are rejected;
-              borderline files are held back and sent to the moderators&apos; queue,
-              and appear once a moderator has looked. Animated images are judged by
-              their first frame. Proposal text and comments are only ever flagged
-              for a human - the machine never hides text on its own.
+              PDFs are checked by an AI model (Anthropic&apos;s Claude) before they
+              are stored. Clear violations, such as a readable recovery phrase, are
+              rejected or held, depending on the admins&apos; setting; borderline
+              files are held back and sent to the moderators&apos; queue, and appear
+              once a moderator has looked. Animated images are judged by their first
+              frame. Proposal text and comments are only ever flagged for a human -
+              the machine never hides text on its own. Admins choose the model, what
+              is checked and a daily limit; past the limit, content is posted
+              unchecked and moderated by reports as usual.
             </p>
             <p>
               <strong>What moderation never does:</strong> nobody can rewrite someone

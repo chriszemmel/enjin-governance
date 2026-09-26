@@ -23,6 +23,7 @@ const mod = vi.hoisted(() => ({
   actions: [] as Record<string, unknown>[],
   reports: [] as Record<string, unknown>[],
   closed: [] as unknown[],
+  settings: new Map<string, unknown>(),
 }))
 
 vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: async () => auth.user }))
@@ -74,6 +75,18 @@ vi.mock("@/lib/db/moderation", () => ({
   closeReports: async (...a: unknown[]) => void mod.closed.push(a),
   setSuspension: async (key: string, until: Date | null) => void mod.suspensions.set(key, until),
   getSuspension: async () => null,
+  getSetting: async (k: string) => mod.settings.get(k) ?? null,
+  saveSetting: async (k: string, v: unknown) => void mod.settings.set(k, v),
+  scanChecksToday: async () => 12,
+  scanUsageThisMonth: async () => [
+    {
+      model: "claude-haiku-4-5",
+      kind: "images",
+      checks: 40,
+      input_tokens: 92_000,
+      output_tokens: 6_000,
+    },
+  ],
 }))
 vi.mock("@/lib/db/comments", () => ({ getCommentById: async () => null }))
 vi.mock("@/lib/db/users", () => ({ getUserByAddress: async () => null }))
@@ -86,6 +99,8 @@ import { publicKeyOf } from "@/lib/chain/ss58"
 import { POST as REPORT } from "@/app/api/moderation/reports/route"
 import { POST as ACT } from "@/app/api/moderation/actions/route"
 import { GET as READ } from "@/app/r/[...key]/route"
+import { GET as SETTINGS, PUT as SAVE_SETTINGS } from "@/app/api/moderation/settings/route"
+import { DEFAULT_SCAN_SETTINGS } from "@/lib/moderation/scan-settings"
 
 const NET = "enjin-relay"
 const PID = "22222222-2222-4222-8222-222222222222"
@@ -337,5 +352,48 @@ describe("posting pauses", () => {
         })
       ).status,
     ).toBe(403)
+  })
+})
+
+describe("content-check settings", () => {
+  const put = (body: unknown) =>
+    SAVE_SETTINGS(
+      new NextRequest("https://gov.test/api/moderation/settings", {
+        method: "PUT",
+        body: JSON.stringify(body),
+        headers: { "content-type": "application/json" },
+      }),
+    )
+  const wanted = { ...DEFAULT_SCAN_SETTINGS, enabled: true, model: "claude-sonnet-5" }
+
+  it("are for admins only", async () => {
+    expect((await SETTINGS()).status).toBe(401)
+    expect((await put(wanted)).status).toBe(401)
+    signIn(MOD)
+    expect((await SETTINGS()).status).toBe(403)
+    expect((await put(wanted)).status).toBe(403)
+    expect(mod.settings.size).toBe(0)
+  })
+
+  it("save a valid set, reject anything else, and report usage with its cost", async () => {
+    signIn(ADMIN)
+    expect((await put({ ...wanted, model: "gpt-9" })).status).toBe(400)
+    expect((await put({ ...wanted, dailyLimit: -1 })).status).toBe(400)
+    expect((await put({ ...wanted, apiKey: "sk-..." })).status).toBe(400)
+    expect((await put(wanted)).status).toBe(200)
+    expect(mod.settings.get("content_scan")).toEqual(wanted)
+
+    const res = await SETTINGS()
+    const body = (await res.json()) as {
+      settings: typeof wanted
+      api_key_configured: boolean
+      checks_today: number
+      month: { cost_usd: number }[]
+    }
+    expect(body.settings).toEqual(wanted)
+    expect(body.checks_today).toBe(12)
+    // 92k in at $1 + 6k out at $5 per million tokens.
+    expect(body.month[0]!.cost_usd).toBeCloseTo(0.122)
+    expect(JSON.stringify(body)).not.toContain("ANTHROPIC")
   })
 })

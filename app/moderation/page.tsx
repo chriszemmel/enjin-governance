@@ -6,6 +6,7 @@ import { ArrowRight, Bot, Eye, FileText, Loader2, ShieldCheck, Trash2, UserX } f
 import { toast } from "sonner"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
+import { ScanSettingsPanel } from "@/components/moderation/scan-settings-panel"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { encodePublicKeyForChain, shortenAddress } from "@/lib/chain/ss58"
 import {
@@ -70,7 +71,7 @@ export default function ModerationPage() {
   const roleQuery = useMyModerationRole(!!me.data)
   const role = roleQuery.data ?? null
   const queue = useModerationQueue(role != null)
-  const [tab, setTab] = useState<"queue" | "roles">("queue")
+  const [tab, setTab] = useState<"queue" | "roles" | "settings">("queue")
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
 
   const items = useMemo(() => queue.data?.items ?? [], [queue.data])
@@ -104,9 +105,14 @@ export default function ModerationPage() {
                   Public log
                 </Link>
                 {role === "admin" && (
-                  <TabButton active={tab === "roles"} onClick={() => setTab("roles")}>
-                    Roles
-                  </TabButton>
+                  <>
+                    <TabButton active={tab === "roles"} onClick={() => setTab("roles")}>
+                      Roles
+                    </TabButton>
+                    <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>
+                      Settings
+                    </TabButton>
+                  </>
                 )}
               </div>
             )}
@@ -130,8 +136,10 @@ export default function ModerationPage() {
               </Link>{" "}
               lists every decision.
             </Notice>
-          ) : tab === "roles" ? (
+          ) : tab === "roles" && role === "admin" ? (
             <RolesPanel />
+          ) : tab === "settings" && role === "admin" ? (
+            <ScanSettingsPanel />
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1fr] gap-4">
               <div className="rounded-2xl bg-card border border-border overflow-hidden">

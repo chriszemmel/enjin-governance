@@ -308,3 +308,68 @@ export async function setSuspension(publicKey: string, until: Date | null, by: s
     ON CONFLICT (public_key) DO UPDATE SET until = EXCLUDED.until, created_by = EXCLUDED.created_by
   `
 }
+
+// ---- settings and scan usage (scripts/012_moderation_settings.sql) ------------
+
+export async function getSetting(key: string): Promise<unknown> {
+  const rows = (await getSql()`
+    SELECT value FROM moderation_settings WHERE key = ${key} LIMIT 1
+  `) as { value: unknown }[]
+  return rows[0]?.value ?? null
+}
+
+export async function saveSetting(key: string, value: unknown, by: string): Promise<void> {
+  await getSql()`
+    INSERT INTO moderation_settings (key, value, updated_by, updated_at)
+    VALUES (${key}, ${JSON.stringify(value)}, ${by}, NOW())
+    ON CONFLICT (key) DO UPDATE
+      SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()
+  `
+}
+
+/** Count one check and its tokens against today (UTC). */
+export async function recordScanUsage(a: {
+  model: string
+  kind: "images" | "pdfs" | "proposals" | "comments"
+  inputTokens: number
+  outputTokens: number
+}): Promise<void> {
+  await getSql()`
+    INSERT INTO moderation_scan_usage (day, model, kind, checks, input_tokens, output_tokens)
+    VALUES ((NOW() AT TIME ZONE 'UTC')::date, ${a.model}, ${a.kind}, 1, ${a.inputTokens}, ${a.outputTokens})
+    ON CONFLICT (day, model, kind) DO UPDATE
+      SET checks = moderation_scan_usage.checks + 1,
+          input_tokens = moderation_scan_usage.input_tokens + EXCLUDED.input_tokens,
+          output_tokens = moderation_scan_usage.output_tokens + EXCLUDED.output_tokens
+  `
+}
+
+export async function scanChecksToday(): Promise<number> {
+  const rows = (await getSql()`
+    SELECT COALESCE(SUM(checks), 0)::int AS n FROM moderation_scan_usage
+     WHERE day = (NOW() AT TIME ZONE 'UTC')::date
+  `) as { n: number }[]
+  return rows[0]?.n ?? 0
+}
+
+type ScanUsageRow = {
+  model: string
+  kind: string
+  checks: number
+  input_tokens: number
+  output_tokens: number
+}
+
+/** Usage per model and kind since the first day of the current month (UTC). */
+export async function scanUsageThisMonth(): Promise<ScanUsageRow[]> {
+  return (await getSql()`
+    SELECT model, kind,
+           SUM(checks)::int AS checks,
+           SUM(input_tokens)::float8 AS input_tokens,
+           SUM(output_tokens)::float8 AS output_tokens
+      FROM moderation_scan_usage
+     WHERE day >= date_trunc('month', NOW() AT TIME ZONE 'UTC')::date
+     GROUP BY model, kind
+     ORDER BY model, kind
+  `) as ScanUsageRow[]
+}

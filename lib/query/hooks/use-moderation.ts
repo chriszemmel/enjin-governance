@@ -8,6 +8,7 @@ import type {
   ModerationTarget,
   ReportCategory,
 } from "@/lib/moderation/policy"
+import type { ScanSettings } from "@/lib/moderation/scan-settings"
 import { readApiError } from "@/lib/utils/api-error"
 
 export type ModerationInfo = {
@@ -189,5 +190,37 @@ export function useSetRole() {
         ? send("/api/moderation/roles", "POST", { address, role })
         : send("/api/moderation/roles", "DELETE", { address }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["moderation", "roles"] }),
+  })
+}
+
+type ScanSettingsResponse = {
+  settings: ScanSettings
+  api_key_configured: boolean
+  checks_today: number | null
+  month:
+    | {
+        model: string
+        kind: string
+        checks: number
+        input_tokens: number
+        output_tokens: number
+        cost_usd: number
+      }[]
+    | null
+}
+
+export function useScanSettings(enabled: boolean) {
+  return useQuery<ScanSettingsResponse>({
+    queryKey: ["moderation", "settings"],
+    queryFn: () => getJson("/api/moderation/settings"),
+    enabled,
+  })
+}
+
+export function useSaveScanSettings() {
+  const qc = useQueryClient()
+  return useMutation<unknown, Error, ScanSettings>({
+    mutationFn: (settings) => send("/api/moderation/settings", "PUT", settings),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["moderation", "settings"] }),
   })
 }

@@ -35,10 +35,10 @@ export const env = createEnv({
     LEGAL_CONTACT_PHONE: z.string().optional(),
     LEGAL_VAT_ID: z.string().optional(),
 
-    // Automatic content checks (Claude). Off unless CONTENT_SCAN=ON and an
-    // API key is set. Images are checked at upload; text is only flagged
-    // for moderators, never hidden automatically.
-    CONTENT_SCAN: z.enum(["ON", "OFF"]).default("OFF"),
+    // Automatic content checks (Claude). Needs the key; admins switch the
+    // checks on and pick the model at /moderation -> Settings. Uploads are
+    // checked before they are stored; text is only flagged for moderators,
+    // never hidden automatically.
     ANTHROPIC_API_KEY: z.string().optional(),
 
     // Cloudflare R2 - bucket `enjin-governance` holds:
@@ -100,7 +100,6 @@ export const env = createEnv({
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
     GOVERNANCE_ADMIN_PUBLIC_KEYS: process.env.GOVERNANCE_ADMIN_PUBLIC_KEYS,
-    CONTENT_SCAN: process.env.CONTENT_SCAN,
     LEGAL_OPERATOR_NAME: process.env.LEGAL_OPERATOR_NAME,
     LEGAL_OPERATOR_ADDRESS: process.env.LEGAL_OPERATOR_ADDRESS,
     LEGAL_CONTACT_EMAIL: process.env.LEGAL_CONTACT_EMAIL,

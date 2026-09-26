@@ -1,21 +1,25 @@
 /**
- * Automatic checks wired into the write paths (patch v1.5).
+ * Automatic checks wired into the write paths (patch v1.5; settings v1.7).
  *
- *   checkUpload   runs before an image is stored: "block" rejects it,
- *                 "review" (or a model refusal) stores it blurred and puts
- *                 it in the moderators' queue.
+ *   checkUpload   runs before an image or PDF is stored: "block" rejects it
+ *                 (or holds it, if admins chose that), "review" (or a
+ *                 model refusal) stores it blurred and puts it in the
+ *                 moderators' queue.
  *   flagText      runs after the response (next/server `after`) for
  *                 proposal text and comments; it can only add a queue
  *                 entry, never hide anything.
  *
- * Scan failures never block posting - the item is handled as if scanning
- * were off.
+ * What is checked, with which model and how many times a day comes from
+ * the admin settings (settings-store.ts). Scan failures never block
+ * posting - the item is handled as if scanning were off.
  */
 
 import "server-only"
 import { after } from "next/server"
 import { insertAction, insertReport, setState } from "@/lib/db/moderation"
-import { categoryFor, scanEnabled, scanImage, scanPdf, scanText, type ScanOutcome } from "./scan"
+import { env } from "@/lib/env"
+import { categoryFor, scanImage, scanPdf, scanText, type ScanOutcome } from "./scan"
+import { noteScanUsage, scanPlan } from "./settings-store"
 import type { ModerationTarget } from "./policy"
 
 type UploadDecision =
@@ -27,20 +31,25 @@ export async function checkUpload(
   content: { kind: "image"; jpeg: () => Promise<Buffer> } | { kind: "pdf"; bytes: Buffer },
   fileName: string,
 ): Promise<UploadDecision> {
-  if (!scanEnabled()) return { action: "store" }
+  const kind = content.kind === "pdf" ? "pdfs" : "images"
   let outcome: ScanOutcome
+  let plan: Awaited<ReturnType<typeof scanPlan>>
   try {
+    plan = await scanPlan(kind)
+    if (!plan) return { action: "store" }
     outcome =
       content.kind === "pdf"
-        ? await scanPdf(content.bytes, { fileName })
-        : await scanImage(await content.jpeg(), { fileName })
+        ? await scanPdf(content.bytes, { model: plan.model, fileName })
+        : await scanImage(await content.jpeg(), { model: plan.model, fileName })
   } catch {
     return { action: "store" }
   }
+  await noteScanUsage(kind, plan.model, outcome)
   if (outcome.kind === "refused") return { action: "store_blurred", outcome }
   if (outcome.kind !== "verdict") return { action: "store" }
   const v = outcome.verdict
   if (v.decision === "block") {
+    if (plan.settings.onClearViolation === "hold") return { action: "store_blurred", outcome }
     return {
       action: "reject",
       message: `This file can't be published: ${v.explanation} If you think this is wrong, ask a moderator.`,
@@ -112,9 +121,15 @@ export function flagText(a: {
   proposalId: string
   text: string
 }): void {
-  if (!scanEnabled() || !a.text.trim()) return
+  // Cheap early exit; the settings are read inside `after`, off the
+  // request's critical path.
+  if (!env.ANTHROPIC_API_KEY || !a.text.trim()) return
+  const kind = a.targetType === "proposal" ? "proposals" : "comments"
   after(async () => {
-    const outcome = await scanText(a.text, a.targetType)
+    const plan = await scanPlan(kind)
+    if (!plan) return
+    const outcome = await scanText(a.text, a.targetType, { model: plan.model })
+    await noteScanUsage(kind, plan.model, outcome)
     if (outcome.kind === "unavailable") return
     if (outcome.kind === "verdict" && outcome.verdict.decision === "allow") return
     const verdict = outcome.kind === "verdict" ? outcome.verdict : null

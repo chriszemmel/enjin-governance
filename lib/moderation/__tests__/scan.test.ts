@@ -7,11 +7,12 @@ import { describe, expect, it, vi } from "vitest"
 import Anthropic from "@anthropic-ai/sdk"
 
 vi.hoisted(() => {
-  process.env.CONTENT_SCAN = "ON"
   process.env.ANTHROPIC_API_KEY = "test-key"
 })
 
-import { categoryFor, scanImage, scanPdf, scanText } from "@/lib/moderation/scan"
+import { buildScanRequest, categoryFor, scanImage, scanPdf, scanText } from "@/lib/moderation/scan"
+
+const model = "claude-opus-5" as const
 
 type Call = { body: Record<string, unknown>; options: Record<string, unknown> }
 
@@ -40,7 +41,11 @@ describe("scanImage", () => {
     const { client, calls } = fakeClient(() =>
       answer({ decision: "allow", severity: "low", labels: [], explanation: "A roadmap chart." }),
     )
-    const out = await scanImage(Buffer.from("jpeg-bytes"), { client, fileName: "roadmap.png" })
+    const out = await scanImage(Buffer.from("jpeg-bytes"), {
+      model,
+      client,
+      fileName: "roadmap.png",
+    })
     expect(out).toEqual({
       kind: "verdict",
       verdict: { decision: "allow", severity: "low", labels: [], explanation: "A roadmap chart." },
@@ -68,6 +73,7 @@ describe("scanImage", () => {
   it("treats a refusal as refused, and every failure as unavailable", async () => {
     expect(
       await scanImage(Buffer.from("x"), {
+        model,
         client: fakeClient(() => ({ stop_reason: "refusal", content: [] })).client,
       }),
     ).toEqual({
@@ -77,19 +83,21 @@ describe("scanImage", () => {
       stop_reason: "end_turn",
       content: [{ type: "text", text: "not json" }],
     }))
-    expect((await scanImage(Buffer.from("x"), { client: garbled.client })).kind).toBe("unavailable")
+    expect((await scanImage(Buffer.from("x"), { model, client: garbled.client })).kind).toBe(
+      "unavailable",
+    )
     const wrongShape = fakeClient(() => answer({ decision: "maybe" }))
-    expect((await scanImage(Buffer.from("x"), { client: wrongShape.client })).kind).toBe(
+    expect((await scanImage(Buffer.from("x"), { model, client: wrongShape.client })).kind).toBe(
       "unavailable",
     )
     const truncated = fakeClient(() => answer({}, "max_tokens"))
-    expect((await scanImage(Buffer.from("x"), { client: truncated.client })).kind).toBe(
+    expect((await scanImage(Buffer.from("x"), { model, client: truncated.client })).kind).toBe(
       "unavailable",
     )
     const down = fakeClient(() => {
       throw new Anthropic.InternalServerError(500, undefined, "boom", new Headers())
     })
-    expect(await scanImage(Buffer.from("x"), { client: down.client })).toEqual({
+    expect(await scanImage(Buffer.from("x"), { model, client: down.client })).toEqual({
       kind: "unavailable",
       reason: "API 500",
     })
@@ -106,7 +114,7 @@ describe("scanPdf", () => {
         explanation: "x".repeat(900),
       }),
     )
-    const out = await scanPdf(Buffer.from("%PDF-1.4"), { client, fileName: "passport.pdf" })
+    const out = await scanPdf(Buffer.from("%PDF-1.4"), { model, client, fileName: "passport.pdf" })
     expect(out.kind === "verdict" && out.verdict.explanation.length).toBe(400)
     const block = (
       calls[0]!.body as {
@@ -128,12 +136,50 @@ describe("scanText", () => {
       }),
     )
     const out = await scanText("Claim your airdrop: enter your seed at example.bad", "comment", {
+      model: "claude-haiku-4-5",
       client,
     })
     expect(out.kind === "verdict" && out.verdict.decision).toBe("review")
     const content = (calls[0]!.body as { messages: { content: { text: string }[] }[] }).messages[0]!
       .content[0]!.text
     expect(content).toContain("<content>\nClaim your airdrop")
+  })
+})
+
+describe("buildScanRequest", () => {
+  const content = [{ type: "text" as const, text: "hello" }]
+
+  it("uses refusal fallbacks and low effort on Opus 5", () => {
+    const r = buildScanRequest("claude-opus-5", content)
+    expect(r).toMatchObject({
+      model: "claude-opus-5",
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "low", format: { type: "json_schema" } },
+    })
+  })
+
+  it("uses low effort without fallbacks on Sonnet 5", () => {
+    const r = buildScanRequest("claude-sonnet-5", content)
+    expect(r.output_config).toMatchObject({ effort: "low", format: { type: "json_schema" } })
+    expect(r).not.toHaveProperty("fallbacks")
+    expect(r).not.toHaveProperty("betas")
+  })
+
+  it("sends neither effort nor fallbacks to Haiku 4.5", () => {
+    const r = buildScanRequest("claude-haiku-4-5", content)
+    expect(r.model).toBe("claude-haiku-4-5")
+    expect(r.output_config).toEqual({ format: expect.objectContaining({ type: "json_schema" }) })
+    expect(r).not.toHaveProperty("fallbacks")
+  })
+
+  it("reports the tokens a check used", async () => {
+    const { client } = fakeClient(() => ({
+      ...answer({ decision: "allow", severity: "low", labels: [], explanation: "Fine." }),
+      usage: { input_tokens: 1800, output_tokens: 90 },
+    }))
+    const out = await scanImage(Buffer.from("x"), { model: "claude-haiku-4-5", client })
+    expect(out.usage).toEqual({ inputTokens: 1800, outputTokens: 90 })
   })
 })
 

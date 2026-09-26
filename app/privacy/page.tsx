@@ -183,11 +183,13 @@ export default function PrivacyPage() {
         <h2>9. Automatic content checks</h2>
         <p>
           If enabled, uploaded images and PDFs, proposal texts and comments are sent to Anthropic
-          PBC (USA) to be checked for content that must not be published, for example a readable
-          wallet recovery phrase or someone else&apos;s ID document. The result only blocks an
-          upload or places an item in the moderators&apos; queue; people make the decisions. Under
-          Anthropic&apos;s commercial terms, this data is not used to train models. Legal basis:
-          Art. 6(1)(f) GDPR (protecting users and third parties from harmful content).
+          PBC (USA) to be checked by an AI model for content that must not be published, for
+          example a readable wallet recovery phrase or someone else&apos;s ID document. Only the
+          item itself is sent (with a file name, if any), not your address or profile. The result
+          only blocks or holds an upload or places an item in the moderators&apos; queue; people
+          make the decisions on everything else. Under Anthropic&apos;s commercial terms, this
+          data is not used to train models. Legal basis: Art. 6(1)(f) GDPR (protecting users and
+          third parties from harmful content).
         </p>
       </section>
 
