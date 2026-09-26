@@ -164,20 +164,18 @@ function EditProposalPageInner() {
           {!me ? (
             <>
               <p className="text-sm font-semibold text-foreground">
-                Sign in to edit this proposal
+                Only the proposer can edit this proposal
               </p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Editing requires a signed-in session. Connect the wallet that
-                filed referendum #{metadata.referendum_index} and sign in on
-                the Account page.
+                <Link
+                  href={`/account?next=${encodeURIComponent(`/proposals/${metadata.referendum_index}/edit?network=${metadata.network}`)}`}
+                  className="font-medium text-primary hover:text-purple-dim"
+                >
+                  Sign in
+                </Link>{" "}
+                with the wallet that filed referendum #
+                {metadata.referendum_index}.
               </p>
-              <Link
-                href={`/account?next=${encodeURIComponent(`/proposals/${metadata.referendum_index}/edit?network=${metadata.network}`)}`}
-                className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-purple-dim"
-              >
-                Go to Account
-                <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
-              </Link>
             </>
           ) : (
             <>
@@ -374,19 +372,15 @@ function EditForm({
       {!signedIn && !sessionLoading && (
         <div className="rounded-xl bg-amber-500/5 border border-amber-500/30 p-4 flex items-start gap-3">
           <AlertCircle className="w-4 h-4 text-amber-300 flex-shrink-0 mt-0.5" />
-          <div className="text-xs leading-relaxed">
-            <p className="font-medium text-foreground">Sign in to save edits</p>
-            <p className="text-muted-foreground mt-0.5">
-              Editing requires a signed-in session.{" "}
-              <Link
-                href="/account"
-                className="text-primary hover:text-purple-dim underline-offset-2 hover:underline"
-              >
-                Sign in on /account
-              </Link>{" "}
-              with this wallet, then come back.
-            </p>
-          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <Link
+              href={`/account?next=${encodeURIComponent(`/proposals/${metadata.referendum_index}/edit?network=${metadata.network}`)}`}
+              className="font-medium text-primary hover:text-purple-dim underline-offset-2 hover:underline"
+            >
+              Sign in
+            </Link>{" "}
+            with the wallet that filed this proposal to save edits.
+          </p>
         </div>
       )}
 

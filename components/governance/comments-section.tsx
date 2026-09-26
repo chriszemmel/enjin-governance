@@ -16,6 +16,7 @@ import { toast } from "sonner"
 import { Avatar } from "@/components/account/avatar"
 import { UserChip } from "@/components/profile/user-chip"
 import { SignRequestModal } from "@/components/wallet/sign-request-modal"
+import { WalletModal } from "@/components/wallet/wallet-modal"
 import { ReportDialog } from "@/components/moderation/report-dialog"
 import {
   type Comment,
@@ -50,6 +51,7 @@ export function CommentsSection({ proposalUuid }: Props) {
   const [draft, setDraft] = useState("")
   const [reporting, setReporting] = useState<string | null>(null)
   const [signModalOpen, setSignModalOpen] = useState(false)
+  const [walletOpen, setWalletOpen] = useState(false)
   const [signError, setSignError] = useState<string | null>(null)
   const signDeepLinkUrl = buildSignRequestDeepLink({
     peerRedirect:
@@ -216,10 +218,18 @@ export function CommentsSection({ proposalUuid }: Props) {
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Connect a wallet to comment.
+            <button
+              type="button"
+              onClick={() => setWalletOpen(true)}
+              className="font-medium text-primary hover:text-purple-dim"
+            >
+              Connect a wallet
+            </button>{" "}
+            to comment.
           </p>
         )}
       </div>
+      <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
       <SignRequestModal
         open={signModalOpen}
         walletName={walletMeta.name}

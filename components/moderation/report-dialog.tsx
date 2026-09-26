@@ -71,20 +71,18 @@ export function ReportDialog({
           <Flag className="w-4 h-4" />
           Report this {target ? NOUN[target.type] : "item"}
         </DialogTitle>
-        <DialogDescription className="text-xs">
+        <DialogDescription className="text-sm leading-relaxed">
           Moderators review every report. Your name isn&apos;t shown publicly.
         </DialogDescription>
 
         {!me.data ? (
-          <p className="text-sm text-muted-foreground">
-            Sign in to report content.{" "}
-            <Link
-              href={`/account?next=${encodeURIComponent(nextPath)}`}
-              className="text-primary hover:text-purple-dim"
-            >
-              Sign in on your account page
-            </Link>
-          </p>
+          // The account page brings the reader back here once signed in.
+          <Link
+            href={`/account?next=${encodeURIComponent(nextPath)}`}
+            className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-purple-dim"
+          >
+            Sign in to report
+          </Link>
         ) : (
           <>
             {/* Equal rows: a label that wraps on a narrow phone grows every
