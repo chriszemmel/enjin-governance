@@ -286,7 +286,7 @@ export async function markProposalFailed(
   const sql = getSql()
   await sql`
     UPDATE proposals SET status = 'failed', last_error = ${error}
-    WHERE id = ${proposalId}
+    WHERE id = ${proposalId} AND status <> 'on_chain'
   `
 }
 

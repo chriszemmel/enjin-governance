@@ -27,12 +27,15 @@
     "lib/query/hooks/use-profile.ts",
     "lib/query/hooks/use-comments.ts",
     "components/governance/comments-section.tsx",
-    "lib/utils/format-error.ts"
+    "lib/utils/format-error.ts",
+    "test/server-only-stub.ts"
   ],
   "project": [
     "app/**/*.{ts,tsx}",
     "components/**/*.{ts,tsx}",
-    "lib/**/*.{ts,tsx}"
+    "lib/**/*.{ts,tsx}",
+    "e2e/**/*.ts",
+    "test/**/*.ts"
   ],
   "ignore": ["components/ui/**"],
   "ignoreDependencies": [

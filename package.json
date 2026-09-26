@@ -15,6 +15,7 @@
     "knip": "knip",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "db:migrate": "node scripts/run-migrations.mjs"
   },
   "dependencies": {
@@ -84,6 +85,8 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^22",
     "@types/qrcode": "^1.5.6",
