@@ -24,6 +24,8 @@ const MAX_INPUT_PIXELS = 120_000_000
 type ProcessedImage = {
   body: Buffer
   thumbnail: Buffer
+  /** More than one frame (GIF or WebP animation). */
+  animated: boolean
 }
 
 export class ImageProcessingError extends Error {}
@@ -35,11 +37,14 @@ export async function processProposalImage(
   try {
     const opts = { limitInputPixels: MAX_INPUT_PIXELS, failOn: "error" as const }
     let body: Buffer
+    const meta = await sharp(input, opts).metadata()
+    const animated = (meta.pages ?? 1) > 1
     if (mime === "image/gif") {
-      body = input
+      // Re-encoded frame by frame, which drops comments and XMP metadata.
+      body = await sharp(input, { ...opts, animated: true })
+        .gif()
+        .toBuffer()
     } else {
-      const meta = await sharp(input, opts).metadata()
-      const animated = (meta.pages ?? 1) > 1
       if (animated) {
         // Animated WebP: re-encode every frame to drop metadata, keep size.
         body = await sharp(input, { ...opts, animated: true })
@@ -72,7 +77,7 @@ export async function processProposalImage(
       .webp({ quality: 75 })
       .toBuffer()
 
-    return { body, thumbnail }
+    return { body, thumbnail, animated }
   } catch (e) {
     throw new ImageProcessingError(e instanceof Error ? e.message : String(e))
   }

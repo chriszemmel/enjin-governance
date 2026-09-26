@@ -158,6 +158,9 @@ export async function POST(
   if (file.size === 0) {
     return NextResponse.json({ ok: false, error: "Empty file" }, { status: 400 })
   }
+  if (file.name.length > 255) {
+    return NextResponse.json({ ok: false, error: "File name is too long." }, { status: 400 })
+  }
   if (file.size > MAX_BYTES) {
     return NextResponse.json(
       { ok: false, error: `File exceeds ${MAX_BYTES} bytes` },
@@ -190,11 +193,13 @@ export async function POST(
   // stored - and hashed into the proposal - is the cleaned file.
   let body: Buffer = buffer
   let thumbnail: Buffer | null = null
+  let animated = false
   if (sniffed !== "application/pdf") {
     try {
       const processed = await processProposalImage(buffer, sniffed)
       body = processed.body
       thumbnail = processed.thumbnail
+      animated = processed.animated
     } catch (e) {
       if (!(e instanceof ImageProcessingError)) throw e
       return NextResponse.json(
@@ -210,7 +215,7 @@ export async function POST(
   const check = await checkUpload(
     sniffed === "application/pdf"
       ? { kind: "pdf", bytes: body }
-      : { kind: "image", jpeg: () => scanCopy(body) },
+      : { kind: "image", jpeg: () => scanCopy(body), animated },
     file.name || "file",
   )
   if (check.action === "reject") {

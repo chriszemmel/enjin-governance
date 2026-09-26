@@ -232,8 +232,9 @@ export function ScanSettingsPanel() {
                 className="w-28 rounded-xl border border-border bg-surface-1 px-3 py-2 text-sm focus:outline-none focus:border-primary/50"
               />
               <span className="text-xs text-muted-foreground">
-                checks a day (UTC); past it, content is posted unchecked until the next day.{" "}
-                {draft.dailyLimit} image checks cost about {usd(worstDay)}.
+                checks a day (UTC); past it, uploads wait for a moderator and text isn&apos;t
+                checked until the next day. {draft.dailyLimit} image checks cost about{" "}
+                {usd(worstDay)}.
               </span>
             </div>
           </div>

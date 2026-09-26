@@ -10,7 +10,7 @@
 
 import "server-only"
 import { env } from "@/lib/env"
-import { getSetting, recordScanUsage, saveSetting, scanChecksToday } from "@/lib/db/moderation"
+import { addScanTokens, getSetting, reserveScanCheck, saveSetting } from "@/lib/db/moderation"
 import {
   parseStoredSettings,
   DEFAULT_SCAN_SETTINGS,
@@ -42,34 +42,41 @@ export async function saveScanSettings(value: ScanSettings, by: string): Promise
   cached = { at: Date.now(), value }
 }
 
+type ScanPlan = { model: ScanModel; settings: ScanSettings }
+
 /**
- * The model to check an item of this kind with, or null when it should not
- * be checked: no API key, checks off, this kind switched off, or today's
- * limit reached.
+ * The model to check an item of this kind with, or null when items of this
+ * kind aren't checked: no API key, checks off, or this kind switched off.
  */
-export async function scanPlan(
-  kind: ScanKind,
-): Promise<{ model: ScanModel; settings: ScanSettings } | null> {
+export async function scanPlan(kind: ScanKind): Promise<ScanPlan | null> {
   if (!env.ANTHROPIC_API_KEY) return null
   const settings = await getScanSettings()
   if (!settings.enabled || !settings[kind]) return null
-  try {
-    if ((await scanChecksToday()) >= settings.dailyLimit) return null
-  } catch {
-    // Can't count: check anyway. Posting needs the database too, so this
-    // only happens briefly.
-  }
   return { model: settings.model, settings }
 }
 
-/** Count a finished check; never throws. */
+/**
+ * Count one check against today's limit, before it is sent. False when
+ * the limit is reached: callers hold uploads for a person instead.
+ */
+export async function reserveScan(kind: ScanKind, plan: ScanPlan): Promise<boolean> {
+  try {
+    return (await reserveScanCheck(plan.model, kind)) <= plan.settings.dailyLimit
+  } catch {
+    // Can't count: check anyway. Posting needs the database too, so this
+    // only happens briefly.
+    return true
+  }
+}
+
+/** Add a finished check's tokens to the usage; never throws. */
 export async function noteScanUsage(
   kind: ScanKind,
   model: ScanModel,
   outcome: ScanOutcome,
 ): Promise<void> {
   if (!outcome.usage) return
-  await recordScanUsage({
+  await addScanTokens({
     model,
     kind,
     inputTokens: outcome.usage.inputTokens,

@@ -7,6 +7,7 @@ const scan = vi.hoisted(() => ({
   next: null as unknown,
   models: [] as string[],
   plan: null as unknown,
+  underLimit: true,
   usage: [] as unknown[][],
 }))
 vi.mock("@/lib/moderation/scan", async (orig) => ({
@@ -18,6 +19,7 @@ vi.mock("@/lib/moderation/scan", async (orig) => ({
 }))
 vi.mock("@/lib/moderation/settings-store", () => ({
   scanPlan: async () => scan.plan,
+  reserveScan: async () => scan.underLimit,
   noteScanUsage: async (...args: unknown[]) => {
     scan.usage.push(args)
   },
@@ -27,7 +29,7 @@ vi.mock("@/lib/db/moderation", () => ({
   insertReport: async () => true,
 }))
 
-import { checkUpload } from "@/lib/moderation/auto-flag"
+import { checkUpload, pdfPageEstimate } from "@/lib/moderation/auto-flag"
 import { DEFAULT_SCAN_SETTINGS } from "@/lib/moderation/scan-settings"
 
 const image = { kind: "image" as const, jpeg: async () => Buffer.from("jpeg") }
@@ -52,6 +54,7 @@ describe("checkUpload", () => {
     scan.models = []
     scan.usage = []
     scan.plan = planWith()
+    scan.underLimit = true
   })
 
   it("rejects clear violations before anything is stored", async () => {
@@ -82,15 +85,42 @@ describe("checkUpload", () => {
     expect(scan.usage).toEqual([["images", "claude-sonnet-5", scan.next]])
   })
 
-  it("stores without a check when checks are off, the kind is off or the limit is hit", async () => {
+  it("stores without a check when checks or this kind are switched off", async () => {
     scan.plan = null
     scan.next = verdict("block")
     expect((await checkUpload(image, "a.png")).action).toBe("store")
     expect(scan.models).toEqual([])
   })
 
+  it("holds what it can't check for reasons the uploader controls", async () => {
+    scan.next = verdict("allow")
+    const animated = { ...image, animated: true }
+    expect((await checkUpload(animated, "a.gif")).action).toBe("store_blurred")
+    const longPdf = Buffer.from(
+      "%PDF-1.4\n" + "<< /Type /Page >>\n".repeat(31) + "<< /Type /Pages >>",
+    )
+    expect(pdfPageEstimate(longPdf)).toBe(31)
+    expect((await checkUpload({ kind: "pdf", bytes: longPdf }, "long.pdf")).action).toBe(
+      "store_blurred",
+    )
+    scan.next = { kind: "unavailable", reason: "API 400" }
+    expect((await checkUpload(image, "huge.png")).action).toBe("store_blurred")
+    expect(scan.models).toHaveLength(1) // the animation and the long PDF were never sent
+  })
+
+  it("holds uploads once the daily limit is reached", async () => {
+    scan.underLimit = false
+    scan.next = verdict("allow")
+    expect((await checkUpload(image, "a.png")).action).toBe("store_blurred")
+    expect(scan.models).toEqual([])
+  })
+
   it("never blocks an upload because the check itself failed", async () => {
     scan.next = { kind: "unavailable", reason: "timeout" }
+    expect((await checkUpload(image, "a.png")).action).toBe("store")
+    scan.next = { kind: "unavailable", reason: "API 529" }
+    expect((await checkUpload(image, "a.png")).action).toBe("store")
+    scan.next = { kind: "unavailable", reason: "API 429" }
     expect((await checkUpload(image, "a.png")).action).toBe("store")
     scan.next = verdict("allow")
     expect((await checkUpload(image, "a.png")).action).toBe("store")

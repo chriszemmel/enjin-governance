@@ -15,11 +15,16 @@ vi.mock("@/lib/db/moderation", () => ({
   saveSetting: async (_: string, v: unknown) => {
     state.stored = v
   },
-  scanChecksToday: async () => state.today,
-  recordScanUsage: async () => undefined,
+  reserveScanCheck: async () => ++state.today,
+  addScanTokens: async () => undefined,
 }))
 
-import { resetScanSettingsCache, saveScanSettings, scanPlan } from "@/lib/moderation/settings-store"
+import {
+  reserveScan,
+  resetScanSettingsCache,
+  saveScanSettings,
+  scanPlan,
+} from "@/lib/moderation/settings-store"
 import { DEFAULT_SCAN_SETTINGS } from "@/lib/moderation/scan-settings"
 
 describe("scanPlan", () => {
@@ -44,12 +49,14 @@ describe("scanPlan", () => {
     expect(await scanPlan("images")).toBeNull()
   })
 
-  it("skips kinds that are switched off, and stops at the daily limit", async () => {
+  it("skips kinds that are off, and counts each check against the daily limit", async () => {
     state.stored = { ...DEFAULT_SCAN_SETTINGS, enabled: true, comments: false, dailyLimit: 5 }
     expect(await scanPlan("comments")).toBeNull()
-    expect(await scanPlan("proposals")).not.toBeNull()
-    state.today = 5
-    expect(await scanPlan("proposals")).toBeNull()
+    const plan = (await scanPlan("proposals"))!
+    state.today = 3
+    expect(await reserveScan("proposals", plan)).toBe(true) // 4th
+    expect(await reserveScan("proposals", plan)).toBe(true) // 5th
+    expect(await reserveScan("proposals", plan)).toBe(false) // 6th: over
   })
 
   it("is off when the settings can't be read", async () => {

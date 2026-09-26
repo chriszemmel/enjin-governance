@@ -10,8 +10,11 @@
  *                 entry, never hide anything.
  *
  * What is checked, with which model and how many times a day comes from
- * the admin settings (settings-store.ts). Scan failures never block
- * posting - the item is handled as if scanning were off.
+ * the admin settings (settings-store.ts). An outage (timeout, server
+ * error) never blocks posting - the item is handled as if checks were off.
+ * An upload that can't be checked for a reason the uploader controls (too
+ * long, animated, rejected as input) or after the daily limit waits for a
+ * moderator instead, so nobody can force a file through unchecked.
  */
 
 import "server-only"
@@ -20,7 +23,7 @@ import { insertAction, insertReport, setState } from "@/lib/db/moderation"
 import { env } from "@/lib/env"
 import { notifyNewReport } from "./notify"
 import { categoryFor, scanImage, scanPdf, scanText, type ScanOutcome } from "./scan"
-import { noteScanUsage, scanPlan } from "./settings-store"
+import { noteScanUsage, reserveScan, scanPlan } from "./settings-store"
 import type { ModerationTarget } from "./policy"
 
 type UploadDecision =
@@ -28,16 +31,58 @@ type UploadDecision =
   | { action: "store_blurred"; outcome: ScanOutcome }
   | { action: "reject"; message: string }
 
+/** PDFs longer than this aren't sent; a moderator looks instead. */
+const MAX_SCAN_PDF_PAGES = 30
+const MAX_SCAN_PDF_BYTES = 5 * 1024 * 1024
+/** Text is checked in pieces of this size (the text limit is 100,000). */
+const TEXT_CHUNK = 60_000
+
+/** Page objects in a PDF; 0 when they sit in compressed object streams. */
+export function pdfPageEstimate(bytes: Buffer): number {
+  return bytes.toString("latin1").match(/\/Type\s*\/Page(?![a-zA-Z])/g)?.length ?? 0
+}
+
+const hold = (reason: string): UploadDecision => ({
+  action: "store_blurred",
+  outcome: { kind: "unavailable", reason },
+})
+
+/** A rejected request (not an outage): the input itself couldn't be checked. */
+function inputRejected(outcome: ScanOutcome): boolean {
+  if (outcome.kind !== "unavailable") return false
+  const status = /^API (\d{3})$/.exec(outcome.reason)?.[1]
+  return status != null && status.startsWith("4") && !["408", "409", "429"].includes(status)
+}
+
 export async function checkUpload(
-  content: { kind: "image"; jpeg: () => Promise<Buffer> } | { kind: "pdf"; bytes: Buffer },
+  content:
+    | { kind: "image"; jpeg: () => Promise<Buffer>; animated?: boolean }
+    | { kind: "pdf"; bytes: Buffer },
   fileName: string,
 ): Promise<UploadDecision> {
   const kind = content.kind === "pdf" ? "pdfs" : "images"
-  let outcome: ScanOutcome
   let plan: Awaited<ReturnType<typeof scanPlan>>
   try {
     plan = await scanPlan(kind)
-    if (!plan) return { action: "store" }
+  } catch {
+    return { action: "store" }
+  }
+  if (!plan) return { action: "store" }
+
+  // Only the first frame of an animation would be seen, and a very long
+  // PDF costs a lot or is refused: a person looks at these instead.
+  if (content.kind === "image" && content.animated) return hold("animated image")
+  if (
+    content.kind === "pdf" &&
+    (content.bytes.length > MAX_SCAN_PDF_BYTES ||
+      pdfPageEstimate(content.bytes) > MAX_SCAN_PDF_PAGES)
+  ) {
+    return hold("PDF too long to check automatically")
+  }
+  if (!(await reserveScan(kind, plan))) return hold("daily check limit reached")
+
+  let outcome: ScanOutcome
+  try {
     outcome =
       content.kind === "pdf"
         ? await scanPdf(content.bytes, { model: plan.model, fileName })
@@ -46,7 +91,9 @@ export async function checkUpload(
     return { action: "store" }
   }
   await noteScanUsage(kind, plan.model, outcome)
-  if (outcome.kind === "refused") return { action: "store_blurred", outcome }
+  if (outcome.kind === "refused" || inputRejected(outcome)) {
+    return { action: "store_blurred", outcome }
+  }
   if (outcome.kind !== "verdict") return { action: "store" }
   const v = outcome.verdict
   if (v.decision === "block") {
@@ -69,7 +116,10 @@ function detailsOf(outcome: ScanOutcome) {
     : {
         decision: "review",
         labels: [],
-        explanation: "The automatic check declined to classify this.",
+        explanation:
+          outcome.kind === "refused"
+            ? "The automatic check declined to classify this."
+            : `Not checked automatically (${outcome.reason}); please review.`,
       }
 }
 
@@ -153,10 +203,21 @@ export function flagText(a: {
   after(async () => {
     const plan = await scanPlan(kind)
     if (!plan) return
-    const outcome = await scanText(a.text, a.targetType, { model: plan.model })
-    await noteScanUsage(kind, plan.model, outcome)
-    if (outcome.kind === "unavailable") return
-    if (outcome.kind === "verdict" && outcome.verdict.decision === "allow") return
+    // Long text is checked piece by piece, so nothing hides past the end
+    // of the first piece; the first piece that isn't fine is reported.
+    let outcome: ScanOutcome | null = null
+    for (let at = 0; at < a.text.length; at += TEXT_CHUNK) {
+      if (!(await reserveScan(kind, plan))) return
+      const piece = await scanText(a.text.slice(at, at + TEXT_CHUNK), a.targetType, {
+        model: plan.model,
+      })
+      await noteScanUsage(kind, plan.model, piece)
+      if (piece.kind === "unavailable") return
+      if (piece.kind === "verdict" && piece.verdict.decision === "allow") continue
+      outcome = piece
+      break
+    }
+    if (!outcome) return
     const verdict = outcome.kind === "verdict" ? outcome.verdict : null
     const category = verdict ? categoryFor(verdict) : "other"
     const severity = verdict?.severity ?? "low"

@@ -891,8 +891,8 @@ export default function DocsPage() {
               once a moderator has looked. Animated images are judged by their first
               frame. Proposal text and comments are only ever flagged for a human -
               the machine never hides text on its own. Admins choose the model, what
-              is checked and a daily limit; past the limit, content is posted
-              unchecked and moderated by reports as usual.
+              is checked and a daily limit; past the limit, uploads wait for a
+              moderator and text is moderated by reports as usual.
             </p>
             <p>
               <strong>What moderation never does:</strong>{" "}nobody can rewrite someone

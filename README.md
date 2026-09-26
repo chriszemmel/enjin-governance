@@ -542,8 +542,12 @@ fixed policy prompt and a JSON schema for the answer (`allow` / `review`
   served until a moderator decides.
 - **Proposal text and comments** are checked after posting and can only
   create a queue entry - never hide anything.
-- A failed check (timeout, API error, daily limit reached) never blocks
-  posting; the item is treated as unchecked and user reports still work.
+- An outage (timeout, server error) never blocks posting; the item is
+  treated as unchecked and user reports still work. An upload that can't
+  be checked for a reason the uploader controls (animated, a PDF over 30
+  pages, rejected as input) or past the daily limit waits for a
+  moderator instead. Every check counts against the limit before it is
+  sent, so the limit is a hard cap on cost.
 
 Typical cost per check at list prices (policy prompt plus the item and a
 short JSON answer):

@@ -51,11 +51,26 @@ describe("processProposalImage", () => {
     expect([meta.format, meta.width, meta.height]).toEqual(["png", 800, 600])
   })
 
-  it("stores GIFs untouched but still makes a thumbnail", async () => {
+  it("re-encodes GIFs, keeping every frame, and still makes a thumbnail", async () => {
     const input = await photo(1200, 900).gif().toBuffer()
-    const { body, thumbnail } = await processProposalImage(input, "image/gif")
-    expect(body.equals(input)).toBe(true)
+    const { body, thumbnail, animated } = await processProposalImage(input, "image/gif")
+    const meta = await sharp(body).metadata()
+    expect([meta.format, meta.width, meta.height]).toEqual(["gif", 1200, 900])
+    expect(animated).toBe(false)
     expect((await sharp(thumbnail).metadata()).width).toBe(THUMB_EDGE_PX)
+
+    const frame = (bg: string) =>
+      sharp({ create: { width: 20, height: 20, channels: 3, background: bg } })
+        .png()
+        .toBuffer()
+    const moving = await sharp([await frame("#fff"), await frame("#f00")], {
+      join: { animated: true },
+    })
+      .gif()
+      .toBuffer()
+    const out = await processProposalImage(moving, "image/gif")
+    expect(out.animated).toBe(true)
+    expect((await sharp(out.body).metadata()).pages).toBe(2)
   })
 
   it("rejects bytes that don't decode", async () => {

@@ -339,19 +339,36 @@ export async function saveSetting(key: string, value: unknown, by: string): Prom
   `
 }
 
-/** Count one check and its tokens against today (UTC). */
-export async function recordScanUsage(a: {
+type ScanKindName = "images" | "pdfs" | "proposals" | "comments"
+
+/**
+ * Count one check against today (UTC) before it is sent, and return how
+ * many checks today now has. Counted up front, so concurrent checks can't
+ * all slip under the limit, and a check that times out still counts.
+ */
+export async function reserveScanCheck(model: string, kind: ScanKindName): Promise<number> {
+  const sql = getSql()
+  await sql`
+    INSERT INTO moderation_scan_usage (day, model, kind, checks)
+    VALUES ((NOW() AT TIME ZONE 'UTC')::date, ${model}, ${kind}, 1)
+    ON CONFLICT (day, model, kind) DO UPDATE
+      SET checks = moderation_scan_usage.checks + 1
+  `
+  return scanChecksToday()
+}
+
+/** Add the tokens a finished check used (its check is already counted). */
+export async function addScanTokens(a: {
   model: string
-  kind: "images" | "pdfs" | "proposals" | "comments"
+  kind: ScanKindName
   inputTokens: number
   outputTokens: number
 }): Promise<void> {
   await getSql()`
     INSERT INTO moderation_scan_usage (day, model, kind, checks, input_tokens, output_tokens)
-    VALUES ((NOW() AT TIME ZONE 'UTC')::date, ${a.model}, ${a.kind}, 1, ${a.inputTokens}, ${a.outputTokens})
+    VALUES ((NOW() AT TIME ZONE 'UTC')::date, ${a.model}, ${a.kind}, 0, ${a.inputTokens}, ${a.outputTokens})
     ON CONFLICT (day, model, kind) DO UPDATE
-      SET checks = moderation_scan_usage.checks + 1,
-          input_tokens = moderation_scan_usage.input_tokens + EXCLUDED.input_tokens,
+      SET input_tokens = moderation_scan_usage.input_tokens + EXCLUDED.input_tokens,
           output_tokens = moderation_scan_usage.output_tokens + EXCLUDED.output_tokens
   `
 }
