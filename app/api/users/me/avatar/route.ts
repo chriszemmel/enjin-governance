@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { setAvatar } from "@/lib/db/users"
-import { isR2Configured } from "@/lib/r2/client"
+import {
+  isPublicUrlMisconfigured,
+  isR2Configured,
+  PUBLIC_URL_NOT_CONFIGURED,
+} from "@/lib/r2/client"
 import { userAvatarKey } from "@/lib/r2/paths"
 import { putObject } from "@/lib/r2/upload"
 import { transcodeAvatar } from "@/lib/r2/avatar"
@@ -17,6 +21,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!isR2Configured()) {
     return NextResponse.json(
       { ok: false, error: "Storage is not configured" },
+      { status: 503 },
+    )
+  }
+  // The avatar URL is built on the site's public URL; a localhost one in
+  // production would be stored and never load.
+  if (isPublicUrlMisconfigured()) {
+    return NextResponse.json(
+      { ok: false, error: PUBLIC_URL_NOT_CONFIGURED },
       { status: 503 },
     )
   }

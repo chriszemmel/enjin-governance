@@ -21,8 +21,11 @@ vi.mock("@/lib/db/client", () => ({
     throw new Error("getSql must not be called in these tests")
   },
 }))
+const publicUrl = vi.hoisted(() => ({ misconfigured: false }))
 vi.mock("@/lib/r2/client", () => ({
   isR2Configured: () => true,
+  isPublicUrlMisconfigured: () => publicUrl.misconfigured,
+  PUBLIC_URL_NOT_CONFIGURED: "The site's public URL isn't configured.",
   r2Bucket: () => "enjin-governance",
   publicAssetBase: () => "https://fake.local/r",
   r2PublicBase: () => "https://pub.r2.dev",
@@ -121,6 +124,7 @@ const folderKeys = (id: string) =>
 const savedJson = (id: string) => JSON.parse(bodyOf(db.proposals.get(id)!.json_key)!)
 
 beforeEach(() => {
+  publicUrl.misconfigured = false
   db.reset()
   bucketMod.resetBucket()
   auth.user = { id: "attacker-user-id", address: ATTACKER }
@@ -218,6 +222,15 @@ describe("draft POST", () => {
     }
     expect(folderKeys(OWN_ID)).toEqual([])
     expect(db.proposals.size).toBe(1)
+  })
+
+  it("refuses to stage while the site's public URL isn't configured, writing nothing", async () => {
+    publicUrl.misconfigured = true
+    const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({})))
+    expect(res.status).toBe(503)
+    expect((await res.json()).error).toBe("The site's public URL isn't configured.")
+    expect(folderKeys(OWN_ID)).toEqual([])
+    expect(db.proposals.has(OWN_ID)).toBe(false)
   })
 
   it("rejects a beneficiary in another network's format", async () => {

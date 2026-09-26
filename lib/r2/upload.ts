@@ -42,6 +42,9 @@ export function sha256Hex(bytes: Uint8Array | Buffer): string {
 
 export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
   const client = getR2Client()
+  // Built first: if the site's public URL isn't configured this throws
+  // before anything is written, rather than leaving an orphan object.
+  const url = publicUrlFor(publicAssetBase(), args.key)
   const body = args.body
   const sha256 = sha256Hex(body)
   await client.send(
@@ -59,7 +62,7 @@ export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
   )
   return {
     key: args.key,
-    url: publicUrlFor(publicAssetBase(), args.key),
+    url,
     sha256,
     sizeBytes: body.byteLength,
   }

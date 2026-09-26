@@ -11,6 +11,7 @@ import { NextRequest } from "next/server"
 import type * as RateLimit from "@/lib/rate-limit"
 import {
   cryptoWaitReady,
+  decodeAddress,
   encodeAddress,
   randomAsU8a,
   sr25519PairFromSeed,
@@ -257,6 +258,24 @@ describe("POST /api/auth/nonce", () => {
     expect(io.nonces.size).toBe(0)
   })
 
+  // One key could otherwise make extra users with no network, outside the
+  // per-network handle uniqueness. The browser converts before asking.
+  it("only takes the Enjin Relay and Canary Relay formats, with a clear message", async () => {
+    const w = await wallet()
+    const key = decodeAddress(w.address)
+    for (const prefix of [42, 0, 2, 1110, 9030, 2134]) {
+      const res = await nonceReq(encodeAddress(key, prefix))
+      expect(res.status, String(prefix)).toBe(400)
+      expect(await res.json()).toEqual({
+        ok: false,
+        error: "Sign in with your Enjin Relaychain (en…) or Canary Relaychain (cn…) address.",
+      })
+    }
+    expect(io.nonces.size).toBe(0)
+    expect((await nonceReq(encodeAddress(key, 2135))).status).toBe(200)
+    expect((await nonceReq(encodeAddress(key, 69))).status).toBe(200)
+  })
+
   it("is rate limited per client IP: the 11th request in a minute gets 429 and stores nothing", async () => {
     const w = await wallet()
     for (let i = 0; i < RATE_LIMITS.authNonce.limit; i += 1) {
@@ -348,6 +367,18 @@ describe("POST /api/auth/verify", () => {
     expect(io.nonces.has(nonce)).toBe(false)
   })
 
+  it("signs in when a proxy sends a forwarded-for value that isn't an IP", async () => {
+    const w = await wallet()
+    const { nonce, message } = await issue(w)
+    const res = await verifyReq(
+      { address: w.address, nonce, signature: w.sign(message) },
+      { "x-forwarded-for": "unknown" },
+    )
+    expect(res.status).toBe(200)
+    const [session] = [...io.sessions.values()]
+    expect(session).toMatchObject({ ipAddress: null })
+  })
+
   it("marks the session cookie Secure in production", async () => {
     vi.stubEnv("NODE_ENV", "production")
     const w = await wallet()
@@ -355,6 +386,29 @@ describe("POST /api/auth/verify", () => {
     const res = await verifyReq({ address: w.address, nonce, signature: w.sign(message) })
     expect(res.status).toBe(200)
     expect(setCookie(res, SESSION_COOKIE)).toMatch(/;\s*Secure/i)
+  })
+
+  it("signs a Canary key in as its cn… address", async () => {
+    const w = await wallet(69)
+    const { nonce, message } = await issue(w)
+    const res = await verifyReq({ address: w.address, nonce, signature: w.sign(message) })
+    expect(res.status).toBe(200)
+    expect((await res.json()).user.address).toBe(w.address)
+  })
+
+  it("refuses a generic-format address even with a validly signed nonce", async () => {
+    // A nonce stored before the format rule (or planted) still can't make a
+    // user row without a network.
+    const w = await wallet(42)
+    const nonce = "a".repeat(32)
+    const message = `Enjin Governance - sign in\n\nAddress: ${w.address}\nNonce: ${nonce}`
+    io.nonces.set(nonce, { address: w.address, message, expiresAt: new Date(Date.now() + 60_000) })
+    const res = await verifyReq({ address: w.address, nonce, signature: w.sign(message) })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/Enjin Relaychain \(en…\) or Canary Relaychain/)
+    expect(res.headers.getSetCookie()).toEqual([])
+    expect(io.users.size).toBe(0)
+    expect(io.sessions.size).toBe(0)
   })
 
   it("a nonce works once: replaying the same signed request is refused", async () => {

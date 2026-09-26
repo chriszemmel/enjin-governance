@@ -40,6 +40,7 @@ const io = vi.hoisted(() => ({
   bucket: new Map<string, { body: Buffer; contentType: string; cacheControl?: string }>(),
   suspended: new Map<string, Date>(),
   suspensionError: null as Error | null,
+  publicUrlMisconfigured: false,
 }))
 
 vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: async () => io.me }))
@@ -71,6 +72,8 @@ vi.mock("@/lib/db/moderation", () => ({
 }))
 vi.mock("@/lib/r2/client", () => ({
   isR2Configured: () => io.r2Configured,
+  isPublicUrlMisconfigured: () => io.publicUrlMisconfigured,
+  PUBLIC_URL_NOT_CONFIGURED: "The site's public URL isn't configured.",
   r2Bucket: () => "enjin-governance",
   publicAssetBase: () => "https://fake.local/r",
 }))
@@ -168,6 +171,7 @@ beforeEach(() => {
   io.bucket.clear()
   io.suspended.clear()
   io.suspensionError = null
+  io.publicUrlMisconfigured = false
   __resetRateLimitStore()
   vi.mocked(enforceRateLimit).mockClear()
   for (const k of [
@@ -294,6 +298,65 @@ describe("PATCH /api/users/me", () => {
     expect((await patch({ handle: "\u200Balice" })).status).toBe(400)
   })
 
+  // "Enjin\u00A0Support" used to slip past the check; see handle-blocklist.test.ts
+  // for the full set of look-alikes.
+  it("refuses impersonating display names written with look-alike spaces or invisibles", async () => {
+    signIn()
+    for (const display_name of [
+      "Enjin\u00A0Support",
+      "Enjin\u3000Support",
+      "Enjin \u200B Support",
+      "\u202EOfficial Enjin",
+      "Ｅｎｊｉｎ Ｓｕｐｐｏｒｔ",
+    ]) {
+      const res = await patch({ display_name })
+      expect(res.status, JSON.stringify(display_name)).toBe(400)
+      expect((await res.json()).error).toMatch(/display name/i)
+    }
+    expect(io.updates).toEqual([])
+  })
+
+  it("stores the display name without invisible or direction-control characters", async () => {
+    signIn()
+    // U+202E would make "troppuS nijnE" display as "Enjin Support".
+    expect((await patch({ display_name: "\u202Etroppus nijnE" })).status).toBe(200)
+    expect((await patch({ display_name: "  Alice\u200B\u00A0\u00A0Smith\u2069 " })).status).toBe(
+      200,
+    )
+    expect(io.updates.map((u) => u.patch.display_name)).toEqual(["troppus nijnE", "Alice Smith"])
+  })
+
+  it("won't set a handle on a user row that has no network", async () => {
+    // Rows made before sign-in was limited to the relay formats (a generic
+    // 5… address) sit outside the per-network handle unique index.
+    signIn()
+    io.me = { ...io.me!, network: null }
+    const res = await patch({ handle: "alice_2" })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/sign in again/i)
+    expect(io.updates).toEqual([])
+    // The rest of the profile can still change.
+    expect((await patch({ bio: "hello" })).status).toBe(200)
+  })
+
+  it("is rate limited per user: the 21st save in 10 minutes gets 429", async () => {
+    signIn()
+    for (let i = 0; i < RATE_LIMITS.profileUpdate.limit; i += 1) {
+      expect((await patch({ bio: `bio ${i}` })).status).toBe(200)
+    }
+    const res = await patch({ handle: "alice_3" })
+    expect(res.status).toBe(429)
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0)
+    expect(io.updates).toHaveLength(RATE_LIMITS.profileUpdate.limit)
+    expect(vi.mocked(enforceRateLimit).mock.calls[0][0]).toEqual({
+      ...RATE_LIMITS.profileUpdate,
+      identity: ME_ID,
+    })
+    // Someone else is not affected.
+    io.me = { ...row(OTHER), sessionTokenHash: "b".repeat(64) }
+    expect((await patch({ bio: "mine" })).status).toBe(200)
+  })
+
   it("a taken handle is a 409 with a fixed message", async () => {
     signIn()
     io.updateError = new Error(
@@ -331,6 +394,19 @@ describe("POST /api/users/me/avatar", () => {
     expect(io.bucket.size).toBe(0)
     expect(io.avatars).toEqual([])
     expect(enforceRateLimit).not.toHaveBeenCalled()
+  })
+
+  it("503s before storing anything when the site's public URL isn't configured", async () => {
+    signIn()
+    io.publicUrlMisconfigured = true
+    const res = await avatar(file(await png(), "image/png"))
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: "The site's public URL isn't configured.",
+    })
+    expect(io.bucket.size).toBe(0)
+    expect(io.avatars).toEqual([])
   })
 
   it("stores a 150px PNG under the caller's own key, whatever the upload was called", async () => {

@@ -21,6 +21,7 @@ import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById, setProposalWithdrawn } from "@/lib/db/proposals"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -61,6 +62,14 @@ export async function POST(
   }
   const suspended = await postingSuspendedResponse(me)
   if (suspended) return suspended
+
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalWithdraw, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests - please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    )
+  }
 
   const existing = await getProposalById(idParse.data)
   if (!existing) {

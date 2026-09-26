@@ -2,8 +2,9 @@
  * Lightweight fixed-window rate limiter.
  *
  * Puts a per-key abuse ceiling on the write + auth endpoints (sign-in nonce
- * and verify, comments, proposal drafts, media + avatar uploads, security
- * disclosures, and the site-access gate) so a script can't flood a table,
+ * and verify, profile edits, comments, proposal drafts and their confirm /
+ * cancel / withdraw, media + avatar uploads, security disclosures, and the
+ * site-access gate) so a script can't flood a table, hammer the chain RPC,
  * fill R2, or brute-force the gate password. Over-limit callers get a 429
  * with a `Retry-After` header. The full set of ceilings lives in
  * `RATE_LIMITS` below.
@@ -212,8 +213,22 @@ export const RATE_LIMITS = {
   // the funnel per IP, but this is a direct ceiling on session creation so
   // the cap holds even if the nonce limit is ever loosened.
   authVerify: { scope: "auth-verify", limit: 20, windowMs: 300_000 },
+  // Profile saves. Each can try a handle, so this also slows probing which
+  // handles are taken.
+  profileUpdate: { scope: "profile-update", limit: 20, windowMs: 600_000 },
   commentCreate: { scope: "comment-create", limit: 20, windowMs: 60_000 },
+  // Every edit runs the automatic text check again.
+  commentEdit: { scope: "comment-edit", limit: 10, windowMs: 300_000 },
+  commentDelete: { scope: "comment-delete", limit: 20, windowMs: 60_000 },
   proposalDraft: { scope: "proposal-draft", limit: 10, windowMs: 60_000 },
+  // Each confirm reads the chain. The browser retries a failed one up to
+  // three times, plus once after signing in again
+  // (lib/governance/confirm-client.ts), so this leaves room for several full
+  // rounds - and for linking a few drafts in a row.
+  proposalConfirm: { scope: "proposal-confirm", limit: 30, windowMs: 300_000 },
+  proposalCancel: { scope: "proposal-cancel", limit: 20, windowMs: 300_000 },
+  // Withdraw sets or clears a public banner on a live referendum.
+  proposalWithdraw: { scope: "proposal-withdraw", limit: 10, windowMs: 300_000 },
   mediaUpload: { scope: "media-upload", limit: 30, windowMs: 300_000 },
   avatarUpload: { scope: "avatar-upload", limit: 10, windowMs: 300_000 },
   // Reports are cheap to send and each lands in a human queue.

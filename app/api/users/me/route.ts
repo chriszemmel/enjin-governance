@@ -4,11 +4,13 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import {
   displayNameErrorMessage,
   handleErrorMessage,
+  normalizeDisplayName,
   validateDisplayName,
   validateHandle,
 } from "@/lib/auth/handle-blocklist"
 import { updateProfile } from "@/lib/db/users"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -43,6 +45,14 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   const suspended = await postingSuspendedResponse(me)
   if (suspended) return suspended
 
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.profileUpdate, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many profile changes - please wait a few minutes." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    )
+  }
+
   let parsed
   try {
     parsed = patchSchema.parse(await request.json())
@@ -64,15 +74,28 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         { status: 400 },
       )
     }
+    // Handles are unique per network; a row without one (signed in before
+    // sign-in was limited to the relay formats) would sit outside the
+    // unique index, so it can't claim a handle.
+    if (!me.network) {
+      return NextResponse.json(
+        { ok: false, error: "Sign out and sign in again to set a handle." },
+        { status: 409 },
+      )
+    }
   }
+  // Stored as checked: without invisible or direction-control characters
+  // that could make it display as something the check never saw.
   if (parsed.display_name != null) {
-    const err = validateDisplayName(parsed.display_name)
+    const displayName = normalizeDisplayName(parsed.display_name)
+    const err = validateDisplayName(displayName)
     if (err) {
       return NextResponse.json(
         { ok: false, error: displayNameErrorMessage(err) },
         { status: 400 },
       )
     }
+    parsed = { ...parsed, display_name: displayName }
   }
 
   try {

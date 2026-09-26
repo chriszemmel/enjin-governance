@@ -12,7 +12,6 @@ export const env = createEnv({
     SUBSCAN_API_KEY: z.string().optional(),
     KV_REST_API_URL: z.string().url().optional(),
     KV_REST_API_TOKEN: z.string().optional(),
-    CRON_SECRET: z.string().min(16).optional(),
     SITE_PASSWORD: z.string().min(1).optional(),
     SITE_PASSWORD_STATUS: z.enum(["ON", "OFF"]).default("OFF"),
 
@@ -97,7 +96,6 @@ export const env = createEnv({
     SUBSCAN_API_KEY: process.env.SUBSCAN_API_KEY,
     KV_REST_API_URL: process.env.KV_REST_API_URL,
     KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
-    CRON_SECRET: process.env.CRON_SECRET,
     SITE_PASSWORD: process.env.SITE_PASSWORD,
     SITE_PASSWORD_STATUS: process.env.SITE_PASSWORD_STATUS,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,

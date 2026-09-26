@@ -6,7 +6,7 @@
  * drafts or internal columns. Real route handlers and ownership checks;
  * only I/O (session, DB) is mocked.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 import { decodeAddress, encodeAddress } from "@polkadot/util-crypto"
 
@@ -36,6 +36,7 @@ vi.mock("@/lib/db/proposals", async () => await import("./fake-db"))
 import * as db from "./fake-db"
 import * as mod from "./fake-moderation"
 import { publicKeyOf } from "@/lib/chain/ss58"
+import { __resetRateLimitStore, RATE_LIMITS } from "@/lib/rate-limit"
 import { POST as CANCEL } from "@/app/api/proposals/[uuid]/cancel/route"
 import { POST as WITHDRAW } from "@/app/api/proposals/[uuid]/withdraw/route"
 import { GET as BY_INDEX } from "@/app/api/proposals/by-index/[index]/route"
@@ -76,6 +77,19 @@ beforeEach(() => {
   mod.resetModeration()
   auth.user = null
   auth.fail = false
+  // The real limiter, in-process: no shared KV store in tests.
+  for (const k of [
+    "KV_REST_API_URL",
+    "KV_REST_API_TOKEN",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+  ]) {
+    vi.stubEnv(k, "")
+  }
+  __resetRateLimitStore()
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe("cancel", () => {
@@ -124,6 +138,23 @@ describe("cancel", () => {
     signIn(ALICE)
     expect((await cancel(PID)).status).toBe(409)
     expect(row()).toMatchObject({ status: "on_chain", last_error: null })
+  })
+
+  it("is rate limited per account: the 21st request in 5 minutes gets 429", async () => {
+    signIn(ALICE)
+    for (let i = 0; i < RATE_LIMITS.proposalCancel.limit; i += 1) {
+      seed({ id: PID })
+      expect((await cancel(PID)).status).toBe(200)
+    }
+    seed({ id: PID })
+    const res = await cancel(PID)
+    expect(res.status).toBe(429)
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0)
+    expect(row().status).toBe("draft")
+    // Another account still can.
+    signIn(BOB)
+    seed({ id: PID, proposer_address: BOB })
+    expect((await cancel(PID)).status).toBe(200)
   })
 
   it("refuses when the proposal reaches the chain between the check and the write", async () => {
@@ -200,6 +231,19 @@ describe("withdraw", () => {
     expect((await withdraw(PID, { undo: true, reason: "z".repeat(281) })).status).toBe(400)
     expect((await withdraw(PID, "{not json")).status).toBe(400)
     expect(row()).toMatchObject({ withdrawn_at: before, withdrawn_reason: "Filed by mistake" })
+  })
+
+  it("is rate limited per account: the 11th request in 5 minutes gets 429", async () => {
+    signIn(ALICE)
+    for (let i = 0; i < RATE_LIMITS.proposalWithdraw.limit; i += 1) {
+      expect((await withdraw(PID, i % 2 ? { undo: true } : { reason: "Vote nay" })).status).toBe(
+        200,
+      )
+    }
+    const res = await withdraw(PID, { reason: "Once more" })
+    expect(res.status).toBe(429)
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0)
+    expect(row().withdrawn_at).toBeNull()
   })
 
   it("only marks published proposals, but always lets a flag be cleared", async () => {

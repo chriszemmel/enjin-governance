@@ -36,7 +36,12 @@ import {
   updateProposalContent,
   type ReplaceAttachmentItem,
 } from "@/lib/db/proposals"
-import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
+import {
+  isPublicUrlMisconfigured,
+  isR2Configured,
+  PUBLIC_URL_NOT_CONFIGURED,
+  publicAssetBase,
+} from "@/lib/r2/client"
 import { isProposalJsonKey, ownMediaKey, proposalPrefix, publicUrlFor } from "@/lib/r2/paths"
 import { flagText } from "@/lib/moderation/auto-flag"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
@@ -240,6 +245,10 @@ export async function PATCH(
       { ok: false, error: "Storage is not configured" },
       { status: 503 },
     )
+  }
+  // Never build (and pin on chain) file URLs from a localhost base.
+  if (isPublicUrlMisconfigured()) {
+    return NextResponse.json({ ok: false, error: PUBLIC_URL_NOT_CONFIGURED }, { status: 503 })
   }
 
   const { uuid: raw } = await context.params

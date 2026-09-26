@@ -98,6 +98,35 @@ describe("POST /api/unlock", () => {
     expect((await unlock("{nope")).status).toBe(400)
   })
 
+  // Comparing the raw strings returned early on a length mismatch, so the
+  // response time gave away the password's length.
+  it("compares fixed-length digests of both passwords, never the raw strings", async () => {
+    const digest = vi.spyOn(crypto.subtle, "digest")
+    try {
+      for (const [i, password] of [
+        "x",
+        PASSWORD.slice(0, -1),
+        `${PASSWORD}!`,
+        "x".repeat(500),
+      ].entries()) {
+        digest.mockClear()
+        expect((await unlock({ password }, `198.51.100.${i}`)).status).toBe(401)
+        const hashed = digest.mock.calls.map(([alg, data]) => [
+          alg,
+          new TextDecoder().decode(data as Uint8Array),
+        ])
+        expect(hashed).toEqual(
+          expect.arrayContaining([
+            ["SHA-256", password],
+            ["SHA-256", PASSWORD],
+          ]),
+        )
+      }
+    } finally {
+      digest.mockRestore()
+    }
+  })
+
   it("the right password sets an HttpOnly access cookie that is a digest, not the password", async () => {
     const res = await unlock({ password: PASSWORD, next: "/proposals/5?tab=votes" })
     expect(res.status).toBe(200)

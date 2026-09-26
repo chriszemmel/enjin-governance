@@ -34,7 +34,11 @@ import { getProposalById, listAttachments } from "@/lib/db/proposals"
 import { cleanAttachmentName } from "@/lib/governance/attachment-check"
 import { anyVersionListsFile, listVersionKeys } from "@/lib/governance/draft-versions"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
-import { isR2Configured } from "@/lib/r2/client"
+import {
+  isPublicUrlMisconfigured,
+  isR2Configured,
+  PUBLIC_URL_NOT_CONFIGURED,
+} from "@/lib/r2/client"
 import {
   ImageProcessingError,
   processProposalImage,
@@ -80,6 +84,10 @@ export async function POST(
       { ok: false, error: "Storage is not configured" },
       { status: 503 },
     )
+  }
+  // Never build (and pin on chain) file URLs from a localhost base.
+  if (isPublicUrlMisconfigured()) {
+    return NextResponse.json({ ok: false, error: PUBLIC_URL_NOT_CONFIGURED }, { status: 503 })
   }
 
   const { uuid: rawUuid } = await context.params
@@ -239,11 +247,8 @@ export async function POST(
       await holdUpload(key, heldFor.proposalId)
     } catch {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "This file needs a moderator's review but couldn't be queued. Try again.",
-        },
-        { status: 503 },
+        { ok: false, error: "Uploads can't be checked right now. Try again in a minute." },
+        { status: 503, headers: { "Retry-After": "60" } },
       )
     }
   }

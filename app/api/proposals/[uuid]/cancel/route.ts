@@ -16,6 +16,7 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById, markProposalCancelled } from "@/lib/db/proposals"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -60,6 +61,14 @@ export async function POST(
     return NextResponse.json(
       { ok: false, error: "Sign in to cancel a proposal." },
       { status: 401 },
+    )
+  }
+
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalCancel, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests - please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
     )
   }
 

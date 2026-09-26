@@ -45,7 +45,12 @@ import {
 import { checkAttachments, listedAttachments } from "@/lib/governance/attachment-check"
 import { anyVersionOnChain, listVersionKeys } from "@/lib/governance/draft-versions"
 import { upsertUserByAddress } from "@/lib/db/users"
-import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
+import {
+  isPublicUrlMisconfigured,
+  isR2Configured,
+  PUBLIC_URL_NOT_CONFIGURED,
+  publicAssetBase,
+} from "@/lib/r2/client"
 import { stringifyStable } from "@/lib/r2/json"
 import { ownMediaKey, proposalJsonVersionKey, publicUrlFor } from "@/lib/r2/paths"
 import { putJson, readObjectText } from "@/lib/r2/upload"
@@ -137,6 +142,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { ok: false, error: "Storage is not configured (set R2_* env vars)" },
       { status: 503 },
     )
+  }
+  // Never build (and pin on chain) file URLs from a localhost base.
+  if (isPublicUrlMisconfigured()) {
+    return NextResponse.json({ ok: false, error: PUBLIC_URL_NOT_CONFIGURED }, { status: 503 })
   }
   if (!isDbConfigured()) {
     return NextResponse.json(

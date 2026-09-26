@@ -4,12 +4,14 @@
  * - Metadata is dropped: phone photos carry EXIF with GPS coordinates,
  *   camera serials and timestamps. The EXIF orientation is applied to the
  *   pixels first so the picture doesn't end up sideways.
- * - Images are scaled down to fit MAX_EDGE_PX. Nobody needs a 48 MP photo
- *   inside a proposal, and it keeps pages fast on mobile.
+ * - PNG, JPEG and still WebP images are scaled down to fit MAX_EDGE_PX.
+ *   Nobody needs a 48 MP photo inside a proposal, and it keeps pages fast
+ *   on mobile.
  * - A small WebP thumbnail is produced for galleries.
  *
- * GIFs are stored as uploaded (they carry no EXIF, and re-encoding would
- * mangle animations); they still get a still thumbnail. PDFs never come
+ * GIFs and animated WebPs are re-encoded frame by frame, which drops
+ * comments and XMP metadata but keeps the animation; they aren't scaled
+ * down. Their thumbnail is a still of the first frame. PDFs never come
  * here.
  */
 

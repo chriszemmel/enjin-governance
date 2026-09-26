@@ -3,6 +3,7 @@ import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { isDbConfigured } from "@/lib/db/client"
 import {
+  commentEditableUntil,
   createComment,
   getCommentById,
   listCommentsForProposalWithAuthors,
@@ -80,6 +81,8 @@ export async function GET(
         ? { state: states.get(r.id)!.state, reason: states.get(r.id)!.reason }
         : null,
       edited_at: r.edited_at,
+      // The author's Edit action is offered until then.
+      editable_until: commentEditableUntil(new Date(r.created_at)),
       created_at: r.created_at,
     })),
   })
@@ -184,6 +187,7 @@ export async function POST(
       body_markdown: row.body_markdown,
       is_deleted: row.is_deleted,
       edited_at: row.edited_at,
+      editable_until: commentEditableUntil(new Date(row.created_at)),
       created_at: row.created_at,
     },
   })

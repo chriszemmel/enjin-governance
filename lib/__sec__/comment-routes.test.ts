@@ -1,7 +1,8 @@
 /**
  * Comment routes: posting (session, posting pause, length cap, rate limit,
  * the author is always the session), reading (hidden text never leaves the
- * server) and soft-deleting (author only). The automatic text check runs
+ * server), editing (author only, 15 minutes, not deleted or hidden, checked
+ * again) and soft-deleting (author only). The automatic text check runs
  * after the response and can only queue a report, never hide or refuse a
  * comment. Real route handlers, real role and ownership checks; only I/O
  * (DB, rate-limit store, Anthropic, Telegram) is mocked.
@@ -89,7 +90,8 @@ vi.mock("@/lib/rate-limit", async (orig) => {
     },
   }
 })
-vi.mock("@/lib/db/comments", () => {
+// The real module's pure parts (edit window), with its SQL replaced.
+vi.mock("@/lib/db/comments", async (orig) => {
   const withAuthor = (c: Comment) => ({
     ...c,
     author_handle: null,
@@ -98,6 +100,7 @@ vi.mock("@/lib/db/comments", () => {
     author_is_verified: false,
   })
   return {
+    ...(await orig<Record<string, unknown>>()),
     createComment: async (a: {
       proposalId: string
       parentId: string | null
@@ -133,6 +136,15 @@ vi.mock("@/lib/db/comments", () => {
       const c = store.comments.get(id)
       return c ? { userId: c.user_id } : null
     },
+    // UPDATE comments SET body_markdown = $3, edited_at = NOW()
+    //  WHERE id = $1 AND user_id = $2 AND is_deleted = FALSE AND created_at > now - 15 min
+    editComment: async (id: string, userId: string, body: string) => {
+      const c = store.comments.get(id)
+      if (!c || c.user_id !== userId || c.is_deleted) return null
+      if (c.created_at.getTime() <= Date.now() - 15 * 60_000) return null
+      Object.assign(c, { body_markdown: body, edited_at: new Date() })
+      return { ...c }
+    },
     // UPDATE comments SET is_deleted = TRUE ... WHERE id = $1 AND user_id = $2
     softDeleteComment: async (id: string, userId: string) => {
       const c = store.comments.get(id)
@@ -152,7 +164,8 @@ import { publicKeyOf } from "@/lib/chain/ss58"
 import { resetScanSettingsCache } from "@/lib/moderation/settings-store"
 import { DEFAULT_SCAN_SETTINGS } from "@/lib/moderation/scan-settings"
 import { GET as LIST, POST } from "@/app/api/proposals/[uuid]/comments/route"
-import { DELETE } from "@/app/api/comments/[id]/route"
+import { DELETE, PATCH as EDIT } from "@/app/api/comments/[id]/route"
+import { RATE_LIMITS } from "@/lib/rate-limit"
 import { POST as ACT } from "@/app/api/moderation/actions/route"
 
 const NET = "enjin-relay"
@@ -195,6 +208,19 @@ const del = (id: string) =>
   DELETE(new NextRequest(`https://gov.test/api/comments/${id}`, { method: "DELETE" }), {
     params: Promise.resolve({ id }),
   })
+const edit = (id: string, body: unknown) =>
+  EDIT(
+    new NextRequest(`https://gov.test/api/comments/${id}`, {
+      method: "PATCH",
+      body: typeof body === "string" ? body : JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+    }),
+    { params: Promise.resolve({ id }) },
+  )
+/** Backdate a stored comment so it was posted `minutes` ago. */
+const postedAgo = (id: string, minutes: number) => {
+  store.comments.get(id)!.created_at = new Date(Date.now() - minutes * 60_000)
+}
 const runDeferred = async () => {
   const tasks = deferred.tasks.splice(0)
   for (const t of tasks) await t()
@@ -547,5 +573,235 @@ describe("deleting a comment", () => {
     const { body } = await list()
     expect(body.items).toHaveLength(1)
     expect(body.items[0]).toMatchObject({ id, is_deleted: true, body_markdown: "" })
+  })
+})
+
+describe("editing a comment", () => {
+  async function bobsComment(text = "Bob's words") {
+    signIn(BOB, "bob-user-id")
+    const res = await post(PID, { body_markdown: text })
+    const { id } = ((await res.json()) as { comment: { id: string } }).comment
+    postedAgo(id, 1)
+    await runDeferred()
+    return id
+  }
+
+  it("needs a session, a real comment id and a text body", async () => {
+    const id = await bobsComment()
+    auth.user = null
+    expect((await edit(id, { body_markdown: "New" })).status).toBe(401)
+    signIn(BOB, "bob-user-id")
+    expect((await edit("not-a-uuid", { body_markdown: "New" })).status).toBe(400)
+    expect((await edit(MISSING_PID, { body_markdown: "New" })).status).toBe(404)
+    expect(store.comments.get(id)).toMatchObject({ body_markdown: "Bob's words", edited_at: null })
+  })
+
+  it("lets the author change the text, marks it edited and returns the new comment", async () => {
+    const id = await bobsComment()
+    const res = await edit(id, { body_markdown: "Bob's better words" })
+    expect(res.status).toBe(200)
+    const { comment } = (await res.json()) as { comment: Record<string, unknown> }
+    expect(comment).toMatchObject({
+      id,
+      user_id: "bob-user-id",
+      author_address: BOB,
+      body_markdown: "Bob's better words",
+      is_deleted: false,
+      moderation: null,
+    })
+    expect(comment.edited_at).not.toBeNull()
+    const stored = store.comments.get(id)!
+    expect(stored.body_markdown).toBe("Bob's better words")
+    expect(stored.edited_at).toBeInstanceOf(Date)
+    // Readers see the new text and the edit.
+    const { body } = await list()
+    expect(body.items[0]).toMatchObject({ id, body_markdown: "Bob's better words" })
+    expect(body.items[0]!.edited_at).not.toBeNull()
+  })
+
+  it("only takes the fields it allows, whatever else the body claims", async () => {
+    const id = await bobsComment()
+    const res = await edit(id, {
+      body_markdown: "Edited",
+      user_id: "alice-user-id",
+      author_address: ALICE,
+      proposal_id: OTHER_PID,
+      is_deleted: true,
+      created_at: new Date().toISOString(),
+    })
+    expect(res.status).toBe(200)
+    expect(store.comments.get(id)).toMatchObject({
+      user_id: "bob-user-id",
+      author_address: BOB,
+      proposal_id: PID,
+      is_deleted: false,
+      body_markdown: "Edited",
+    })
+  })
+
+  it("is for the author only; nobody else, moderators included, can rewrite it", async () => {
+    const id = await bobsComment()
+    for (const [address, userId] of [
+      [ALICE, "alice-user-id"],
+      [MOD, "moderator-user-id"],
+    ] as const) {
+      signIn(address, userId)
+      const res = await edit(id, { body_markdown: "Words put in Bob's mouth" })
+      expect(res.status, address).toBe(403)
+    }
+    expect(store.comments.get(id)).toMatchObject({ body_markdown: "Bob's words", edited_at: null })
+  })
+
+  it("is open for 15 minutes after posting, then closed", async () => {
+    const id = await bobsComment()
+    postedAgo(id, 14)
+    expect((await edit(id, { body_markdown: "Still in time" })).status).toBe(200)
+    postedAgo(id, 15.05)
+    const late = await edit(id, { body_markdown: "Too late" })
+    expect(late.status).toBe(403)
+    expect(((await late.json()) as { error: string }).error).toMatch(/15 minutes/)
+    expect(store.comments.get(id)!.body_markdown).toBe("Still in time")
+    // Every comment tells the UI until when it can be edited.
+    const { body } = await list()
+    const created = new Date(body.items[0]!.created_at as string).getTime()
+    expect(new Date(body.items[0]!.editable_until as string).getTime() - created).toBe(15 * 60_000)
+  })
+
+  it("is refused once the comment is deleted", async () => {
+    const id = await bobsComment()
+    expect((await del(id)).status).toBe(200)
+    const res = await edit(id, { body_markdown: "Back from the dead" })
+    expect(res.status).toBe(409)
+    expect(store.comments.get(id)).toMatchObject({ is_deleted: true, body_markdown: "[deleted]" })
+  })
+
+  it("is refused once moderators hid or removed it, but not when it is only blurred", async () => {
+    for (const state of ["hidden", "removed"] as const) {
+      const id = await bobsComment(`Text that was ${state}`)
+      await mod.setState({
+        targetType: "comment",
+        targetId: id,
+        proposalId: PID,
+        state,
+        reason: "Moderator decision",
+        source: "moderator",
+      })
+      const res = await edit(id, { body_markdown: "Harmless now, promise" })
+      expect(res.status, state).toBe(403)
+      expect(((await res.json()) as { error: string }).error).toMatch(/moderators/i)
+      expect(store.comments.get(id)!.body_markdown).toBe(`Text that was ${state}`)
+    }
+    const id = await bobsComment("Sensitive")
+    await mod.setState({
+      targetType: "comment",
+      targetId: id,
+      proposalId: PID,
+      state: "blurred",
+      reason: "Graphic",
+      source: "moderator",
+    })
+    const res = await edit(id, { body_markdown: "Toned down" })
+    expect(res.status).toBe(200)
+    // The moderators' decision stays on the edited text.
+    expect(((await res.json()) as { comment: { moderation: unknown } }).comment.moderation).toEqual(
+      {
+        state: "blurred",
+        reason: "Graphic",
+      },
+    )
+  })
+
+  it("fails closed when the moderation state can't be read", async () => {
+    const id = await bobsComment()
+    mod.faults.states = new Error("db down")
+    expect((await edit(id, { body_markdown: "New" })).status).toBe(503)
+    expect(store.comments.get(id)!.body_markdown).toBe("Bob's words")
+    // Before the moderation tables exist nothing is moderated.
+    mod.faults.states = mod.missingTable()
+    expect((await edit(id, { body_markdown: "New" })).status).toBe(200)
+  })
+
+  it("is refused while the author's posting is paused, in every address format", async () => {
+    const id = await bobsComment()
+    mod.suspensions.set(pk(BOB), new Date(Date.now() + 86_400_000))
+    signIn(asMatrix(BOB), "bob-user-id")
+    const res = await edit(id, { body_markdown: "Sneaking an edit in" })
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as { error: string }).error).toMatch(/paused/)
+    expect(store.comments.get(id)!.body_markdown).toBe("Bob's words")
+    expect(deferred.tasks).toHaveLength(0)
+  })
+
+  it("takes 1 to 10,000 characters, like posting", async () => {
+    const id = await bobsComment()
+    for (const bad of [
+      { body_markdown: "" },
+      { body_markdown: "x".repeat(10_001) },
+      { body_markdown: 42 },
+      {},
+      "{not json",
+    ]) {
+      const res = await edit(id, bad)
+      expect(res.status, JSON.stringify(bad)).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toMatch(/1 to 10,000 characters/)
+    }
+    expect(store.comments.get(id)!.body_markdown).toBe("Bob's words")
+    expect((await edit(id, { body_markdown: "x".repeat(10_000) })).status).toBe(200)
+  })
+
+  it("runs the automatic check again on the new text; a flag queues a report, never hides", async () => {
+    const id = await bobsComment("Welcome, everyone")
+    expect(ai.texts).toEqual(["Welcome, everyone"])
+    ai.next = verdict("block")
+    const res = await edit(id, { body_markdown: "Claim your airdrop at drainer.example" })
+    // Answered and stored before the check has run.
+    expect(res.status).toBe(200)
+    expect(ai.texts).toEqual(["Welcome, everyone"])
+    await runDeferred()
+    expect(ai.texts).toEqual(["Welcome, everyone", "Claim your airdrop at drainer.example"])
+    expect(mod.reports).toMatchObject([
+      { target_type: "comment", target_id: id, proposal_id: PID, source: "automatic" },
+    ])
+    expect(notices).toHaveLength(1)
+    expect(mod.states.size).toBe(0)
+  })
+
+  it("changes nothing when the text is the same", async () => {
+    const id = await bobsComment()
+    const res = await edit(id, { body_markdown: "Bob's words" })
+    expect(res.status).toBe(200)
+    expect(store.comments.get(id)!.edited_at).toBeNull()
+    expect(deferred.tasks).toHaveLength(0)
+  })
+
+  it("is rate-limited per account: the 11th edit within 5 minutes is refused", async () => {
+    const id = await bobsComment()
+    for (let i = 0; i < RATE_LIMITS.commentEdit.limit; i += 1) {
+      expect((await edit(id, { body_markdown: `Take ${i}` })).status).toBe(200)
+    }
+    const res = await edit(id, { body_markdown: "One too many" })
+    expect(res.status).toBe(429)
+    expect(Number(res.headers.get("Retry-After"))).toBeGreaterThan(0)
+    expect(store.comments.get(id)!.body_markdown).toBe(`Take ${RATE_LIMITS.commentEdit.limit - 1}`)
+    expect(rate.calls.at(-1)).toEqual({ scope: "comment-edit", identity: "bob-user-id" })
+  })
+})
+
+describe("deleting a comment, rate limit", () => {
+  it("refuses the 21st delete within a minute", async () => {
+    signIn(BOB, "bob-user-id")
+    const ids: string[] = []
+    for (let i = 0; i < RATE_LIMITS.commentDelete.limit + 1; i += 1) {
+      const res = await post(PID, { body_markdown: `Comment ${i}` })
+      ids.push(((await res.json()) as { comment: { id: string } }).comment.id)
+      // Posting has its own, separate budget.
+      rate.store.delete("comment-create:bob-user-id")
+    }
+    for (const id of ids.slice(0, -1)) expect((await del(id)).status).toBe(200)
+    const res = await del(ids.at(-1)!)
+    expect(res.status).toBe(429)
+    expect(Number(res.headers.get("Retry-After"))).toBeGreaterThan(0)
+    expect(store.comments.get(ids.at(-1)!)!.is_deleted).toBe(false)
+    expect(rate.calls.at(-1)).toEqual({ scope: "comment-delete", identity: "bob-user-id" })
   })
 })

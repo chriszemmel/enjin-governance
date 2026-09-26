@@ -32,6 +32,8 @@ vi.mock("@/lib/db/client", () => ({
   },
 }))
 vi.mock("@/lib/r2/client", () => ({
+  isPublicUrlMisconfigured: () => false,
+  PUBLIC_URL_NOT_CONFIGURED: "The site's public URL isn't configured.",
   isR2Configured: () => storage.configured,
   r2Bucket: () => "enjin-governance",
   publicAssetBase: () => "https://fake.local/r",

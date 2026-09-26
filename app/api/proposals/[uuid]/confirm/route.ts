@@ -39,6 +39,7 @@ import { flagText } from "@/lib/moderation/auto-flag"
 import { isR2Configured } from "@/lib/r2/client"
 import { keyFromPublicUrl, ownMediaKey, proposalIndexRedirectKey } from "@/lib/r2/paths"
 import { putJson } from "@/lib/r2/upload"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -320,6 +321,19 @@ export async function POST(
     return NextResponse.json(
       { ok: false, error: "Sign in to confirm a proposal." },
       { status: 401 },
+    )
+  }
+
+  // Every call below reads the chain; cap them per account.
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalConfirm, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Too many attempts to link this proposal - wait a few minutes and try again.",
+        retryable: false,
+      },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
     )
   }
 
