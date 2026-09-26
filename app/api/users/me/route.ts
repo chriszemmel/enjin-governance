@@ -53,6 +53,9 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     )
   }
 
+  // The handle is checked and stored trimmed; the untrimmed text could
+  // carry invisible padding past the unique index as a look-alike.
+  if (parsed.handle != null) parsed = { ...parsed, handle: parsed.handle.trim() }
   if (parsed.handle != null) {
     const err = validateHandle(parsed.handle)
     if (err) {
@@ -93,6 +96,10 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         { status: 409 },
       )
     }
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+    console.error("[users/me] profile update failed", msg)
+    return NextResponse.json(
+      { ok: false, error: "Could not save your profile - try again." },
+      { status: 500 },
+    )
   }
 }

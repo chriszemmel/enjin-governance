@@ -69,12 +69,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let png: Buffer
   try {
     png = await transcodeAvatar(input)
-  } catch (e) {
+  } catch {
     return NextResponse.json(
-      {
-        ok: false,
-        error: `Could not transcode image: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "This image could not be read. Try exporting it again as PNG or JPEG." },
       { status: 400 },
     )
   }

@@ -23,9 +23,20 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return mismatch === 0
 }
 
+// Only a path on this site. Browsers treat a backslash like "/" and drop
+// tabs and newlines, so "/<backslash>evil.example" or "/<tab>/evil.example"
+// would lead to another site.
+const UNSAFE_IN_PATH = /[\\\u0000-\u001f\u007f]/
+
 export function sanitizeNext(raw: string | null | undefined): string {
   if (!raw) return "/"
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/"
+  if (!raw.startsWith("/") || raw.startsWith("//") || UNSAFE_IN_PATH.test(raw)) return "/"
   if (raw.startsWith("/unlock")) return "/"
+  // Belt and braces: whatever the browser makes of it stays on this origin.
+  try {
+    if (new URL(raw, "https://same.origin").origin !== "https://same.origin") return "/"
+  } catch {
+    return "/"
+  }
   return raw
 }

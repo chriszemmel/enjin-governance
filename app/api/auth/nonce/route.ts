@@ -67,9 +67,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       expiresAt,
     })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
+    console.error("[auth/nonce] insert failed", e instanceof Error ? e.message : String(e))
     return NextResponse.json(
-      { ok: false, error: `Could not mint nonce: ${msg}` },
+      { ok: false, error: "Could not start sign-in - try again." },
       { status: 500 },
     )
   }
