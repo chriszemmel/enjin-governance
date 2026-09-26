@@ -32,6 +32,7 @@ import {
   encodeForChain,
   inspectAddress,
   isValidAddressForChain,
+  samePublicKey,
 } from "@/lib/chain/ss58"
 import { extractReferendumIndex } from "@/lib/governance/referenda"
 import { hashCall } from "@/lib/governance/preimage"
@@ -46,7 +47,7 @@ import { useBalance } from "@/lib/query/hooks/use-balance"
 import { useEnsureSignedIn } from "@/lib/wallet/use-ensure-signed-in"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
-import { usePreimageStatus } from "@/lib/query/hooks/use-preimage"
+import { useEnvelopeNoted, usePreimageStatus } from "@/lib/query/hooks/use-preimage"
 import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
 import { findTrackByName } from "@/lib/governance/tracks"
 import {
@@ -107,6 +108,10 @@ function CreatePageInner() {
   const [prefilled, setPrefilled] = useState(false)
   // Only a draft that actually loaded may be auto-staged (?go=review).
   const [prefillOk, setPrefillOk] = useState(false)
+  // Who wrote the proposal loaded via ?from=, and its saved payout address.
+  const [loaded, setLoaded] = useState<{ proposer: string; beneficiary: string | null } | null>(
+    null,
+  )
 
   const [walletOpen, setWalletOpen] = useState(false)
   const [draft, setDraft] = useState<DraftResponse | null>(null)
@@ -223,9 +228,11 @@ function CreatePageInner() {
           )
         }
         const savedBeneficiary = j.spend?.beneficiary
-        if (savedBeneficiary && savedBeneficiary !== j.proposer) {
-          setBeneficiaryInput(savedBeneficiary)
-        }
+        setLoaded({
+          proposer: j.proposer ?? "",
+          beneficiary:
+            savedBeneficiary && savedBeneficiary !== j.proposer ? savedBeneficiary : null,
+        })
         setTitle(j.title ?? "")
         setSummary(j.summary ?? "")
         setBody(j.body_markdown ?? "")
@@ -360,6 +367,8 @@ function CreatePageInner() {
   useEffect(() => {
     skipNoteRef.current = preimageAlreadyNoted
   }, [preimageAlreadyNoted])
+  // The same for the EGOV1 envelope's own preimage (step 3).
+  const envelopeNoted = useEnvelopeNoted(draft?.remark_payload)
 
   // The referendum index setMetadata targets = referendumCount() at the
   // moment referenda.submit executes. Same seed-a-ref shape as skipNoteRef:
@@ -540,12 +549,28 @@ function CreatePageInner() {
     title,
   ])
 
+  // A link to someone else's proposal copies its text, never its payout
+  // address, and never skips to signing: the beneficiary and the
+  // auto-advance below are only taken from the connected wallet's own.
+  const loadedIsMine = useMemo(() => {
+    if (!loaded?.proposer || !activeAddress) return false
+    try {
+      return samePublicKey(loaded.proposer, activeAddress)
+    } catch {
+      return false
+    }
+  }, [loaded, activeAddress])
+  useEffect(() => {
+    const saved = loaded?.beneficiary
+    if (loadedIsMine && saved) setBeneficiaryInput((current) => current || saved)
+  }, [loadedIsMine, loaded])
+
   // When arriving via "Submit" on a draft (?go=review), auto-stage once
   // the form has been populated and is valid. The user still has to sign
   // on the Review screen - we just save the click.
   const [autoStaged, setAutoStaged] = useState(false)
   useEffect(() => {
-    if (!autoAdvance || autoStaged || !prefilled || !prefillOk) return
+    if (!autoAdvance || autoStaged || !prefilled || !prefillOk || !loadedIsMine) return
     if (!isConnected || !composeValid) return
     if (staging || step !== "create") return
     setAutoStaged(true)
@@ -555,6 +580,7 @@ function CreatePageInner() {
     autoStaged,
     prefilled,
     prefillOk,
+    loadedIsMine,
     isConnected,
     composeValid,
     staging,
@@ -602,20 +628,27 @@ function CreatePageInner() {
       // submission noted it), retrying the note step would abort with
       // preimage.AlreadyNoted and revert the whole batchAll. Drop step
       // 1; the rest of the batch still references the same (hash, len).
-      return skipNote
-        ? [built.submitTx, built.metadataNoteTx, built.setMetadataTx]
-        : built.calls
+      // Likewise step 3 when the envelope is already noted.
+      return [
+        ...(skipNote ? [] : [built.noteTx]),
+        built.submitTx,
+        ...(envelopeNoted.skipRef.current ? [] : [built.metadataNoteTx]),
+        built.setMetadataTx,
+      ]
     },
     onStatus(status) {
       if (status.kind === "error") {
         setCallStatus((curr) =>
           curr.map((c) => (c === "running" ? "failed" : c)) as CallStatus[],
         )
-        // Self-heal the AlreadyNoted dead-end: the preimage is already on
-        // chain, so the next attempt must skip notePreimage instead of
-        // rebuilding the same batch that just reverted.
+        // Self-heal the AlreadyNoted dead-end: one of the two preimages is
+        // already on chain. Re-read both, so the next attempt skips exactly
+        // the note that is already there instead of guessing.
         if (/AlreadyNoted/i.test(status.message)) {
-          skipNoteRef.current = true
+          void preimageStatusQuery.refetch().then((r) => {
+            skipNoteRef.current = r.data === "Unrequested" || r.data === "Requested"
+          })
+          void envelopeNoted.refresh()
         }
       }
       if (sign.isWalletConnect) {
@@ -750,6 +783,7 @@ function CreatePageInner() {
     } catch {
       // Best-effort: fall back to whatever the seeded ref already holds.
     }
+    await envelopeNoted.refresh()
     try {
       const count = await referendumCountQuery.refetch()
       if (count.data != null) {
@@ -759,7 +793,7 @@ function CreatePageInner() {
       // Best-effort: fall back to the seeded ref; build throws if empty.
     }
     void tx.submit()
-  }, [preimageStatusQuery, referendumCountQuery, tx])
+  }, [preimageStatusQuery, referendumCountQuery, envelopeNoted, tx])
 
   return (
     <Shell>

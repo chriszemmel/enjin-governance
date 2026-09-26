@@ -1,6 +1,9 @@
 "use client"
 
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { stringToU8a } from "@polkadot/util"
+import { blake2AsHex } from "@polkadot/util-crypto"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { getPreimage, getPreimageStatus } from "@/lib/governance/preimage"
@@ -75,4 +78,35 @@ export function usePreimageStatus(
     enabled: apiQuery.isSuccess && !!hash,
     staleTime: 30_000,
   })
+}
+
+const isNoted = (s: PreimageStatus | undefined) => s === "Unrequested" || s === "Requested"
+
+/**
+ * Whether a draft's EGOV1 envelope is already noted as a preimage - by an
+ * earlier attempt, or by someone else who copied it. The batch must then
+ * leave its notePreimage out (noting it again aborts the whole batch);
+ * setMetadata binds the same hash either way. `skipRef` feeds the
+ * synchronous build closure; `refresh` re-reads the chain right before
+ * signing and after a failed attempt.
+ */
+export function useEnvelopeNoted(remarkPayload: string | null | undefined) {
+  const hash = useMemo(
+    () => (remarkPayload ? blake2AsHex(stringToU8a(remarkPayload), 256) : null),
+    [remarkPayload],
+  )
+  const query = usePreimageStatus(hash)
+  const skipRef = useRef(false)
+  useEffect(() => {
+    skipRef.current = isNoted(query.data)
+  }, [query.data])
+  const { refetch } = query
+  const refresh = useCallback(async () => {
+    try {
+      skipRef.current = isNoted((await refetch()).data)
+    } catch {
+      // keep the last known answer
+    }
+  }, [refetch])
+  return { skipRef, refresh }
 }

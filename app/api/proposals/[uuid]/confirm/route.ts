@@ -14,6 +14,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server"
+import { blake2AsHex } from "@polkadot/util-crypto"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { getApi } from "@/lib/chain/api"
@@ -22,6 +23,7 @@ import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { attachReferendumIndex, getProposalById } from "@/lib/db/proposals"
 import { expectedMetadataHash } from "@/lib/governance/proposal-metadata"
+import { getReferendum } from "@/lib/governance/referenda"
 import { flagText } from "@/lib/moderation/auto-flag"
 import { isR2Configured } from "@/lib/r2/client"
 import { proposalIndexRedirectKey } from "@/lib/r2/paths"
@@ -142,6 +144,81 @@ async function metadataBindingMatches(
   return { ok: true }
 }
 
+/**
+ * The metadata binding alone doesn't prove the referendum is this draft's:
+ * anyone can note a copy of a draft's envelope and set it as the metadata
+ * of their own referendum. So the referendum must also have been filed
+ * (submission deposit) by this draft's proposer and, while it is ongoing,
+ * enact exactly the draft's call.
+ */
+async function filedByProposer(
+  network: string,
+  index: number,
+  row: { proposer_address: string; preimage_hash: string | null; preimage_len: number | null },
+): Promise<BindingCheck> {
+  const chain = CHAINS[network as ChainId]
+  if (!chain) {
+    return { ok: false, status: 409, error: `Unknown network ${network}`, retryable: false }
+  }
+  let ref: Awaited<ReturnType<typeof getReferendum>>
+  try {
+    ref = await withDeadline(
+      (async () => getReferendum(await getApi(chain.rpc, 0), index))(),
+      CHAIN_READ_DEADLINE_MS,
+    )
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      error: "Could not reach the chain to check who filed this referendum - retry shortly.",
+      retryable: true,
+    }
+  }
+  const status = ref?.status
+  const deposit = status && status.type !== "Killed" ? status.submissionDeposit : null
+  if (!deposit) {
+    return {
+      ok: false,
+      status: 409,
+      error: `Can't tell who filed referendum ${index}, so it can't be linked here.`,
+      retryable: false,
+    }
+  }
+  let sameFiler = false
+  try {
+    sameFiler = samePublicKey(deposit.who, row.proposer_address)
+  } catch {
+    sameFiler = false
+  }
+  if (!sameFiler) {
+    return {
+      ok: false,
+      status: 409,
+      error: `Referendum ${index} was filed by another account.`,
+      retryable: false,
+    }
+  }
+  if (status?.type === "Ongoing" && row.preimage_hash) {
+    const p = status.proposal
+    const [hash, len] =
+      "type" in p && p.type === "Inline"
+        ? [blake2AsHex(p.bytes, 256), p.bytes.length]
+        : [(p as { hash: string }).hash, (p as { len: number }).len]
+    if (
+      hash.toLowerCase() !== row.preimage_hash.toLowerCase() ||
+      (row.preimage_len != null && len !== row.preimage_len)
+    ) {
+      return {
+        ok: false,
+        status: 409,
+        error: `Referendum ${index} enacts a different call than this proposal.`,
+        retryable: false,
+      }
+    }
+  }
+  return { ok: true }
+}
+
 const uuidSchema = z.string().uuid()
 
 // The tx coordinates are optional: a proposer whose submission landed but
@@ -221,6 +298,13 @@ export async function POST(
     return NextResponse.json(
       { ok: false, error: binding.error, retryable: binding.retryable },
       { status: binding.status },
+    )
+  }
+  const filer = await filedByProposer(existing.network, parsed.referendum_index, existing)
+  if (!filer.ok) {
+    return NextResponse.json(
+      { ok: false, error: filer.error, retryable: filer.retryable },
+      { status: filer.status },
     )
   }
 

@@ -4,10 +4,15 @@
  * Lists proposals filed by an SS58 address on a specific network.
  * Used by the create wizard to show "Your drafts" so the user can
  * cancel stuck ones (e.g. a Stage that never finalised).
+ *
+ * Unsigned drafts are private: only the proposer, signed in, sees them.
+ * Anyone else gets the proposals that reached the chain.
  */
 
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
+import { getCurrentUser } from "@/lib/auth/current-user"
+import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { listProposalsByProposer } from "@/lib/db/proposals"
 
@@ -48,19 +53,31 @@ export async function GET(
     )
   }
 
-  const rows = await listProposalsByProposer(network.data, address)
+  const [rows, me] = await Promise.all([
+    listProposalsByProposer(network.data, address),
+    getCurrentUser().catch(() => null),
+  ])
+  await initializeWasm()
+  let isOwner = false
+  try {
+    isOwner = me != null && samePublicKey(me.address, address)
+  } catch {
+    isOwner = false
+  }
   return NextResponse.json({
     ok: true,
-    items: rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      status: r.status,
-      referendum_index: r.referendum_index,
-      tx_hash: r.tx_hash,
-      json_url: r.json_url,
-      created_at: r.created_at,
-      // Treasury drafts resume in the wizard; advanced ones carry no spend.
-      is_treasury: r.amount_planck != null,
-    })),
+    items: rows
+      .filter((r) => isOwner || r.status === "on_chain")
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        referendum_index: r.referendum_index,
+        tx_hash: r.tx_hash,
+        json_url: r.json_url,
+        created_at: r.created_at,
+        // Treasury drafts resume in the wizard; advanced ones carry no spend.
+        is_treasury: r.amount_planck != null,
+      })),
   })
 }

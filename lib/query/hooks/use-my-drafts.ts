@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { confirmWithRetry } from "@/lib/governance/confirm-client"
+import { useMe } from "@/lib/query/hooks/use-session"
 import { readApiError } from "@/lib/utils/api-error"
 
 export type MyDraftStatus =
@@ -28,13 +29,15 @@ export type MyDraft = {
 /**
  * Lists every proposal row authored by the connected address on the
  * active chain. Used by the wizard to surface old un-landed drafts so
- * the proposer can mark them outdated.
+ * the proposer can mark them outdated. Unsigned drafts only come back
+ * while their proposer is signed in, so the list refetches on sign-in.
  */
 export function useMyDrafts(address: string | null, chain?: ChainConfig) {
   const active = useActiveChain()
   const target = chain ?? active
+  const session = useMe().data?.address ?? null
   return useQuery<MyDraft[]>({
-    queryKey: ["my-drafts", target.id, address],
+    queryKey: ["my-drafts", target.id, address, session],
     queryFn: async () => {
       if (!address) return []
       const res = await fetch(

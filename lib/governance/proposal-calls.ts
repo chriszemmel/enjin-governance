@@ -16,7 +16,7 @@
 
 import type { ApiPromise } from "@polkadot/api"
 import type { Call } from "@polkadot/types/interfaces"
-import { stringToHex } from "@polkadot/util"
+import { stringToHex, u8aToHex } from "@polkadot/util"
 import { buildSpendLocalCall } from "./treasury"
 import {
   buildCancelReferendumCall,
@@ -76,8 +76,17 @@ export function buildProposalCall(api: ApiPromise, spec: ProposalCallSpec): Call
       return api.tx.system.setCode(spec.codeHex).method as Call
     case "remark":
       return api.tx.system.remark(stringToHex(spec.text)).method as Call
-    case "rawCall":
-      return api.createType("Call", spec.callHex) as unknown as Call
+    case "rawCall": {
+      // Decoding stops at the end of the call, so trailing bytes would be
+      // dropped silently: the call must re-encode to exactly what was pasted.
+      const call = api.createType("Call", spec.callHex) as unknown as Call
+      if (u8aToHex(call.toU8a()) !== spec.callHex.toLowerCase()) {
+        throw new Error(
+          "These bytes don't decode to exactly one call - check for extra or missing bytes.",
+        )
+      }
+      return call
+    }
   }
 }
 

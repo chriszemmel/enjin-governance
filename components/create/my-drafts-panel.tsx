@@ -11,6 +11,7 @@ import {
   useMyDrafts,
   type MyDraft,
 } from "@/lib/query/hooks/use-my-drafts"
+import { useMe } from "@/lib/query/hooks/use-session"
 import { formatError } from "@/lib/utils/format-error"
 
 type Props = {
@@ -39,6 +40,7 @@ type Props = {
  */
 export function MyDraftsPanel({ address, network, ensureSignedIn }: Props) {
   const router = useRouter()
+  const me = useMe()
   const draftsQuery = useMyDrafts(address, undefined)
   const cancel = useCancelDraft()
   const link = useLinkDraft()
@@ -47,7 +49,23 @@ export function MyDraftsPanel({ address, network, ensureSignedIn }: Props) {
     (d) => d.status === "draft" || d.status === "submitted",
   )
 
-  if (!address || stale.length === 0) return null
+  if (!address) return null
+  // Drafts are private: signed out, the list can't include them.
+  if (me.data === null && ensureSignedIn) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface-1 px-4 py-2.5 text-xs text-muted-foreground">
+        <span>Saved drafts are private. Sign in to see yours.</span>
+        <button
+          type="button"
+          onClick={() => void ensureSignedIn()}
+          className="font-medium text-primary hover:text-purple-dim"
+        >
+          Sign in
+        </button>
+      </div>
+    )
+  }
+  if (stale.length === 0) return null
 
   // Sign in on the spot; only if that fails, offer the account page (the
   // form on this page isn't saved, so we never navigate away on our own).

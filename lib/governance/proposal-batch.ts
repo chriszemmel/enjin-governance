@@ -40,6 +40,8 @@ type BuildArgs = {
    * it): skip step 1, which would abort with preimage.AlreadyNoted.
    */
   skipNote?: boolean
+  /** The envelope is already noted (see useEnvelopeNoted): skip step 3. */
+  skipEnvelopeNote?: boolean
 }
 
 type BuiltProposalBatch = {
@@ -52,11 +54,17 @@ type BuiltProposalBatch = {
   calls: Tx[]
 }
 
-function envelopeCalls(api: ApiPromise, remarkPayload: string, referendumIndex: number) {
+function envelopeCalls(
+  api: ApiPromise,
+  remarkPayload: string,
+  referendumIndex: number,
+  skipNote = false,
+) {
   const { extrinsic, hash } = noteAndHash(api, stringToU8a(remarkPayload))
+  const setMetadata = buildSetMetadata(api, referendumIndex, hash) as Tx
   return {
     metadataHash: hash,
-    calls: [extrinsic, buildSetMetadata(api, referendumIndex, hash)] as Tx[],
+    calls: (skipNote ? [setMetadata] : [extrinsic, setMetadata]) as Tx[],
   }
 }
 
@@ -74,7 +82,12 @@ export function buildProposalBatch(api: ApiPromise, args: BuildArgs): BuiltPropo
       enactment: args.enactment,
     }) as Tx,
   )
-  const envelope = envelopeCalls(api, args.remarkPayload, args.referendumIndex)
+  const envelope = envelopeCalls(
+    api,
+    args.remarkPayload,
+    args.referendumIndex,
+    args.skipEnvelopeNote,
+  )
   calls.push(...envelope.calls)
 
   return {
@@ -89,7 +102,7 @@ export function buildProposalBatch(api: ApiPromise, args: BuildArgs): BuiltPropo
 
 export function attachMetadataToExisting(
   api: ApiPromise,
-  args: { remarkPayload: string; referendumIndex: number },
+  args: { remarkPayload: string; referendumIndex: number; skipEnvelopeNote?: boolean },
 ): { metadataHash: `0x${string}`; calls: Tx[] } {
-  return envelopeCalls(api, args.remarkPayload, args.referendumIndex)
+  return envelopeCalls(api, args.remarkPayload, args.referendumIndex, args.skipEnvelopeNote)
 }

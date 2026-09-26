@@ -55,7 +55,11 @@ import { pickOriginForAmount } from "@/lib/governance/treasury"
 import { confirmWithRetry } from "@/lib/governance/confirm-client"
 import { useApi } from "@/lib/query/hooks/use-api"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
-import { usePreimage, usePreimageStatus } from "@/lib/query/hooks/use-preimage"
+import {
+  useEnvelopeNoted,
+  usePreimage,
+  usePreimageStatus,
+} from "@/lib/query/hooks/use-preimage"
 import { useProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
 import { useReferendum } from "@/lib/query/hooks/use-referendum"
 import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
@@ -529,6 +533,8 @@ export default function AdvancedCreatePage() {
   useEffect(() => {
     skipNoteRef.current = callAlreadyNoted
   }, [callAlreadyNoted])
+  // And whether the envelope is already noted (by anyone): skip its note.
+  const envelopeNoted = useEnvelopeNoted(draft?.remark_payload)
 
   const tx = useExtrinsic({
     // The referendum index is written to our DB on success, so wait for
@@ -540,6 +546,7 @@ export default function AdvancedCreatePage() {
         return attachMetadataToExisting(api, {
           remarkPayload: draft.remark_payload,
           referendumIndex: existingIndex,
+          skipEnvelopeNote: envelopeNoted.skipRef.current,
         }).calls
       }
       if (!spec || !resolvedOrigin) throw new Error("Complete the proposal fields.")
@@ -554,6 +561,7 @@ export default function AdvancedCreatePage() {
         remarkPayload: draft.remark_payload,
         referendumIndex,
         skipNote: skipNoteRef.current,
+        skipEnvelopeNote: envelopeNoted.skipRef.current,
       }).calls
     },
     async onSuccess({ events, txHash, blockHash }) {
@@ -584,8 +592,13 @@ export default function AdvancedCreatePage() {
       setLinkState(error ? { kind: "failed", message: error } : { kind: "linked" })
     },
     onStatus(status) {
+      // One of the two preimages is already on chain: re-read both so the
+      // next attempt skips exactly that note.
       if (status.kind === "error" && /AlreadyNoted/i.test(status.message)) {
-        skipNoteRef.current = true
+        void preimageStatusQuery.refetch().then((r) => {
+          skipNoteRef.current = r.data === "Unrequested" || r.data === "Requested"
+        })
+        void envelopeNoted.refresh()
       }
       if (sign.isWalletConnect) return
       if (status.kind === "error") {
@@ -613,10 +626,11 @@ export default function AdvancedCreatePage() {
         // build throws if the ref is still empty
       }
     }
+    await envelopeNoted.refresh()
     setStep("submit")
     sign.open()
     void tx.submit()
-  }, [isConnected, mode, preimageStatusQuery, referendumCountQuery, sign, tx])
+  }, [isConnected, mode, preimageStatusQuery, referendumCountQuery, envelopeNoted, sign, tx])
 
   const meta = PROPOSAL_KIND_META[kind]
   const readOnly = !isConnected || step !== "create"
