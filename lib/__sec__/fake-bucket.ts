@@ -77,6 +77,10 @@ export async function readObjectText(key: string): Promise<string | null> {
   return bucket.get(key)?.body ?? null
 }
 
+export async function listObjectKeys(prefix: string): Promise<string[]> {
+  return [...bucket.keys()].filter((k) => k.startsWith(prefix))
+}
+
 export async function objectExists(key: string): Promise<boolean> {
   return bucket.has(key)
 }

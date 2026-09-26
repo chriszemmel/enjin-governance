@@ -28,6 +28,7 @@
  * proposal's own media folder.
  */
 
+import { createHash } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
@@ -37,7 +38,6 @@ import {
   getProposalById,
   insertProposalDraft,
   insertAttachment,
-  listAttachments,
   replaceAttachments,
   updateProposalDraft,
   type CreateProposalDraft,
@@ -45,9 +45,9 @@ import {
 import { isEnvelopeOnChain } from "@/lib/governance/envelope-status"
 import { upsertUserByAddress } from "@/lib/db/users"
 import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
-import { ownMediaKey, proposalJsonKey, publicUrlFor } from "@/lib/r2/paths"
-import { deleteObjects, putJson } from "@/lib/r2/upload"
-import { thumbKeyFor } from "@/lib/governance/proposal-media"
+import { stringifyStable } from "@/lib/r2/json"
+import { ownMediaKey, proposalJsonVersionKey, publicUrlFor } from "@/lib/r2/paths"
+import { putJson } from "@/lib/r2/upload"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import {
@@ -277,8 +277,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     attachments.push({ key: ownKey, att: { ...att, url: publicUrlFor(publicAssetBase(), ownKey) } })
   }
 
-  const key = proposalJsonKey(parsed.network, parsed.proposal_id)
-
   // The call section describes what the referendum enacts, so it must agree
   // with the preimage the draft records.
   if (
@@ -325,6 +323,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     signature: null,
   }
 
+  // Each staged version is stored under its own hash-named key and never
+  // overwritten: a batch signed from an earlier version (still in flight,
+  // or from another tab) keeps pointing at exactly the bytes it pinned.
+  const jsonText = stringifyStable(proposalJson)
+  const jsonSha256 = createHash("sha256").update(jsonText, "utf8").digest("hex")
+  if (existingRow && existingRow.json_sha256 === jsonSha256 && existingRow.remark_payload) {
+    // Nothing changed since the saved version - no write needed.
+    return NextResponse.json({
+      ok: true,
+      id: existingRow.id,
+      updated: false,
+      json_url: existingRow.json_url,
+      json_sha256: existingRow.json_sha256,
+      json_size_bytes: Buffer.byteLength(jsonText, "utf8"),
+      remark_payload: existingRow.remark_payload,
+      proposal: proposalJson,
+    })
+  }
+  const key = proposalJsonVersionKey(parsed.network, parsed.proposal_id, jsonSha256)
+
   let put
   try {
     put = await putJson(key, proposalJson)
@@ -369,21 +387,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (existingRow) {
-    const updated = await updateProposalDraft({
-      id: existingRow.id,
-      expectedSha256: existingRow.json_sha256,
-      title: draft.title,
-      summary: draft.summary,
-      bodyMarkdown: draft.bodyMarkdown,
-      track: draft.track,
-      beneficiary: draft.beneficiary,
-      amountPlanck: draft.amountPlanck,
-      jsonUrl: draft.jsonUrl,
-      jsonSha256: draft.jsonSha256,
-      preimageHash: draft.preimageHash,
-      preimageLen: draft.preimageLen,
-      remarkPayload: draft.remarkPayload,
-    }).catch(() => null)
+    let updated
+    try {
+      updated = await updateProposalDraft({
+        id: existingRow.id,
+        // The version this request was checked against, above.
+        expectedSha256: existingRow.json_sha256,
+        title: draft.title,
+        summary: draft.summary,
+        bodyMarkdown: draft.bodyMarkdown,
+        track: draft.track,
+        beneficiary: draft.beneficiary,
+        amountPlanck: draft.amountPlanck,
+        jsonUrl: draft.jsonUrl,
+        jsonKey: draft.jsonKey,
+        jsonSha256: draft.jsonSha256,
+        preimageHash: draft.preimageHash,
+        preimageLen: draft.preimageLen,
+        remarkPayload: draft.remarkPayload,
+      })
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Could not save the draft - try again." },
+        { status: 503 },
+      )
+    }
     if (!updated) {
       return NextResponse.json(
         {
@@ -394,10 +422,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 409 },
       )
     }
-    // Files the saved draft listed but this version no longer does were
-    // removed in the editor; they were never signed, so clean them up.
-    const keep = new Set(attachments.map((a) => a.key))
-    const previous = await listAttachments(updated.id).catch(() => [])
+    // Files this version no longer lists stay in storage: an earlier
+    // version that may already be pinned on chain can still reference them.
+    // Deleting the draft removes its whole folder.
     try {
       await replaceAttachments(
         updated.id,
@@ -413,12 +440,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       )
     } catch {
       // Best-effort - the JSON already carries the authoritative list.
-    }
-    const dropped = previous
-      .map((a) => ownMediaKey(a.bucket_key, parsed.network, parsed.proposal_id))
-      .filter((k): k is string => k != null && !keep.has(k))
-    if (dropped.length > 0) {
-      await deleteObjects(dropped.flatMap((k) => [k, thumbKeyFor(k)])).catch(() => null)
     }
     return NextResponse.json({
       ok: true,

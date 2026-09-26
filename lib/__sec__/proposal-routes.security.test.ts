@@ -3,6 +3,7 @@
  * route handlers run; only I/O (auth, DB, bucket, rate limit, RPC) is mocked,
  * and lib/chain/ss58 stays real so ownership checks are genuine.
  */
+import { createHash } from "node:crypto"
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 
@@ -103,6 +104,11 @@ function req(url: string, method: string, body?: unknown) {
 }
 const ctx = (uuid: string) => ({ params: Promise.resolve({ uuid }) })
 const bodyOf = (k: string) => bucketMod.bucket.get(k)?.body
+/** Everything stored in a proposal's folder. */
+const folderKeys = (id: string) =>
+  [...bucketMod.bucket.keys()].filter((k) => k.startsWith(`proposals/${NET}/${id}/`))
+/** The JSON version the row currently points at. */
+const savedJson = (id: string) => JSON.parse(bodyOf(db.proposals.get(id)!.json_key)!)
 
 beforeEach(() => {
   db.reset()
@@ -121,7 +127,7 @@ describe("draft POST", () => {
     expect(db.proposals.size).toBe(1)
   })
 
-  it("re-stages the caller's own draft in place when it sends the current hash", async () => {
+  it("re-stages the caller's own draft as a new version and keeps the old bytes", async () => {
     const ownKey = proposalJsonKey(NET, OWN_ID)
     db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: ownKey, json_sha256: "b".repeat(64) })
     bucketMod.bucket.set(ownKey, { body: "SAVED", contentType: "application/json" })
@@ -131,10 +137,39 @@ describe("draft POST", () => {
     const json = await res.json()
     expect(res.status).toBe(200)
     expect(json.updated).toBe(true)
-    expect(JSON.parse(bodyOf(ownKey)!).title).toBe("Changed title")
-    expect(db.proposals.get(OWN_ID)!.title).toBe("Changed title")
-    expect(db.proposals.get(OWN_ID)!.json_sha256).toBe(json.json_sha256)
+    const row = db.proposals.get(OWN_ID)!
+    expect(row.json_key).toBe(`proposals/${NET}/${OWN_ID}/proposal-${json.json_sha256.slice(0, 16)}.json`)
+    expect(row.json_url).toBe(json.json_url)
+    expect(savedJson(OWN_ID).title).toBe("Changed title")
+    expect(row.title).toBe("Changed title")
+    expect(row.json_sha256).toBe(json.json_sha256)
+    // A batch signed from the earlier version still finds its bytes.
+    expect(bodyOf(ownKey)).toBe("SAVED")
     expect(db.proposals.size).toBe(2)
+
+    // Staging the same content again writes nothing new.
+    const again = await POST(
+      req("https://gov.test/api/proposals/draft", "POST", draftBody({ title: "Changed title", expected_sha256: json.json_sha256 })),
+    )
+    expect(again.status).toBe(200)
+    expect((await again.json()).json_sha256).toBe(json.json_sha256)
+    expect(folderKeys(OWN_ID)).toHaveLength(2)
+  })
+
+  it("never lets a losing concurrent re-stage replace the winner's bytes", async () => {
+    const ownKey = proposalJsonKey(NET, OWN_ID)
+    db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: ownKey, json_sha256: "b".repeat(64) })
+    bucketMod.bucket.set(ownKey, { body: "SAVED", contentType: "application/json" })
+    const stage = (title: string) =>
+      POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ title, expected_sha256: "b".repeat(64) })))
+    const [a, b] = await Promise.all([stage("Tab A"), stage("Tab B")])
+    expect([a.status, b.status].sort()).toEqual([200, 409])
+    const winner = (await (a.status === 200 ? a : b).json()) as { json_sha256: string; remark_payload: string }
+    const row = db.proposals.get(OWN_ID)!
+    // The row, its bytes and the returned envelope all agree.
+    expect(row.json_sha256).toBe(winner.json_sha256)
+    expect(createHash("sha256").update(bodyOf(row.json_key)!).digest("hex")).toBe(winner.json_sha256)
+    expect(winner.remark_payload).toContain(winner.json_sha256)
   })
 
   it("refuses to re-stage from a stale hash, a submitted row, an anchored envelope or without the chain", async () => {
@@ -171,7 +206,7 @@ describe("draft POST", () => {
       const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [att(foreign)] })))
       expect(res.status).toBe(400)
     }
-    expect(bucketMod.bucket.has(proposalJsonKey(NET, OWN_ID))).toBe(false)
+    expect(folderKeys(OWN_ID)).toEqual([])
     expect(db.proposals.size).toBe(1)
   })
 
@@ -182,7 +217,7 @@ describe("draft POST", () => {
       req("https://gov.test/api/proposals/draft", "POST", draftBody({ beneficiary: matrix, amount_planck: "1" })),
     )
     expect(res.status).toBe(400)
-    expect(bucketMod.bucket.has(proposalJsonKey(NET, OWN_ID))).toBe(false)
+    expect(folderKeys(OWN_ID)).toEqual([])
   })
 
   it("writes EGOV1 1.2.0 with the call section, and only when it matches the preimage", async () => {
@@ -193,14 +228,14 @@ describe("draft POST", () => {
     expect(bad.status).toBe(400)
     const ok = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ ...base, call })))
     expect(ok.status).toBe(200)
-    const saved = JSON.parse(bodyOf(proposalJsonKey(NET, OWN_ID))!)
+    const saved = savedJson(OWN_ID)
     expect(saved).toMatchObject({ version: "1.2.0", call, enactment: { type: "After", block: 0 } })
   })
 
   it("still writes 1.1.0 for treasury drafts without a call section", async () => {
     const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({})))
     expect(res.status).toBe(200)
-    const saved = JSON.parse(bodyOf(proposalJsonKey(NET, OWN_ID))!)
+    const saved = savedJson(OWN_ID)
     expect(saved.version).toBe("1.1.0")
     expect("call" in saved).toBe(false)
   })
@@ -217,26 +252,58 @@ describe("draft POST", () => {
     const sneaky = { ...att(mediaKey, "roadmap.png"), url: "https://tracker.example/pixel.png" }
     const res = await POST(req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [sneaky] })))
     expect(res.status).toBe(200)
-    const saved = JSON.parse(bodyOf(proposalJsonKey(NET, OWN_ID))!)
+    const saved = savedJson(OWN_ID)
     expect(saved.attachments[0].url).toBe(`https://fake.local/r/${mediaKey}`)
     expect(db.attachments.find((a) => a.bucket_key === mediaKey)?.url).toBe(`https://fake.local/r/${mediaKey}`)
   })
 
-  it("re-staging without an attachment removes its file and thumbnail", async () => {
+  it("re-staging without an attachment keeps its file for earlier versions; deleting the draft removes the folder", async () => {
     const ownKey = proposalJsonKey(NET, OWN_ID)
     const keep = `proposals/${NET}/${OWN_ID}/media/aaaa1111-keep.png`
     const drop = `proposals/${NET}/${OWN_ID}/media/bbbb2222-drop.png`
+    const unlisted = `proposals/${NET}/${OWN_ID}/media/cccc3333-held.png`
     db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: ownKey, json_sha256: "b".repeat(64) })
     db.seedAttachment({ proposal_id: OWN_ID, bucket_key: keep })
     db.seedAttachment({ proposal_id: OWN_ID, bucket_key: drop })
-    for (const k of [keep, drop, `${drop}.thumb.webp`]) bucketMod.bucket.set(k, { body: "IMG", contentType: "image/png" })
+    bucketMod.bucket.set(ownKey, { body: "SAVED", contentType: "application/json" })
+    for (const k of [keep, drop, `${drop}.thumb.webp`, unlisted]) bucketMod.bucket.set(k, { body: "IMG", contentType: "image/png" })
     const res = await POST(
       req("https://gov.test/api/proposals/draft", "POST", draftBody({ attachments: [att(keep, "keep.png")], expected_sha256: "b".repeat(64) })),
     )
     expect(res.status).toBe(200)
-    expect(bucketMod.bucket.has(keep)).toBe(true)
-    expect(bucketMod.bucket.has(drop)).toBe(false)
-    expect(bucketMod.bucket.has(`${drop}.thumb.webp`)).toBe(false)
+    expect(bucketMod.bucket.has(drop)).toBe(true)
+    expect(bucketMod.bucket.has(`${drop}.thumb.webp`)).toBe(true)
+
+    const del = await DELETE(req(`https://gov.test/api/proposals/${OWN_ID}`, "DELETE"), ctx(OWN_ID))
+    expect(del.status).toBe(200)
+    // Every version, every upload - listed or held - is gone.
+    expect(folderKeys(OWN_ID)).toEqual([])
+    expect(bodyOf(victimJsonKey)).toBe(`REAL:${victimJsonKey}`)
+  })
+
+  it("refuses to delete a draft that is pinned on chain, and fails closed", async () => {
+    const ownKey = proposalJsonKey(NET, OWN_ID)
+    db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: ownKey, json_sha256: "b".repeat(64) })
+    bucketMod.bucket.set(ownKey, { body: "SAVED", contentType: "application/json" })
+    const del = () => DELETE(req(`https://gov.test/api/proposals/${OWN_ID}`, "DELETE"), ctx(OWN_ID))
+    chainState.mode = "anchored"
+    expect((await del()).status).toBe(409)
+    chainState.mode = "down"
+    expect((await del()).status).toBe(503)
+    expect(db.proposals.has(OWN_ID)).toBe(true)
+    expect(bodyOf(ownKey)).toBe("SAVED")
+  })
+
+  it("only edits proposals that reached the chain", async () => {
+    const ownKey = proposalJsonKey(NET, OWN_ID)
+    db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: ownKey, json_sha256: "b".repeat(64) })
+    bucketMod.bucket.set(ownKey, { body: "SAVED", contentType: "application/json" })
+    const res = await PATCH(
+      req(`https://gov.test/api/proposals/${OWN_ID}`, "PATCH", { title: "Edited", summary: null, body_markdown: "x" }),
+      ctx(OWN_ID),
+    )
+    expect(res.status).toBe(409)
+    expect(bodyOf(ownKey)).toBe("SAVED")
   })
 })
 

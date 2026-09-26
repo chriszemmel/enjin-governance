@@ -10,6 +10,7 @@ import {
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3"
 import { getR2Client, r2Bucket, publicAssetBase } from "./client"
@@ -78,6 +79,20 @@ export async function deleteObjects(keys: string[]): Promise<void> {
       Delete: { Objects: unique.map((Key) => ({ Key })), Quiet: true },
     }),
   )
+}
+
+/** Every key under a prefix (a proposal's folder holds a handful). */
+export async function listObjectKeys(prefix: string): Promise<string[]> {
+  const keys: string[] = []
+  let token: string | undefined
+  do {
+    const res = await getR2Client().send(
+      new ListObjectsV2Command({ Bucket: r2Bucket(), Prefix: prefix, ContinuationToken: token }),
+    )
+    for (const o of res.Contents ?? []) if (o.Key) keys.push(o.Key)
+    token = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (token && keys.length < 5_000)
+  return keys
 }
 
 /**

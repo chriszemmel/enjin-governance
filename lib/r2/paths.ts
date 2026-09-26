@@ -2,7 +2,8 @@
  * Bucket-key conventions for the `enjin-governance` R2 bucket.
  *
  * Layout:
- *   proposals/{network}/{uuid}/proposal.json
+ *   proposals/{network}/{uuid}/proposal-{sha256 prefix}.json   (one per staged version)
+ *   proposals/{network}/{uuid}/proposal.json                   (drafts staged before v1.1)
  *   proposals/{network}/{uuid}/media/{safe-filename}
  *   proposals/{network}/index/{referendum_index}.json
  *   user-avatars/{user_uuid}.png
@@ -25,6 +26,25 @@ export function sanitiseFilename(name: string): string {
 
 export function proposalJsonKey(network: ChainId, proposalUuid: string): string {
   return `proposals/${network}/${proposalUuid}/proposal.json`
+}
+
+/**
+ * Key for one staged version of a proposal's JSON, named after its hash.
+ * Every version gets its own object, so a version that an on-chain
+ * envelope may already point at (a batch still in flight, a second tab)
+ * is never overwritten by a later re-stage.
+ */
+export function proposalJsonVersionKey(
+  network: ChainId,
+  proposalUuid: string,
+  sha256: string,
+): string {
+  return `proposals/${network}/${proposalUuid}/proposal-${sha256.slice(0, 16)}.json`
+}
+
+/** Whether a key is one of a proposal's JSON versions (not media). */
+export function isProposalJsonKey(key: string): boolean {
+  return /\/proposal(-[0-9a-f]{16})?\.json$/.test(key)
 }
 
 export function proposalMediaKey(

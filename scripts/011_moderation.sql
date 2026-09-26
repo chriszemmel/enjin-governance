@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS moderation_roles (
 CREATE TABLE IF NOT EXISTS moderation_state (
   target_type TEXT        NOT NULL,
   target_id   TEXT        NOT NULL,
-  proposal_id UUID        REFERENCES proposals(id) ON DELETE CASCADE,
+  proposal_id UUID        REFERENCES proposals(id) ON DELETE SET NULL,
   state       TEXT        NOT NULL,
   reason      TEXT,
   source      TEXT        NOT NULL DEFAULT 'moderator',
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS moderation_reports (
   id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   target_type      TEXT        NOT NULL,
   target_id        TEXT        NOT NULL,
-  proposal_id      UUID        REFERENCES proposals(id) ON DELETE CASCADE,
+  proposal_id      UUID        REFERENCES proposals(id) ON DELETE SET NULL,
   source           TEXT        NOT NULL DEFAULT 'user',
   reporter_user_id UUID        REFERENCES users(id) ON DELETE SET NULL,
   category         TEXT        NOT NULL,

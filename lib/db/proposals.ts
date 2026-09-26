@@ -105,6 +105,7 @@ export type UpdateProposalDraftArgs = {
   beneficiary: string | null
   amountPlanck: bigint | null
   jsonUrl: string
+  jsonKey: string
   jsonSha256: string
   preimageHash: string | null
   preimageLen: number | null
@@ -129,6 +130,7 @@ export async function updateProposalDraft(
       beneficiary    = ${d.beneficiary},
       amount_planck  = ${d.amountPlanck?.toString() ?? null},
       json_url       = ${d.jsonUrl},
+      json_key       = ${d.jsonKey},
       json_sha256    = ${d.jsonSha256},
       preimage_hash  = ${d.preimageHash},
       preimage_len   = ${d.preimageLen},
@@ -285,20 +287,21 @@ export async function markProposalFailed(
   `
 }
 
+/** Null when the row is gone or reached the chain in the meantime. */
 export async function markProposalCancelled(
   proposalId: string,
   reason: string | null,
-): Promise<ProposalRow> {
+): Promise<ProposalRow | null> {
   const sql = getSql()
   const rows = (await sql`
     UPDATE proposals SET
       status = 'cancelled',
       last_error = ${reason ?? "Marked outdated by proposer"}
     WHERE id = ${proposalId}
+      AND status <> 'on_chain'
     RETURNING *
   `) as ProposalRow[]
-  if (rows.length === 0) throw new Error(`No proposal ${proposalId}`)
-  return rows[0]
+  return rows[0] ?? null
 }
 
 export async function listProposalsByProposer(
@@ -370,9 +373,13 @@ export async function getProposalById(id: string): Promise<ProposalRow | null> {
  * route should call this - it enforces the "must be cancelled/draft/failed
  * before delete" rule (on_chain rows are never deletable).
  */
-export async function deleteProposalById(id: string): Promise<void> {
+/** Never deletes an on-chain row, even if one was confirmed a moment ago. */
+export async function deleteProposalById(id: string): Promise<boolean> {
   const sql = getSql()
-  await sql`DELETE FROM proposals WHERE id = ${id}`
+  const rows = (await sql`
+    DELETE FROM proposals WHERE id = ${id} AND status <> 'on_chain' RETURNING id
+  `) as unknown[]
+  return rows.length > 0
 }
 
 export type AttachmentRow = {

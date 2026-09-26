@@ -191,6 +191,7 @@ export async function updateProposalDraft(d: {
   beneficiary: string | null
   amountPlanck: bigint | null
   jsonUrl: string
+  jsonKey: string
   jsonSha256: string
   preimageHash: string | null
   preimageLen: number | null
@@ -206,6 +207,7 @@ export async function updateProposalDraft(d: {
     beneficiary: d.beneficiary,
     amount_planck: d.amountPlanck?.toString() ?? null,
     json_url: d.jsonUrl,
+    json_key: d.jsonKey,
     json_sha256: d.jsonSha256,
     preimage_hash: d.preimageHash,
     preimage_len: d.preimageLen,
@@ -250,7 +252,9 @@ export async function insertAttachment(a: InsertAttachmentArgs): Promise<Attachm
 }
 
 export async function getProposalById(id: string): Promise<ProposalRow | null> {
-  return proposals.get(id) ?? null
+  // A snapshot, like a real query - a live object would hide races.
+  const row = proposals.get(id)
+  return row ? { ...row } : null
 }
 
 export async function listAttachments(proposalId: string): Promise<AttachmentRow[]> {
@@ -259,12 +263,15 @@ export async function listAttachments(proposalId: string): Promise<AttachmentRow
     .sort((x, y) => x.created_at.getTime() - y.created_at.getTime())
 }
 
-export async function deleteProposalById(id: string): Promise<void> {
+export async function deleteProposalById(id: string): Promise<boolean> {
+  const row = proposals.get(id)
+  if (!row || row.status === "on_chain") return false
   proposals.delete(id)
   // ON DELETE CASCADE
   for (let i = attachments.length - 1; i >= 0; i -= 1) {
     if (attachments[i].proposal_id === id) attachments.splice(i, 1)
   }
+  return true
 }
 
 type UpdateProposalContentArgs = {

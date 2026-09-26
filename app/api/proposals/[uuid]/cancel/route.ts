@@ -86,5 +86,11 @@ export async function POST(
   }
 
   const row = await markProposalCancelled(parsed.data, body.reason ?? null)
+  if (!row) {
+    return NextResponse.json(
+      { ok: false, error: "Proposal is already on-chain - cancel is a no-op" },
+      { status: 409 },
+    )
+  }
   return NextResponse.json({ ok: true, id: row.id, status: row.status })
 }

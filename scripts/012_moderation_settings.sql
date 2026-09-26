@@ -23,3 +23,16 @@ CREATE TABLE IF NOT EXISTS moderation_scan_usage (
   PRIMARY KEY (day, model, kind),
   CONSTRAINT moderation_scan_usage_kind CHECK (kind IN ('images', 'pdfs', 'proposals', 'comments'))
 );
+
+-- A moderation decision outlives the draft it was made on: with CASCADE,
+-- deleting a draft dropped the state of its held or hidden files. Recreate
+-- the two foreign keys as SET NULL (a no-op where 011 already did).
+ALTER TABLE moderation_state DROP CONSTRAINT IF EXISTS moderation_state_proposal_id_fkey;
+ALTER TABLE moderation_state
+  ADD CONSTRAINT moderation_state_proposal_id_fkey
+  FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE SET NULL;
+
+ALTER TABLE moderation_reports DROP CONSTRAINT IF EXISTS moderation_reports_proposal_id_fkey;
+ALTER TABLE moderation_reports
+  ADD CONSTRAINT moderation_reports_proposal_id_fkey
+  FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE SET NULL;

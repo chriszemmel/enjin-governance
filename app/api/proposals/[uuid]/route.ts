@@ -25,6 +25,7 @@
  * referendum and can't be changed without filing a new proposal.
  */
 
+import { createHash } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
@@ -38,12 +39,13 @@ import {
   type ReplaceAttachmentItem,
 } from "@/lib/db/proposals"
 import { isR2Configured, publicAssetBase } from "@/lib/r2/client"
-import { ownMediaKey, proposalPrefix, publicUrlFor } from "@/lib/r2/paths"
+import { isProposalJsonKey, ownMediaKey, proposalPrefix, publicUrlFor } from "@/lib/r2/paths"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import { flagText } from "@/lib/moderation/auto-flag"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
-import { deleteObjects, putJson, readObjectText } from "@/lib/r2/upload"
+import { deleteObjects, listObjectKeys, putJson, readObjectText } from "@/lib/r2/upload"
+import { isEnvelopeOnChain } from "@/lib/governance/envelope-status"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
 import { getApi } from "@/lib/chain/api"
@@ -117,27 +119,67 @@ export async function DELETE(
   }
 
   // Gather the R2 keys BEFORE the row (and its cascade-deleted attachment
-  // rows) are gone, so we can clean the bucket after. A deletable proposal is
-  // never pinned by a finalised on-chain envelope, so removing its objects is
-  // safe.
+  // rows) are gone, so we can clean the bucket after: the whole folder when
+  // it can be listed (every staged JSON version and every upload, listed or
+  // not - a held or hidden file must not outlive its draft), else the
+  // current JSON plus the listed attachments.
+  const ownPrefix = proposalPrefix(existing.network, existing.id)
   let r2Keys: string[] = [existing.json_key]
-  try {
-    const attachments = await listAttachments(existing.id)
-    r2Keys = r2Keys.concat(attachments.flatMap((a) => [a.bucket_key, thumbKeyFor(a.bucket_key)]))
-  } catch {
-    // attachment lookup is best-effort; the json key alone still gets cleaned
+  let folderListed = false
+  if (isR2Configured()) {
+    try {
+      r2Keys = r2Keys.concat(await listObjectKeys(ownPrefix))
+      folderListed = true
+    } catch {
+      // fall back to the rows below
+    }
+  }
+  if (!folderListed) {
+    try {
+      const attachments = await listAttachments(existing.id)
+      r2Keys = r2Keys.concat(attachments.flatMap((a) => [a.bucket_key, thumbKeyFor(a.bucket_key)]))
+    } catch {
+      // attachment lookup is best-effort; the json key alone still gets cleaned
+    }
   }
 
   // Only ever delete objects inside this proposal's own folder. Attachment
   // keys were supplied by the client when the draft was staged, so a stored
   // key pointing elsewhere (another proposal's JSON, an avatar) is skipped
   // rather than trusted.
-  const ownPrefix = proposalPrefix(existing.network, existing.id)
-  r2Keys = r2Keys.filter(
+  r2Keys = [...new Set(r2Keys)].filter(
     (k) => k.startsWith(ownPrefix) && !k.split("/").includes(".."),
   )
 
-  await deleteProposalById(parsed.data)
+  // A draft whose batch landed but was never linked is still pinned on
+  // chain, possibly from an older staged version. Its files must stay.
+  // Fails closed: if the chain can't be read, nothing is deleted.
+  try {
+    if (await anyVersionOnChain(existing, r2Keys.filter(isProposalJsonKey))) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This draft already reached the chain. Link it to its referendum from your drafts instead.",
+        },
+        { status: 409 },
+      )
+    }
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Could not reach the chain to check this draft - try again." },
+      { status: 503 },
+    )
+  }
+
+  // The SQL refuses an on-chain row, so a confirm that landed in the
+  // meantime keeps its row - and then its files.
+  if (!(await deleteProposalById(parsed.data))) {
+    return NextResponse.json(
+      { ok: false, error: "Proposal is already on-chain - deleting it isn't possible." },
+      { status: 409 },
+    )
+  }
 
   if (isR2Configured()) {
     try {
@@ -149,6 +191,26 @@ export async function DELETE(
   }
 
   return NextResponse.json({ ok: true })
+}
+
+/** Whether any stored JSON version of a draft is pinned by an on-chain envelope. */
+async function anyVersionOnChain(
+  row: { network: string; json_url: string; json_key: string; json_sha256: string },
+  jsonKeys: string[],
+): Promise<boolean> {
+  if (row.json_url && row.json_sha256) {
+    if (await isEnvelopeOnChain(row.network, row.json_url, row.json_sha256)) return true
+  }
+  for (const key of jsonKeys) {
+    if (key === row.json_key) continue
+    const text = await readObjectText(key)
+    if (text == null) continue
+    const sha = createHash("sha256").update(text, "utf8").digest("hex")
+    if (await isEnvelopeOnChain(row.network, publicUrlFor(publicAssetBase(), key), sha)) {
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -247,6 +309,14 @@ export async function PATCH(
     return NextResponse.json(
       { ok: false, error: "Only the proposer can edit this proposal." },
       { status: 403 },
+    )
+  }
+  // Drafts change by being staged again (which keeps every signed version);
+  // this route only edits proposals whose referendum exists.
+  if (existing.status !== "on_chain") {
+    return NextResponse.json(
+      { ok: false, error: "Only proposals that reached the chain can be edited here." },
+      { status: 409 },
     )
   }
 

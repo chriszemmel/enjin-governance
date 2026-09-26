@@ -1,12 +1,10 @@
 /**
  * Has a draft's EGOV1 envelope already reached the chain?
  *
- * Staging a draft again rewrites its proposal.json in place. That is only
- * safe while nothing on chain points at the old bytes - once the submission
- * batch landed, the envelope (url + sha256) is noted as a preimage and bound
- * to a referendum, and rewriting the JSON would break that binding. The
- * envelope preimage is unique per (url, sha256), so its presence is the
- * signal: the batch that noted it also submitted the referendum.
+ * Once the submission batch landed, the envelope (url + sha256) is noted
+ * as a preimage and bound to a referendum. A draft in that state must be
+ * linked to its referendum, not staged again or deleted. The envelope
+ * preimage is unique per (url, sha256), so its presence is the signal.
  *
  * Throws when the chain can't be read in time - callers must fail closed.
  */
