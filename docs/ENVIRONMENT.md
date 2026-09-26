@@ -60,6 +60,7 @@ user-avatars/{user_uuid}.png
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | `lib/rate-limit.ts` | Set both (Upstash KV REST credentials) and rate limiting uses a shared store, so ceilings hold across serverless instances. The native Upstash names `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` are also accepted, so either integration works. Unset, or on a transient KV error, it falls back to a per-instance in-process store - rate limiting is never fully disabled. Any other vars the integration injects (e.g. `KV_URL`, `REDIS_URL`, `KV_REST_API_READ_ONLY_TOKEN`) are ignored. Recommended for production. |
 | `CRON_SECRET` | future cron handlers | Not currently used; reserved for any post-v1 background job. |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `lib/security/notify.ts` | Set both to also push each `/security` disclosure to a Telegram chat (e.g. a shared Enjin team group). Token from @BotFather; chat id is the group id (add the bot first). Unset = disclosures persist to the DB only. |
+| `TELEGRAM_MODERATION_CHAT_ID` | `lib/moderation/notify.ts` | Chat for a short notice about each new moderation report (item type, category, link to `/moderation`; never the reporter, their note or the content). Unset = `TELEGRAM_CHAT_ID`; `OFF` = no moderation notices. Needs `TELEGRAM_BOT_TOKEN`. |
 
 ## Moderation
 

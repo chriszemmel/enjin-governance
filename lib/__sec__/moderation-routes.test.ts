@@ -24,6 +24,8 @@ const mod = vi.hoisted(() => ({
   reports: [] as Record<string, unknown>[],
   closed: [] as unknown[],
   settings: new Map<string, unknown>(),
+  notices: [] as Record<string, unknown>[],
+  reportCreated: true,
 }))
 
 vi.mock("@/lib/auth/current-user", () => ({ getCurrentUser: async () => auth.user }))
@@ -70,7 +72,7 @@ vi.mock("@/lib/db/moderation", () => ({
   insertAction: async (a: Record<string, unknown>) => void mod.actions.push(a),
   insertReport: async (a: Record<string, unknown>) => {
     mod.reports.push(a)
-    return true
+    return mod.reportCreated
   },
   closeReports: async (...a: unknown[]) => void mod.closed.push(a),
   setSuspension: async (key: string, until: Date | null) => void mod.suspensions.set(key, until),
@@ -87,6 +89,9 @@ vi.mock("@/lib/db/moderation", () => ({
       output_tokens: 6_000,
     },
   ],
+}))
+vi.mock("@/lib/moderation/notify", () => ({
+  notifyNewReport: async (n: Record<string, unknown>) => void mod.notices.push(n),
 }))
 vi.mock("@/lib/db/comments", () => ({ getCommentById: async () => null }))
 vi.mock("@/lib/db/users", () => ({ getUserByAddress: async () => null }))
@@ -124,6 +129,8 @@ beforeEach(() => {
   mod.states.clear()
   mod.actions.length = 0
   mod.reports.length = 0
+  mod.notices.length = 0
+  mod.reportCreated = true
   mod.suspensions.clear()
   mod.roles.set(`0x${publicKeyOf(MOD)}`, "moderator")
   db.seedProposal({
@@ -153,6 +160,31 @@ describe("reports", () => {
     expect(mod.reports).toMatchObject([
       { targetId: FILE, proposalId: PID, severity: "high", source: "user" },
     ])
+  })
+
+  it("notify moderators once, without the reporter or their note", async () => {
+    signIn(USER)
+    const body = {
+      target_type: "attachment",
+      target_id: FILE,
+      category: "personal_data",
+      note: "my neighbour's photo",
+    }
+    await REPORT(post("https://gov.test/api/moderation/reports", body))
+    expect(mod.notices).toEqual([
+      {
+        targetType: "attachment",
+        category: "personal_data",
+        severity: "medium",
+        source: "user",
+        network: NET,
+        referendumIndex: 214,
+      },
+    ])
+    // A repeat report from the same person isn't news.
+    mod.reportCreated = false
+    await REPORT(post("https://gov.test/api/moderation/reports", body))
+    expect(mod.notices).toHaveLength(1)
   })
 })
 

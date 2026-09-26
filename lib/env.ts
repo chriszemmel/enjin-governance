@@ -21,6 +21,9 @@ export const env = createEnv({
     // team group). Unset = disclosures persist to the DB only.
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     TELEGRAM_CHAT_ID: z.string().optional(),
+    // New moderation reports go to this chat, or to TELEGRAM_CHAT_ID when
+    // unset. OFF turns moderation notices off.
+    TELEGRAM_MODERATION_CHAT_ID: z.string().optional(),
 
     // Moderation: comma-separated wallets (SS58 on any network, or 0x public
     // keys) that are always admins. Admins grant moderator / admin roles to
@@ -99,6 +102,7 @@ export const env = createEnv({
     SITE_PASSWORD_STATUS: process.env.SITE_PASSWORD_STATUS,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+    TELEGRAM_MODERATION_CHAT_ID: process.env.TELEGRAM_MODERATION_CHAT_ID,
     GOVERNANCE_ADMIN_PUBLIC_KEYS: process.env.GOVERNANCE_ADMIN_PUBLIC_KEYS,
     LEGAL_OPERATOR_NAME: process.env.LEGAL_OPERATOR_NAME,
     LEGAL_OPERATOR_ADDRESS: process.env.LEGAL_OPERATOR_ADDRESS,

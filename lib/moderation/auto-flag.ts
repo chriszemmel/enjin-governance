@@ -18,6 +18,7 @@ import "server-only"
 import { after } from "next/server"
 import { insertAction, insertReport, setState } from "@/lib/db/moderation"
 import { env } from "@/lib/env"
+import { notifyNewReport } from "./notify"
 import { categoryFor, scanImage, scanPdf, scanText, type ScanOutcome } from "./scan"
 import { noteScanUsage, scanPlan } from "./settings-store"
 import type { ModerationTarget } from "./policy"
@@ -101,17 +102,29 @@ export async function queueBlurredUpload(
     actorPublicKey: null,
     actorLabel: "automatic check",
   })
-  await insertReport({
+  const category = verdict ? categoryFor(verdict) : "other"
+  const severity = verdict?.severity ?? "medium"
+  const created = await insertReport({
     targetType: "attachment",
     targetId: key,
     proposalId,
     source: "automatic",
     reporterUserId: null,
-    category: verdict ? categoryFor(verdict) : "other",
-    severity: verdict?.severity ?? "medium",
+    category,
+    severity,
     note: null,
     details,
   })
+  if (created) {
+    await notifyNewReport({
+      targetType: "attachment",
+      category,
+      severity,
+      source: "automatic",
+      network: key.split("/")[1] ?? null,
+      referendumIndex: null,
+    })
+  }
 }
 
 /** Check text once the response is sent; flag it for review if needed. */
@@ -133,16 +146,28 @@ export function flagText(a: {
     if (outcome.kind === "unavailable") return
     if (outcome.kind === "verdict" && outcome.verdict.decision === "allow") return
     const verdict = outcome.kind === "verdict" ? outcome.verdict : null
-    await insertReport({
+    const category = verdict ? categoryFor(verdict) : "other"
+    const severity = verdict?.severity ?? "low"
+    const created = await insertReport({
       targetType: a.targetType,
       targetId: a.targetId,
       proposalId: a.proposalId,
       source: "automatic",
       reporterUserId: null,
-      category: verdict ? categoryFor(verdict) : "other",
-      severity: verdict?.severity ?? "low",
+      category,
+      severity,
       note: null,
       details: detailsOf(outcome),
-    }).catch(() => null)
+    }).catch(() => false)
+    if (created) {
+      await notifyNewReport({
+        targetType: a.targetType,
+        category,
+        severity,
+        source: "automatic",
+        network: null,
+        referendumIndex: null,
+      })
+    }
   })
 }

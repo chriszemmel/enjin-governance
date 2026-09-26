@@ -11,6 +11,7 @@ import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { isDbConfigured } from "@/lib/db/client"
 import { insertReport } from "@/lib/db/moderation"
+import { notifyNewReport } from "@/lib/moderation/notify"
 import { REPORT_CATEGORIES } from "@/lib/moderation/policy"
 import { resolveTarget } from "@/lib/moderation/targets"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
@@ -54,6 +55,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "That item doesn't exist." }, { status: 404 })
   }
 
+  const severity =
+    parsed.category === "secrets" || parsed.category === "illegal" ? "high" : "medium"
   const created = await insertReport({
     targetType: target.type,
     targetId: target.id,
@@ -61,9 +64,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     source: "user",
     reporterUserId: me.id,
     category: parsed.category,
-    severity: parsed.category === "secrets" || parsed.category === "illegal" ? "high" : "medium",
+    severity,
     note: parsed.note?.trim() || null,
     details: null,
   })
+  if (created) {
+    await notifyNewReport({
+      targetType: target.type,
+      category: parsed.category,
+      severity,
+      source: "user",
+      network: target.network,
+      referendumIndex: target.proposal?.referendum_index ?? null,
+    })
+  }
   return NextResponse.json({ ok: true, duplicate: !created })
 }

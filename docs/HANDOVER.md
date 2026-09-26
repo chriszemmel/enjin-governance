@@ -55,7 +55,7 @@ Environment Variables). Full descriptions in
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Shared rate-limit store (or the `UPSTASH_REDIS_REST_*` pair) | Upstash KV | Recommended |
 | `NEXT_PUBLIC_*_WSS` | Custom RPC endpoints (relay / matrix, plus fallbacks) | RPC provider (Dwellir / OnFinality / self-host) | Optional |
 | `SUBSCAN_API_KEY` | Call-data enrichment for old finalised referenda | pro.subscan.io | Optional |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Mirror `/security` reports to a team chat | Telegram | Optional |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` / `TELEGRAM_MODERATION_CHAT_ID` | Mirror `/security` reports and new moderation reports to a team chat | Telegram | Optional |
 | `ANTHROPIC_API_KEY` | Automatic content checks (settings in `/moderation`) | console.anthropic.com | Optional |
 | `GOVERNANCE_ADMIN_PUBLIC_KEYS` | Wallets that are always moderation admins | New owner's wallets | For moderation |
 | `LEGAL_*` | Operator details for imprint and privacy policy | New operator | For a public deployment |
