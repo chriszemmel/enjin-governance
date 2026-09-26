@@ -55,3 +55,26 @@ for (const width of [360, 390]) {
     })
   })
 }
+
+test.describe("signed out", () => {
+  test.use({
+    signedIn: false,
+    viewport: { width: 390, height: 800 },
+    isMobile: true,
+    hasTouch: true,
+  })
+
+  test("report dialog offers one sign-in link that comes back here", async ({ page }) => {
+    await openProposal(page)
+    await page.getByRole("button", { name: "More" }).click()
+    await page.getByRole("menuitem", { name: "Report this proposal" }).click()
+
+    const dialog = page.getByRole("dialog", { name: "Report this proposal" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole("link")).toHaveCount(1)
+    const signIn = dialog.getByRole("link", { name: "Sign in to report" })
+    const next = new URL((await signIn.getAttribute("href"))!, "http://x").searchParams.get("next")
+    expect(next).toBe(new URL(page.url()).pathname + new URL(page.url()).search)
+    await expect(dialog.getByRole("radio")).toHaveCount(0)
+  })
+})

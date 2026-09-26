@@ -59,8 +59,8 @@ export const env = createEnv({
   client: {
     NEXT_PUBLIC_APP_URL: httpOrHttpsUrl.default("http://localhost:3000"),
 
-    // Shown in the footer. The source link is required by the AGPL for
-    // people using the running site.
+    // The publisher in search results, and the source link in the footer
+    // (required by the AGPL for people using the running site).
     NEXT_PUBLIC_SITE_MAINTAINER: z.string().default("Chris Zemmel"),
     NEXT_PUBLIC_SOURCE_URL: httpOrHttpsUrl.default("https://github.com/chriszemmel/enjin-governance"),
 

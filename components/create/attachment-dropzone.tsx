@@ -211,10 +211,10 @@ export function AttachmentDropzone({
         ) : (
           <>
             <Upload className="w-5 h-5 text-muted-foreground" />
-            <span className="text-foreground font-medium">
+            <span className="text-foreground font-medium text-balance">
               Drop images or PDFs here, or click to browse
             </span>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground text-balance">
               PNG / JPG / WEBP / GIF / PDF · up to {MAX_UPLOAD_LABEL} · max {MAX_FILES} files
             </span>
           </>

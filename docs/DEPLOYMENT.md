@@ -290,9 +290,10 @@ keeps the record in memory, re-reads it every 5 minutes, and refreshes
 ## Legal pages and footer
 
 `/imprint`, `/privacy` and `/terms` are filled from the `LEGAL_*`
-variables, and the footer from `NEXT_PUBLIC_SITE_MAINTAINER` and
-`NEXT_PUBLIC_SOURCE_URL`. The defaults name the original maintainer, so
-anyone running their own instance must set their own details.
+variables. The footer links them and the source code at
+`NEXT_PUBLIC_SOURCE_URL`; `NEXT_PUBLIC_SITE_MAINTAINER` names the
+publisher in search results. The defaults name the original maintainer,
+so anyone running their own instance must set their own details.
 
 These pages are built at deploy time. **Redeploy after changing any of
 these variables.**

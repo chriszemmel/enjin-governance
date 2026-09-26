@@ -60,7 +60,7 @@ descriptions are in [`ENVIRONMENT.md`](ENVIRONMENT.md).
 | `TELEGRAM_BOT_TOKEN` | Bot that posts notices | Telegram @BotFather | Yes | Optional |
 | `TELEGRAM_CHAT_ID`, `TELEGRAM_MODERATION_CHAT_ID` | Chats for security reports and moderation notices | Telegram | No | Optional |
 | `LEGAL_OPERATOR_NAME`, `LEGAL_OPERATOR_ADDRESS`, `LEGAL_CONTACT_EMAIL`, `LEGAL_CONTACT_PHONE`, `LEGAL_VAT_ID` | Operator details for the imprint, privacy policy and terms | The new operator | No | Any public deployment |
-| `NEXT_PUBLIC_SITE_MAINTAINER`, `NEXT_PUBLIC_SOURCE_URL` | Footer name and AGPL source link | The new operator | No | Any public deployment |
+| `NEXT_PUBLIC_SITE_MAINTAINER`, `NEXT_PUBLIC_SOURCE_URL` | Publisher name and AGPL source link | The new operator | No | Any public deployment |
 | `SITE_PASSWORD_STATUS`, `SITE_PASSWORD` | Password gate for a staging site (`OFF` to disable) | Configuration | Yes (password) | Optional |
 | `SUBSCAN_API_KEY` | Call data for very old finalised referenda | Subscan (pro.subscan.io) | Yes | Optional |
 | `NEXT_PUBLIC_*_WSS`, `NEXT_PUBLIC_*_SUBSCAN_URL` | RPC endpoints and explorer links | RPC provider | No | Optional (have defaults) |

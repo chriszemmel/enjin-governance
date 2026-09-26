@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, ArrowRight, FileCode2, Info, Loader2, ShieldAlert, Upload } from "lucide-react"
+import {
+  ArrowLeft,
+  ArrowRight,
+  FileCode2,
+  Info,
+  Loader2,
+  ShieldAlert,
+  Upload,
+  Wallet,
+} from "lucide-react"
 import { toast } from "sonner"
 import type { ApiPromise } from "@polkadot/api"
 import { hexToU8a, u8aToHex } from "@polkadot/util"
@@ -691,6 +700,27 @@ export default function AdvancedCreatePage() {
 
           <StepBar current={step} />
 
+          {/* The form stays locked until then: nothing here is saved, and a
+              mobile wallet can reload the page while connecting. */}
+          {step === "create" && !isConnected && (
+            <div className="rounded-2xl bg-amber-500/5 border border-amber-500/30 p-4 mb-6 flex items-start gap-3">
+              <Wallet className="w-5 h-5 text-amber-300 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-foreground">Connect a wallet to continue</p>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  You sign with your connected wallet. The form unlocks once it&apos;s connected.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setWalletOpen(true)}
+                  className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-purple-dim transition-colors"
+                >
+                  Connect wallet
+                </button>
+              </div>
+            </div>
+          )}
+
           {step === "create" && mode === "new" && (
             <>
               <div className="rounded-2xl bg-amber-500/5 border border-amber-500/30 p-4 mb-6 flex items-start gap-3">
@@ -1020,9 +1050,14 @@ export default function AdvancedCreatePage() {
                 onClick={() => setMode(mode === "new" ? "existing" : "new")}
                 className="w-full mt-4 text-xs text-primary hover:text-purple-dim"
               >
-                {mode === "new"
-                  ? "Already submitted elsewhere? Add details to an existing referendum →"
-                  : "← File a new proposal instead"}
+                {mode === "new" ? (
+                  <>
+                    <span className="block text-muted-foreground">Already submitted elsewhere?</span>
+                    <span className="block mt-0.5">Add details to an existing referendum →</span>
+                  </>
+                ) : (
+                  "← File a new proposal instead"
+                )}
               </button>
             </>
           )}

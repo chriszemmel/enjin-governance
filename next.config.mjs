@@ -1,6 +1,11 @@
 // env validation runs at app runtime via lib/env.ts (first import triggers zod parse).
 // We don't import it here because next.config.mjs is plain ESM and cannot load TS modules.
 
+import { readFileSync } from "node:fs"
+
+// The release shown in the footer comes from package.json.
+const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"))
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -27,6 +32,10 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: version,
+  },
+
   reactStrictMode: true,
 
   // Polkadot SDK packages must be imported at runtime, not bundled, on the server.

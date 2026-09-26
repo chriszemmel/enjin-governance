@@ -604,7 +604,7 @@ GOVERNANCE_ADMIN_PUBLIC_KEYS=<your wallet>   # SS58 (any network) or 0x public k
 LEGAL_OPERATOR_NAME=<your name>              # default: NEXT_PUBLIC_SITE_MAINTAINER
 LEGAL_OPERATOR_ADDRESS=<street | postcode city | country>   # optional, e.g. a c/o address
 LEGAL_CONTACT_EMAIL=<contact address>        # shown on the legal pages; set your own
-NEXT_PUBLIC_SITE_MAINTAINER=<name shown in the footer>
+NEXT_PUBLIC_SITE_MAINTAINER=<your name>      # publisher in search results
 NEXT_PUBLIC_SOURCE_URL=<public repository URL>   # AGPL source offer in the footer
 ```
 

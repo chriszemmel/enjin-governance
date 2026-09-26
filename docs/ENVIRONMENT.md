@@ -164,7 +164,7 @@ instance must set their own details.
 | `LEGAL_CONTACT_EMAIL` | Contact address, also used for content reports and complaints. Default: the original maintainer's address (see `lib/env.ts`). |
 | `LEGAL_CONTACT_PHONE` | Optional. |
 | `LEGAL_VAT_ID` | Optional; only if you have one. |
-| `NEXT_PUBLIC_SITE_MAINTAINER` | Name in the footer disclaimer. Default: the original maintainer's name. |
+| `NEXT_PUBLIC_SITE_MAINTAINER` | Your name: the publisher in search results, and the default for `LEGAL_OPERATOR_NAME`. Default: the original maintainer's name. |
 | `NEXT_PUBLIC_SOURCE_URL` | Public repository for the AGPL source offer in the footer and the terms. Default `https://github.com/chriszemmel/enjin-governance`. Point it at your own fork if you change the code. |
 
 ## Site password gate

@@ -20,7 +20,7 @@ const graph = (nodes: JsonLdNode[]): JsonLdGraph => ({
 const websiteId = () => `${absoluteUrl("/")}#website`
 
 /**
- * The site and who publishes it: the maintainer named in the footer. This is
+ * The site and who publishes it: NEXT_PUBLIC_SITE_MAINTAINER. This is
  * an independent interface, so it never claims to be Enjin's own site.
  */
 export function siteJsonLd(): JsonLdGraph {
