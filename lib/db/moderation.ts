@@ -339,6 +339,75 @@ export async function saveSetting(key: string, value: unknown, by: string): Prom
   `
 }
 
+/**
+ * Claim a once-per-window slot kept as a moderation_settings row: true when
+ * this call claimed it (no row yet, or the last claim is at least `seconds`
+ * old). One statement, so two servers can't both claim the same slot.
+ */
+export async function claimSettingSlot(key: string, seconds: number, by: string): Promise<boolean> {
+  const window = `${Math.max(0, Math.floor(seconds))} seconds`
+  const rows = (await getSql()`
+    INSERT INTO moderation_settings (key, value, updated_by, updated_at)
+    VALUES (${key}, ${JSON.stringify({ at: new Date().toISOString() })}, ${by}, NOW())
+    ON CONFLICT (key) DO UPDATE
+      SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()
+      WHERE moderation_settings.updated_at <= NOW() - ${window}::interval
+    RETURNING key
+  `) as unknown[]
+  return rows.length > 0
+}
+
+// ---- status checks (admins' Status tab) ----------------------------------------
+
+export async function pingDatabase(): Promise<void> {
+  await getSql()`SELECT 1`
+}
+
+type ModerationSchema = {
+  /** Tables from 011_moderation.sql, all present. */
+  moderation: boolean
+  /** Tables from 012_moderation_settings.sql, both present. */
+  settings: boolean
+  /** Both proposal foreign keys are ON DELETE SET NULL (013_moderation_keep_state.sql). */
+  keepState: boolean
+  /** Migration files the `_migrations` ledger lists; null when there is no ledger. */
+  ledger: string[] | null
+}
+
+/**
+ * Which of migrations 011-013 are in place, judged by the tables and
+ * constraints themselves: migrations applied by hand leave no ledger rows.
+ */
+export async function moderationSchema(): Promise<ModerationSchema> {
+  const sql = getSql()
+  const rows = (await sql`
+    SELECT
+      (to_regclass('moderation_roles') IS NOT NULL
+        AND to_regclass('moderation_state') IS NOT NULL
+        AND to_regclass('moderation_actions') IS NOT NULL
+        AND to_regclass('moderation_reports') IS NOT NULL
+        AND to_regclass('moderation_suspensions') IS NOT NULL) AS moderation,
+      (to_regclass('moderation_settings') IS NOT NULL
+        AND to_regclass('moderation_scan_usage') IS NOT NULL) AS settings,
+      (SELECT COUNT(*)::int FROM pg_constraint
+        WHERE contype = 'f' AND confdeltype = 'n'
+          AND ((conrelid = to_regclass('moderation_state')
+                AND conname = 'moderation_state_proposal_id_fkey')
+            OR (conrelid = to_regclass('moderation_reports')
+                AND conname = 'moderation_reports_proposal_id_fkey'))) AS set_null,
+      to_regclass('_migrations') IS NOT NULL AS ledger
+  `) as { moderation: boolean; settings: boolean; set_null: number; ledger: boolean }[]
+  const r = rows[0] ?? { moderation: false, settings: false, set_null: 0, ledger: false }
+  let ledger: string[] | null = null
+  if (r.ledger) {
+    const files = (await sql`
+      SELECT filename FROM _migrations WHERE filename ~ '^01[1-3]_' ORDER BY filename
+    `) as { filename: string }[]
+    ledger = files.map((f) => f.filename)
+  }
+  return { moderation: r.moderation, settings: r.settings, keepState: r.set_null === 2, ledger }
+}
+
 type ScanKindName = "images" | "pdfs" | "proposals" | "comments"
 
 /**

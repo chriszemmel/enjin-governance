@@ -14,8 +14,9 @@
  * Whether and with which model checks run is decided by the admin
  * settings (see settings-store.ts); this module only talks to the API.
  * Every failure (timeout, API error, unparseable answer) comes back as
- * "unavailable" so callers carry on as if scanning were off; a model
- * refusal comes back as "refused", which callers treat like "review".
+ * "unavailable" with its cause, so callers know whether to carry on as if
+ * scanning were off or to hold the item; a model refusal comes back as
+ * "refused", which callers treat like "review".
  */
 
 import "server-only"
@@ -24,6 +25,7 @@ import { z } from "zod"
 import { env } from "@/lib/env"
 import { sanitiseFilename } from "@/lib/r2/paths"
 import type { ReportCategory } from "./policy"
+import type { ScanProblem } from "./scan-health"
 import { SCAN_MODELS, type ScanModel } from "./scan-settings"
 
 const SCAN_LABELS = [
@@ -52,20 +54,45 @@ export type ScanVerdict = z.infer<typeof verdictSchema>
 /** Tokens billed for the request, when the API reported them. */
 export type ScanUsage = { inputTokens: number; outputTokens: number }
 
+/**
+ * Why a check didn't get a verdict.
+ *   "outage"  the service failed: timeout, connection, 5xx, overloaded,
+ *             rate limit. Passes by itself.
+ *   "config"  this site's setup is wrong: the key, the model, the credit
+ *             (`problem` says which). Doesn't pass by itself.
+ *   "input"   this item couldn't be checked: rejected as input, or an
+ *             answer that isn't a verdict, which the item's content can
+ *             provoke.
+ */
+type FailureCause = { cause: "outage" | "input" } | { cause: "config"; problem: ScanProblem }
+
 export type ScanOutcome =
   | { kind: "verdict"; verdict: ScanVerdict; usage?: ScanUsage }
   | { kind: "refused"; usage?: ScanUsage }
-  | {
-      kind: "unavailable"
-      reason: string
-      /**
-       * "outage": the service failed (timeout, 5xx, rate limit, bad config).
-       * "input": this item couldn't be checked - rejected as input, or an
-       * answer that isn't a verdict, which the item's content can provoke.
-       */
-      cause: "outage" | "input"
-      usage?: ScanUsage
-    }
+  | ({ kind: "unavailable"; reason: string; usage?: ScanUsage } & FailureCause)
+
+/**
+ * Sort a failed API request by cause. Only a few 4xx answers say "this
+ * input can't be processed"; a bad key, a missing model or an empty
+ * account fails every check alike and must not hold every upload.
+ */
+export function classifyApiError(e: InstanceType<typeof Anthropic.APIError>): FailureCause {
+  const status = e.status ?? 0
+  const config = (problem: ScanProblem): FailureCause => ({ cause: "config", problem })
+  if (status === 401 || e.type === "authentication_error") return config("api_key")
+  if (status === 402 || e.type === "billing_error") return config("billing")
+  if (status === 403 || e.type === "permission_error") return config("permission")
+  if (status === 404 || e.type === "not_found_error") return config("model")
+  if (status === 400) {
+    if (/credit balance/i.test(e.message)) return config("billing")
+    // A beta or a request field the API no longer takes: every check fails.
+    if (/anthropic-beta|extra inputs are not permitted/i.test(e.message)) return config("request")
+    return { cause: "input" }
+  }
+  if ([413, 415, 422].includes(status)) return { cause: "input" }
+  // 408, 409, 429, 5xx (529 overloaded), connection errors and timeouts.
+  return { cause: "outage" }
+}
 
 // JSON schema for output_config.format (structured outputs).
 const OUTPUT_SCHEMA = {
@@ -157,14 +184,7 @@ async function classify(
     return { kind: "verdict", verdict: parsed.data, usage }
   } catch (e) {
     if (e instanceof Anthropic.APIError) {
-      // Only these say "this input can't be processed"; 401/403/404 are a
-      // bad key or model name, which must not hold every upload.
-      const input = [400, 413, 415, 422].includes(e.status ?? 0)
-      return {
-        kind: "unavailable",
-        reason: `API ${e.status ?? "error"}`,
-        cause: input ? "input" : "outage",
-      }
+      return { kind: "unavailable", reason: `API ${e.status ?? "error"}`, ...classifyApiError(e) }
     }
     if (e instanceof SyntaxError) {
       return { kind: "unavailable", reason: "answer is not JSON", cause: "input" }

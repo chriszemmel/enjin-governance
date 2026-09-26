@@ -11,10 +11,13 @@
  *
  * What is checked, with which model and how many times a day comes from
  * the admin settings (settings-store.ts). An outage (timeout, server
- * error) never blocks posting - the item is handled as if checks were off.
- * An upload that can't be checked for a reason the uploader controls (too
- * long, animated, rejected as input) or after the daily limit waits for a
- * moderator instead, so nobody can force a file through unchecked.
+ * error) or a broken setup (key refused, model retired, no credit) never
+ * blocks posting - the item is handled as if checks were off; a broken
+ * setup is recorded for admins (scan-health.ts). An upload that can't be
+ * checked for a reason the uploader controls (too long, animated, rejected
+ * as input), after the daily limit, or when the check can't be counted
+ * waits for a moderator instead, so nobody can force a file through
+ * unchecked.
  */
 
 import "server-only"
@@ -23,6 +26,7 @@ import { insertAction, insertReport, setState } from "@/lib/db/moderation"
 import { env } from "@/lib/env"
 import { notifyNewReport } from "./notify"
 import { categoryFor, scanImage, scanPdf, scanText, type ScanOutcome } from "./scan"
+import { noteScanHealth } from "./scan-health"
 import { noteScanUsage, reserveScan, scanPlan } from "./settings-store"
 import type { ModerationTarget } from "./policy"
 
@@ -77,7 +81,10 @@ export async function checkUpload(
   ) {
     return hold("PDF too long to check automatically")
   }
-  if (!(await reserveScan(kind, plan))) return hold("daily check limit reached")
+  // False at the daily limit, and when the check can't be counted: holding
+  // needs the database too, so if it is down the upload is refused with a
+  // "try again" instead of being stored unchecked.
+  if (!(await reserveScan(kind, plan))) return hold("daily limit reached or usage not recorded")
 
   let outcome: ScanOutcome
   try {
@@ -88,7 +95,7 @@ export async function checkUpload(
   } catch {
     return { action: "store" }
   }
-  await noteScanUsage(kind, plan.model, outcome)
+  await Promise.all([noteScanUsage(kind, plan.model, outcome), noteScanHealth(outcome)])
   if (outcome.kind === "refused" || inputRejected(outcome)) {
     return { action: "store_blurred", outcome }
   }
@@ -209,7 +216,7 @@ export function flagText(a: {
       const piece = await scanText(a.text.slice(at, at + TEXT_CHUNK), a.targetType, {
         model: plan.model,
       })
-      await noteScanUsage(kind, plan.model, piece)
+      await Promise.all([noteScanUsage(kind, plan.model, piece), noteScanHealth(piece)])
       if (piece.kind === "unavailable") return
       if (piece.kind === "verdict" && piece.verdict.decision === "allow") continue
       outcome = piece

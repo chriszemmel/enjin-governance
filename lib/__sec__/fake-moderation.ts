@@ -9,6 +9,8 @@
  *   - getSuspension only returns a pause that hasn't ended
  * `faults` makes a call throw, as when the database is down or a
  * migration hasn't been applied (use missingTable()).
+ * claimSettingSlot keeps its slots in `slots` (key -> claimed at, ms), and
+ * moderationSchema answers from `schema`.
  */
 import type {
   ModerationRole,
@@ -66,6 +68,21 @@ export const actions: ActionRow[] = []
 export const reports: ReportRow[] = []
 export const suspensions = new Map<string, Date>()
 export const settings = new Map<string, unknown>()
+/** Rows written with saveSetting, in order. */
+export const settingWrites: { key: string; value: unknown }[] = []
+export const slots = new Map<string, number>()
+const LEDGER = [
+  "011_moderation.sql",
+  "012_moderation_settings.sql",
+  "013_moderation_keep_state.sql",
+]
+/** What moderationSchema reports (migrations 011-013 and the ledger). */
+export const schema = {
+  moderation: true,
+  settings: true,
+  keepState: true,
+  ledger: [...LEDGER] as string[] | null,
+}
 /** Scan checks reserved today, and whether the next reservation fits the limit. */
 export const scanUsage = { reserved: 0, underLimit: true }
 export const listActionsCalls: { limit: number; before?: Date }[] = []
@@ -82,6 +99,11 @@ export const faults = {
   setState: null as Fault,
   actions: null as Fault,
   suspension: null as Fault,
+  settings: null as Fault,
+  slots: null as Fault,
+  ping: null as Fault,
+  schema: null as Fault,
+  scanCount: null as Fault,
 }
 /** Runs inside setState before the row is written. */
 export const hooks = { onSetState: null as null | ((row: StateRow) => void) }
@@ -95,6 +117,12 @@ export function resetModeration(): void {
   reports.length = 0
   suspensions.clear()
   settings.clear()
+  settingWrites.length = 0
+  slots.clear()
+  schema.moderation = true
+  schema.settings = true
+  schema.keepState = true
+  schema.ledger = [...LEDGER]
   scanUsage.reserved = 0
   scanUsage.underLimit = true
   listActionsCalls.length = 0
@@ -105,6 +133,11 @@ export function resetModeration(): void {
   faults.setState = null
   faults.actions = null
   faults.suspension = null
+  faults.settings = null
+  faults.slots = null
+  faults.ping = null
+  faults.schema = null
+  faults.scanCount = null
   hooks.onSetState = null
   actionSeq = 0
 }
@@ -303,14 +336,37 @@ export async function setSuspension(publicKey: string, until: Date | null): Prom
 // ---- settings and scan usage ---------------------------------------------------
 
 export async function getSetting(key: string): Promise<unknown> {
+  if (faults.settings) throw faults.settings
   return settings.get(key) ?? null
 }
 
 export async function saveSetting(key: string, value: unknown): Promise<void> {
+  if (faults.settings) throw faults.settings
   settings.set(key, value)
+  settingWrites.push({ key, value })
+}
+
+export async function claimSettingSlot(key: string, seconds: number): Promise<boolean> {
+  if (faults.slots) throw faults.slots
+  const last = slots.get(key)
+  if (last !== undefined && Date.now() - last < seconds * 1000) return false
+  slots.set(key, Date.now())
+  return true
+}
+
+// ---- status checks -------------------------------------------------------------
+
+export async function pingDatabase(): Promise<void> {
+  if (faults.ping) throw faults.ping
+}
+
+export async function moderationSchema() {
+  if (faults.schema) throw faults.schema
+  return { ...schema, ledger: schema.ledger ? [...schema.ledger] : null }
 }
 
 export async function reserveScanCheck(): Promise<boolean> {
+  if (faults.scanCount) throw faults.scanCount
   if (!scanUsage.underLimit) return false
   scanUsage.reserved += 1
   return true

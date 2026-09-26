@@ -10,7 +10,14 @@ vi.hoisted(() => {
   process.env.ANTHROPIC_API_KEY = "test-key"
 })
 
-import { buildScanRequest, categoryFor, scanImage, scanPdf, scanText } from "@/lib/moderation/scan"
+import {
+  buildScanRequest,
+  categoryFor,
+  classifyApiError,
+  scanImage,
+  scanPdf,
+  scanText,
+} from "@/lib/moderation/scan"
 
 const model = "claude-opus-5" as const
 
@@ -216,5 +223,108 @@ describe("categoryFor", () => {
     expect(categoryFor({ labels: ["id_document"] })).toBe("personal_data")
     expect(categoryFor({ labels: ["scam_phishing", "spam"] })).toBe("scam")
     expect(categoryFor({ labels: [] })).toBe("other")
+  })
+})
+
+describe("classifyApiError", () => {
+  /** An error as the SDK builds it from the API's answer. */
+  const apiError = (status: number, type: string, message: string) =>
+    Anthropic.APIError.generate(
+      status,
+      { type: "error", error: { type, message } },
+      undefined,
+      new Headers(),
+    )
+
+  it("calls a broken setup a setup problem, never an outage or the item's fault", () => {
+    expect(classifyApiError(apiError(401, "authentication_error", "invalid x-api-key"))).toEqual({
+      cause: "config",
+      problem: "api_key",
+    })
+    expect(
+      classifyApiError(
+        apiError(
+          403,
+          "permission_error",
+          "Your API key does not have permission to use this model.",
+        ),
+      ),
+    ).toEqual({ cause: "config", problem: "permission" })
+    expect(
+      classifyApiError(apiError(404, "not_found_error", "model: claude-retired-model")),
+    ).toEqual({ cause: "config", problem: "model" })
+    expect(
+      classifyApiError(
+        apiError(
+          400,
+          "invalid_request_error",
+          "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing.",
+        ),
+      ),
+    ).toEqual({ cause: "config", problem: "billing" })
+    expect(classifyApiError(apiError(402, "billing_error", "Payment required."))).toEqual({
+      cause: "config",
+      problem: "billing",
+    })
+    expect(
+      classifyApiError(
+        apiError(
+          400,
+          "invalid_request_error",
+          "Unexpected value(s) `server-side-fallback-2026-07-01` for the `anthropic-beta` header.",
+        ),
+      ),
+    ).toEqual({ cause: "config", problem: "request" })
+  })
+
+  it("calls timeouts, overload, rate limits and server errors an outage", () => {
+    expect(classifyApiError(apiError(429, "rate_limit_error", "Rate limited."))).toEqual({
+      cause: "outage",
+    })
+    expect(classifyApiError(apiError(500, "api_error", "Internal error."))).toEqual({
+      cause: "outage",
+    })
+    expect(classifyApiError(apiError(529, "overloaded_error", "Overloaded."))).toEqual({
+      cause: "outage",
+    })
+    expect(classifyApiError(apiError(504, "timeout_error", "Gateway timeout."))).toEqual({
+      cause: "outage",
+    })
+    expect(classifyApiError(new Anthropic.APIConnectionTimeoutError())).toEqual({
+      cause: "outage",
+    })
+    expect(classifyApiError(new Anthropic.APIConnectionError({ message: "reset" }))).toEqual({
+      cause: "outage",
+    })
+  })
+
+  it("blames the item only for answers about the input", () => {
+    for (const [status, message] of [
+      [400, "Could not process image"],
+      [413, "Request exceeds the maximum size"],
+      [422, "Unprocessable"],
+    ] as const) {
+      expect(classifyApiError(apiError(status, "invalid_request_error", message))).toEqual({
+        cause: "input",
+      })
+    }
+  })
+
+  it("is what a failed check reports", async () => {
+    const refused = fakeClient(() => {
+      throw apiError(401, "authentication_error", "invalid x-api-key")
+    })
+    expect(await scanImage(Buffer.from("x"), { model, client: refused.client })).toEqual({
+      kind: "unavailable",
+      reason: "API 401",
+      cause: "config",
+      problem: "api_key",
+    })
+    const timedOut = fakeClient(() => {
+      throw new Anthropic.APIConnectionTimeoutError()
+    })
+    expect(
+      await scanText("hello", "comment", { model: "claude-haiku-4-5", client: timedOut.client }),
+    ).toMatchObject({ kind: "unavailable", cause: "outage" })
   })
 })

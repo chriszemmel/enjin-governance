@@ -9,6 +9,7 @@ const scan = vi.hoisted(() => ({
   plan: null as unknown,
   underLimit: true,
   usage: [] as unknown[][],
+  health: [] as unknown[],
 }))
 vi.mock("@/lib/moderation/scan", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
@@ -22,6 +23,11 @@ vi.mock("@/lib/moderation/settings-store", () => ({
   reserveScan: async () => scan.underLimit,
   noteScanUsage: async (...args: unknown[]) => {
     scan.usage.push(args)
+  },
+}))
+vi.mock("@/lib/moderation/scan-health", () => ({
+  noteScanHealth: async (outcome: unknown) => {
+    scan.health.push(outcome)
   },
 }))
 vi.mock("@/lib/db/moderation", () => ({
@@ -53,6 +59,7 @@ describe("checkUpload", () => {
     scan.next = null
     scan.models = []
     scan.usage = []
+    scan.health = []
     scan.plan = planWith()
     scan.underLimit = true
   })
@@ -111,11 +118,17 @@ describe("checkUpload", () => {
     expect(scan.models).toHaveLength(2) // the animation and the long PDF were never sent
   })
 
-  it("holds uploads once the daily limit is reached", async () => {
+  it("holds uploads once the daily limit is reached, or when the check can't be counted", async () => {
+    // reserveScan is false in both cases (settings-store.test.ts).
     scan.underLimit = false
     scan.next = verdict("allow")
-    expect((await checkUpload(image, "a.png")).action).toBe("store_blurred")
+    const d = await checkUpload(image, "a.png")
+    expect(d).toMatchObject({
+      action: "store_blurred",
+      outcome: { kind: "unavailable", cause: "input" },
+    })
     expect(scan.models).toEqual([])
+    expect(scan.health).toEqual([])
   })
 
   it("never blocks an upload because the check itself failed", async () => {
@@ -124,8 +137,6 @@ describe("checkUpload", () => {
     scan.next = { kind: "unavailable", reason: "API 529", cause: "outage" }
     expect((await checkUpload(image, "a.png")).action).toBe("store")
     scan.next = { kind: "unavailable", reason: "API 429", cause: "outage" }
-    expect((await checkUpload(image, "a.png")).action).toBe("store")
-    scan.next = { kind: "unavailable", reason: "API 401", cause: "outage" }
     expect((await checkUpload(image, "a.png")).action).toBe("store")
     scan.next = verdict("allow")
     expect((await checkUpload(image, "a.png")).action).toBe("store")
@@ -137,5 +148,18 @@ describe("checkUpload", () => {
         )
       ).action,
     ).toBe("store")
+  })
+
+  it("posts through a broken setup like an outage, and reports it", async () => {
+    for (const problem of ["api_key", "permission", "model", "billing"]) {
+      scan.next = { kind: "unavailable", reason: "API 4xx", cause: "config", problem }
+      expect((await checkUpload(image, "a.png")).action).toBe("store")
+    }
+    expect(scan.health).toHaveLength(4)
+    expect(scan.health[0]).toMatchObject({ cause: "config", problem: "api_key" })
+    // Every finished check is reported, so the next one that works clears it.
+    scan.next = verdict("allow")
+    await checkUpload(image, "a.png")
+    expect(scan.health.at(-1)).toBe(scan.next)
   })
 })

@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { ScanSettingsPanel } from "@/components/moderation/scan-settings-panel"
+import { ScanHealthBanner, StatusPanel } from "@/components/moderation/status-panel"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { encodePublicKeyForChain, shortenAddress } from "@/lib/chain/ss58"
 import {
@@ -71,7 +72,7 @@ export default function ModerationPage() {
   const roleQuery = useMyModerationRole(!!me.data)
   const role = roleQuery.data ?? null
   const queue = useModerationQueue(role != null)
-  const [tab, setTab] = useState<"queue" | "roles" | "settings">("queue")
+  const [tab, setTab] = useState<"queue" | "roles" | "settings" | "status">("queue")
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
 
   const items = useMemo(() => queue.data?.items ?? [], [queue.data])
@@ -94,7 +95,7 @@ export default function ModerationPage() {
               )}
             </div>
             {role && (
-              <div className="inline-flex rounded-lg border border-border bg-surface-1 p-0.5 text-sm">
+              <div className="inline-flex max-w-full flex-wrap rounded-lg border border-border bg-surface-1 p-0.5 text-sm">
                 <TabButton active={tab === "queue"} onClick={() => setTab("queue")}>
                   Queue · {queue.data?.stats.open ?? 0}
                 </TabButton>
@@ -111,6 +112,9 @@ export default function ModerationPage() {
                     </TabButton>
                     <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>
                       Settings
+                    </TabButton>
+                    <TabButton active={tab === "status"} onClick={() => setTab("status")}>
+                      Status
                     </TabButton>
                   </>
                 )}
@@ -139,7 +143,12 @@ export default function ModerationPage() {
           ) : tab === "roles" && role === "admin" ? (
             <RolesPanel />
           ) : tab === "settings" && role === "admin" ? (
-            <ScanSettingsPanel />
+            <div className="space-y-4">
+              <ScanHealthBanner />
+              <ScanSettingsPanel />
+            </div>
+          ) : tab === "status" && role === "admin" ? (
+            <StatusPanel />
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1fr] gap-4">
               <div className="rounded-2xl bg-card border border-border overflow-hidden">
