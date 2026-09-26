@@ -5,7 +5,6 @@
  * - block-count → human duration assuming 6s block time (standard for
  *   Polkadot SDK relay chains; override if a future chain differs).
  *
- * UI-only formatters (compact number, percent, date) live in lib/format.ts.
  * Chain-display formatters live here because they depend on chain metadata
  * (decimals, ticker, block time).
  */

@@ -4,9 +4,10 @@
  * Each unique RPC endpoint gets one long-lived ApiPromise; callers reuse
  * the cached instance rather than opening fresh WebSockets per query.
  *
- * Server-side note: serverless functions should still `await api.disconnect()`
- * in a finally block to free the socket before the function exits. The cache
- * survives function invocations only when the worker is warm.
+ * Server routes reuse the cached socket while their instance stays warm and
+ * don't disconnect it. An instance that lost its connection is disconnected
+ * before a new one is opened, so its provider stops reconnecting in the
+ * background.
  */
 
 import { ApiPromise, WsProvider } from "@polkadot/api"
@@ -72,7 +73,10 @@ async function openConnection(endpoint: string): Promise<ApiPromise> {
 export async function getApi(endpoint: string, retries = MAX_RETRIES): Promise<ApiPromise> {
   const cached = apiCache.get(endpoint)
   if (cached && cached.isConnected) return cached
-  if (cached && !cached.isConnected) apiCache.delete(endpoint)
+  if (cached && !cached.isConnected) {
+    apiCache.delete(endpoint)
+    void cached.disconnect().catch(() => undefined)
+  }
 
   const existing = inFlight.get(endpoint)
   if (existing) return existing

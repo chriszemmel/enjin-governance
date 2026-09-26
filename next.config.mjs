@@ -44,8 +44,7 @@ const nextConfig = {
   },
 
   // Empty turbopack config silences the "no turbopack config" warning under
-  // Next 16's default Turbopack build. Polkadot-specific browser-fallback
-  // config will be added here in Phase B when @polkadot/api is installed.
+  // Next 16's default Turbopack build.
   turbopack: {},
 
   async headers() {

@@ -99,8 +99,9 @@ type UseExtrinsicOptions = {
  * or an array (which we wrap in utility.batchAll so the steps either all
  * apply or all revert).
  *
- * The mutation resolves on finalisation with the decoded events and the
- * finalised block hash. Both pre-flight build errors and dispatchError
+ * The mutation resolves once the transaction is in a block (or on
+ * finalisation with `resolveOn: "finalized"`) with the decoded events and
+ * the block hash. Both pre-flight build errors and dispatchError
  * variants are decoded via api.registry.findMetaError and surfaced through
  * onError so the UI never gets stuck in 'signing' on a thrown build call.
  */

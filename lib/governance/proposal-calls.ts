@@ -1,9 +1,9 @@
 /**
  * Curated proposal-call composer.
  *
- * A referendum enacts a single Call. Today the create wizard only ever builds
- * a treasury `spend_local`; this module builds the inner Call for the full set
- * of proposal types a DAO needs - treasury spends, referendum admin
+ * A referendum enacts a single Call. The treasury wizard builds a
+ * `spend_local`; this module, used by the advanced composer, builds the inner
+ * Call for the full set of proposal types a DAO needs - treasury spends, referendum admin
  * (cancel/kill), call whitelisting, runtime upgrades, on-chain remarks - plus
  * a raw escape hatch for pasting any SCALE-encoded call.
  *

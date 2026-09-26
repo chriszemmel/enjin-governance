@@ -194,9 +194,15 @@ async function referendumConcluded(
 ): Promise<boolean> {
   const chain = CHAINS[network as ChainId]
   if (!chain) return false
+  // Same short budget as the other routes' chain reads: a dead RPC must
+  // not hold the edit for the full connect-and-retry time.
   try {
-    const api = await getApi(chain.rpc)
-    const ref = await getReferendum(api, index)
+    const ref = await Promise.race([
+      getApi(chain.rpc, 0).then((api) => getReferendum(api, index)),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("chain read timed out")), 8_000).unref?.(),
+      ),
+    ])
     return ref != null && ref.status.type !== "Ongoing"
   } catch {
     return false
