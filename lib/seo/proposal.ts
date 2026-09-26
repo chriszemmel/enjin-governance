@@ -2,7 +2,8 @@
  * What a referendum page can say about itself before the browser has read
  * the chain: the published title and summary from our database, who
  * proposed it and whether they withdrew it. Used by the proposal layout for
- * its metadata, structured data and no-JavaScript fallback.
+ * its metadata, structured data and no-JavaScript note, and by the page for
+ * its header (see proposal-preview.ts).
  *
  * Best effort and bounded: without a database, on an error or past the time
  * budget, the page falls back to "Referendum #n" and nothing is thrown.
@@ -33,13 +34,16 @@ export type ProposalSeo = {
   /** Last edit of the text by its proposer, if any. */
   editedAt: Date | null
   withdrawn: boolean
+  /** The proposer's note on withdrawing; null while moderators hide the proposal. */
+  withdrawnReason: string | null
 }
 
 /** Metadata is streamed to browsers, but crawlers wait for it. */
 const DB_BUDGET_MS = 1_500
 
 /**
- * Memoised per request, so the layout's metadata and body share one read.
+ * Memoised per request, so the layout's metadata and body and the page share
+ * one read.
  */
 export const loadProposalSeo = cache(
   async (chainId: ChainId, index: number): Promise<ProposalSeo> => {
@@ -55,6 +59,7 @@ export const loadProposalSeo = cache(
       createdAt: null,
       editedAt: null,
       withdrawn: false,
+      withdrawnReason: null,
     }
     if (!isDbConfigured()) return base
     try {
@@ -90,5 +95,6 @@ async function readProposal(base: ProposalSeo): Promise<ProposalSeo> {
     createdAt: row.created_at,
     editedAt: row.edited_at,
     withdrawn,
+    withdrawnReason: (withdrawn && row.withdrawn_reason?.trim()) || null,
   }
 }

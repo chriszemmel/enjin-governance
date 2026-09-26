@@ -909,6 +909,7 @@ export default function AdvancedCreatePage() {
                       value={originIdx}
                       disabled={readOnly}
                       onChange={(e) => setOriginIdx(Number(e.target.value))}
+                      aria-label="Submission origin (track)"
                       className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-border text-sm text-foreground font-mono focus:outline-none focus:border-primary/50 disabled:opacity-50"
                     >
                       {SUBMIT_ORIGINS.map((o, i) => (

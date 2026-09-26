@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { Suspense, useEffect, useRef, useState } from "react"
+import { Suspense, use, useEffect, useRef, useState } from "react"
 import {
   AlertTriangle,
   ArrowLeft,
@@ -37,8 +37,10 @@ import { RefundDepositButton } from "@/components/governance/refund-deposit-butt
 import { LifecycleProgress } from "@/components/governance/lifecycle-progress"
 import { CommentsSection } from "@/components/governance/comments-section"
 import {
+  Bar,
   PreimageInlineSkeleton,
-  ProposalDetailSkeleton,
+  ProposalDetailBodySkeleton,
+  VotePanelSkeleton,
 } from "@/components/governance/skeletons"
 import { useProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
 import { cn } from "@/lib/utils"
@@ -60,7 +62,12 @@ import {
 } from "@/lib/chain/chains"
 import { SubscanLink } from "@/components/governance/subscan-link"
 import { RuntimeCodeHash } from "@/components/governance/runtime-code-hash"
-import { useActiveChain, useSetActiveChain } from "@/lib/chain/use-chain"
+import {
+  useActiveChain,
+  useChainHydrated,
+  useSetActiveChain,
+} from "@/lib/chain/use-chain"
+import { env } from "@/lib/env"
 import { formatTokenAmount } from "@/lib/chain/format"
 import {
   intentFromPreimage,
@@ -69,18 +76,23 @@ import {
 } from "@/lib/governance/call-extract"
 import type { Deposit, PreimageRef, Tally } from "@/lib/governance/types"
 import { normaliseSubscanCall, type SubscanCallParam } from "@/lib/subscan/client"
+import {
+  proposalHeaderText,
+  type ProposalPreview,
+} from "@/lib/seo/proposal-preview"
+import {
+  type ProposalPreviewSource,
+  useProposalPreviewSource,
+} from "@/lib/seo/proposal-preview-context"
 
+// No Suspense boundary around the page: the route renders per request (the
+// layout reads the request headers), so useSearchParams needs none, and
+// without one the page's HTML - its header text included - is sent in
+// place rather than streamed in after the shell, which crawlers that don't
+// run scripts would miss.
 export default function ProposalDetailPage() {
-  // Suspense wrapper so useSearchParams doesn't trip Next's
-  // CSR-bailout requirement during static prerender.
-  return (
-    <Suspense fallback={null}>
-      <ProposalDetailPageInner />
-    </Suspense>
-  )
-}
-
-function ProposalDetailPageInner() {
+  // What the server already knows of the proposal (see the layout).
+  const preview = useProposalPreviewSource()
   const params = useParams<{ index: string }>()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -93,17 +105,28 @@ function ProposalDetailPageInner() {
   // doesn't exist on the wrong chain.
   const setActiveChain = useSetActiveChain()
   const requestedNetwork = searchParams.get("network") as ChainId | null
+  const requestedChain =
+    requestedNetwork && Object.hasOwn(CHAINS, requestedNetwork)
+      ? CHAINS[requestedNetwork]
+      : null
   useEffect(() => {
-    if (!requestedNetwork) return
-    if (!(requestedNetwork in CHAINS)) return
-    setActiveChain(requestedNetwork)
-  }, [requestedNetwork, setActiveChain])
+    if (requestedChain) setActiveChain(requestedChain.id)
+  }, [requestedChain, setActiveChain])
 
   const chain = useActiveChain()
+  // The network this page shows: the link's, else the saved choice. Until
+  // that has been read (server render, first paint) it is the deployment
+  // default, as the server assumed - so both render the same header.
+  const chainHydrated = useChainHydrated()
+  const pageChainId: ChainId =
+    requestedChain?.id ??
+    (chainHydrated ? chain.id : env.NEXT_PUBLIC_DEFAULT_NETWORK)
   const referendumQuery = useReferendum(Number.isFinite(index) ? index : -1)
   const tracksQuery = useTracks()
+  // Read for the linked network straight away, not first for the saved one.
   const metadataQuery = useProposalMetadata(
     Number.isFinite(index) ? index : null,
+    requestedChain ?? undefined,
   )
   const meQuery = useMe()
   const [withdrawOpen, setWithdrawOpen] = useState(false)
@@ -177,10 +200,30 @@ function ProposalDetailPageInner() {
     )
   }
 
+  // Same place in the tree while loading and once loaded, so the header
+  // (and its text) stays put when the chain answers.
+  const header = (live?: HeaderLive) => (
+    <ProposalHeader
+      index={index}
+      chainId={pageChainId}
+      preview={preview}
+      metadata={metadataQuery}
+      live={live}
+    />
+  )
+
   if (referendumQuery.isPending) {
     return (
       <Shell>
-        <ProposalDetailSkeleton />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-5">
+            {header()}
+            <ProposalDetailBodySkeleton />
+          </div>
+          <div className="space-y-4">
+            <VotePanelSkeleton />
+          </div>
+        </div>
       </Shell>
     )
   }
@@ -297,98 +340,41 @@ function ProposalDetailPageInner() {
     <Shell>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
-          <div className="rounded-2xl bg-card border border-border p-6">
-            <div className="flex items-center gap-2 mb-4 flex-wrap">
-              <StatusChip type={ref.status.type} />
-              <TrackBadge
-                track={track ?? null}
-                trackId={ref.trackId ?? historyOngoing?.trackId ?? null}
-              />
-              <div className="ml-auto flex items-center gap-2">
-                <span className="text-xs text-muted-foreground font-mono flex items-center gap-1">
-                  <Hash className="w-3.5 h-3.5" />
-                  {ref.index}
-                </span>
-                <SubscanLink href={subscanUrl} />
-              </div>
-            </div>
-
-            {metadataQuery.data?.withdrawn_at && (
-              <div className="mb-4 rounded-xl bg-destructive/5 border border-destructive/30 p-3 flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0 text-xs leading-relaxed">
-                  <p className="font-medium text-foreground">
-                    Proposer has withdrawn this proposal - please vote NAY.
-                  </p>
-                  {metadataQuery.data.withdrawn_reason && (
-                    <p className="text-muted-foreground mt-0.5 break-words">
-                      {metadataQuery.data.withdrawn_reason}
-                    </p>
-                  )}
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    Off-chain flag - voting is still open. The chain doesn&apos;t
-                    let the proposer cancel directly.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <h1 className="text-xl sm:text-2xl font-semibold text-foreground leading-tight mb-2 break-words">
-              {metadataQuery.isPending ? (
-                // Hold a skeleton until the EGOV lookup settles, so a proposal
-                // that HAS a title doesn't flash "Referendum #N" first and then
-                // swap. Once it resolves (title found, or no metadata / error),
-                // we show the title or fall back to the index.
-                <span className="inline-block h-7 w-72 max-w-full rounded-md bg-surface-3 animate-pulse align-middle" />
-              ) : (
-                <>
-                  {metadataQuery.data?.title ?? `Referendum #${ref.index}`}
-                  {metadataQuery.data?.edited_at && (
-                    <span
-                      className="ml-2 align-middle text-[11px] font-normal text-muted-foreground"
-                      title={`Edited ${new Date(metadataQuery.data.edited_at).toLocaleString()}${metadataQuery.data.edit_count > 1 ? ` · ${metadataQuery.data.edit_count} edits` : ""}`}
-                    >
-                      (edited)
-                    </span>
-                  )}
-                </>
-              )}
-            </h1>
-
-            {metadataQuery.data?.summary && (
-              <p className="text-sm text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
-                {metadataQuery.data.summary}
-              </p>
-            )}
-
-            <div className="flex items-center gap-x-4 gap-y-2 mt-5 pt-5 border-t border-border text-xs text-muted-foreground flex-wrap">
-              {submittedBlock != null && (
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5" />
-                  Submitted <BlockTime block={submittedBlock} showBlock />
-                </span>
-              )}
-              {!isOngoing && finalisedBlock != null && submittedBlock !== finalisedBlock && (
-                <span className="flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5" />
-                  Finalised <BlockTime block={finalisedBlock} showBlock />
-                </span>
-              )}
-              {proposerAddress && (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Proposer</span>
-                  <UserChip address={proposerAddress} size="sm" />
-                </span>
-              )}
-            </div>
-
-            {metadataQuery.data &&
+          {header({
+            badges: (
+              <>
+                <StatusChip type={ref.status.type} />
+                <TrackBadge
+                  track={track ?? null}
+                  trackId={ref.trackId ?? historyOngoing?.trackId ?? null}
+                />
+              </>
+            ),
+            dates: (
+              <>
+                {submittedBlock != null && (
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Submitted <BlockTime block={submittedBlock} showBlock />
+                  </span>
+                )}
+                {!isOngoing && finalisedBlock != null && submittedBlock !== finalisedBlock && (
+                  <span className="flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" />
+                    Finalised <BlockTime block={finalisedBlock} showBlock />
+                  </span>
+                )}
+              </>
+            ),
+            proposerAddress,
+            actions:
+              metadataQuery.data &&
               isOngoing &&
               isProposerWallet(
                 meQuery.data?.address ?? null,
                 metadataQuery.data.proposer_address,
                 chain.id,
-              ) && (
+              ) ? (
                 <ProposerActions
                   referendumIndex={ref.index}
                   networkId={chain.id}
@@ -397,8 +383,8 @@ function ProposalDetailPageInner() {
                   isWithdrawn={Boolean(metadataQuery.data.withdrawn_at)}
                   onWithdraw={() => setWithdrawOpen(true)}
                 />
-              )}
-          </div>
+              ) : null,
+          })}
 
           <LifecycleProgress referendum={ref} track={track ?? null} />
 
@@ -489,11 +475,7 @@ function ProposalDetailPageInner() {
                       chain={chain}
                     />
                     <div className="border-t border-border pt-5">
-                      <VotesList
-                        referendumIndex={ref.index}
-                        chain={chain}
-                        decisionPeriodBlocks={track?.decisionPeriod ?? null}
-                      />
+                      <VotesList referendumIndex={ref.index} chain={chain} />
                     </div>
                   </>
                 ),
@@ -627,7 +609,6 @@ function ProposalDetailPageInner() {
             <VotingPanel
               referendumIndex={ref.index}
               isOngoing={isOngoing}
-              decisionPeriodBlocks={track?.decisionPeriod ?? null}
               trackId={ref.trackId}
             />
           )}
@@ -642,6 +623,167 @@ function ProposalDetailPageInner() {
         />
       )}
     </Shell>
+  )
+}
+
+/** The header's chain parts, once the referendum has been read. */
+type HeaderLive = {
+  badges: React.ReactNode
+  dates: React.ReactNode
+  proposerAddress: string | null
+  actions: React.ReactNode
+}
+
+type HeaderProps = {
+  index: number
+  chainId: ChainId
+  metadata: ReturnType<typeof useProposalMetadata>
+  /** Undefined while the referendum is read from the chain. */
+  live?: HeaderLive
+}
+
+/**
+ * The card at the top of the page. Its text - title, summary, proposer,
+ * withdrawal - comes from the server's preview until the browser's own
+ * read of the proposal answers, so it shows before the chain does; the
+ * chain parts (status, track, dates) have placeholders until then.
+ * Browsers get the preview as a promise: the card waits for it in its own
+ * Suspense boundary, showing what the browser knows meanwhile.
+ */
+function ProposalHeader({
+  preview,
+  ...props
+}: HeaderProps & { preview: ProposalPreviewSource }) {
+  if (!isPromise(preview)) return <ProposalHeaderCard {...props} preview={preview} />
+  return (
+    <Suspense fallback={<ProposalHeaderCard {...props} preview={null} />}>
+      <StreamedProposalHeaderCard {...props} preview={preview} />
+    </Suspense>
+  )
+}
+
+function StreamedProposalHeaderCard({
+  preview,
+  ...props
+}: HeaderProps & { preview: Promise<ProposalPreview | null> }) {
+  return <ProposalHeaderCard {...props} preview={use(preview)} />
+}
+
+function isPromise<T>(value: T | Promise<T>): value is Promise<T> {
+  return typeof (value as Promise<T> | null)?.then === "function"
+}
+
+function ProposalHeaderCard({
+  index,
+  chainId,
+  metadata,
+  live,
+  preview,
+}: HeaderProps & { preview: ProposalPreview | null }) {
+  // The server read the network it was linked to (or the default); a page
+  // showing another one can't use it.
+  const shown =
+    preview && preview.chainId === chainId && preview.index === index ? preview : null
+  const text = proposalHeaderText(metadata.data, shown, metadata.isPending)
+  const proposer = text === "pending" ? null : text.proposer
+  const proposerAddress = live ? live.proposerAddress : (proposer?.address ?? null)
+  const editedAt = metadata.data?.edited_at
+
+  return (
+    <div className="rounded-2xl bg-card border border-border p-6">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        {live ? (
+          live.badges
+        ) : (
+          <>
+            <Bar className="h-6 w-20 rounded-full animate-pulse" />
+            <Bar className="h-4 w-24 animate-pulse" />
+          </>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-muted-foreground font-mono flex items-center gap-1">
+            <Hash className="w-3.5 h-3.5" />
+            {index}
+          </span>
+          <SubscanLink href={subscanReferendumUrl(CHAINS[chainId], index)} />
+        </div>
+      </div>
+
+      {text !== "pending" && text.withdrawn && (
+        <div className="mb-4 rounded-xl bg-destructive/5 border border-destructive/30 p-3 flex items-start gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 text-xs leading-relaxed">
+            <p className="font-medium text-foreground">
+              Proposer has withdrawn this proposal - please vote NAY.
+            </p>
+            {text.withdrawn.reason && (
+              <p className="text-muted-foreground mt-0.5 break-words">
+                {text.withdrawn.reason}
+              </p>
+            )}
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Off-chain flag - voting is still open. The chain doesn&apos;t
+              let the proposer cancel directly.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <h1 className="text-xl sm:text-2xl font-semibold text-foreground leading-tight mb-2 break-words">
+        {text === "pending" ? (
+          // Hold a skeleton until the EGOV lookup settles, so a proposal
+          // that HAS a title doesn't flash "Referendum #N" first and then
+          // swap. Once it resolves (title found, or no metadata / error),
+          // we show the title or fall back to the index.
+          <span className="inline-block h-7 w-72 max-w-full rounded-md bg-surface-3 animate-pulse align-middle">
+            <span className="sr-only">Referendum #{index}</span>
+          </span>
+        ) : (
+          <>
+            {text.title ?? `Referendum #${index}`}
+            {text.edited && (
+              <span
+                className="ml-2 align-middle text-[11px] font-normal text-muted-foreground"
+                title={
+                  editedAt
+                    ? `Edited ${new Date(editedAt).toLocaleString()}${metadata.data && metadata.data.edit_count > 1 ? ` · ${metadata.data.edit_count} edits` : ""}`
+                    : undefined
+                }
+              >
+                (edited)
+              </span>
+            )}
+          </>
+        )}
+      </h1>
+
+      {text !== "pending" && text.summary && (
+        <p className="text-sm text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
+          {text.summary}
+        </p>
+      )}
+
+      <div className="flex items-center gap-x-4 gap-y-2 mt-5 pt-5 border-t border-border text-xs text-muted-foreground flex-wrap">
+        {live ? live.dates : <Bar className="h-3 w-40 animate-pulse" />}
+        {proposerAddress && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-muted-foreground">Proposer</span>
+            <UserChip
+              address={proposerAddress}
+              chainId={chainId}
+              fallbackName={
+                proposer && isProposerWallet(proposerAddress, proposer.address, chainId)
+                  ? proposer.name
+                  : null
+              }
+              size="sm"
+            />
+          </span>
+        )}
+      </div>
+
+      {live?.actions}
+    </div>
   )
 }
 
@@ -684,7 +826,7 @@ function ProposerActions({
             title={
               signedIn
                 ? "Edit the off-chain narrative"
-                : "Sign in on /account first, then edit"
+                : "Sign in with the proposer wallet to edit"
             }
           >
             <Pencil className="w-3.5 h-3.5" />
@@ -705,7 +847,7 @@ function ProposerActions({
                   ? isWithdrawn
                     ? "Clear the withdrawal banner"
                     : "Mark this proposal as withdrawn (off-chain only)"
-                  : "Sign in on /account first, then withdraw"
+                  : "Sign in with the proposer wallet to withdraw"
               }
             >
               {isWithdrawn ? (

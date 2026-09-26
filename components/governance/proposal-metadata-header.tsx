@@ -228,7 +228,7 @@ function sourceBadgeState({
 }): { tone: string; label: string } {
   if (error) {
     return {
-      tone: "border-amber-500/40 text-amber-300 bg-amber-500/5",
+      tone: "border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/5",
       label: "EGOV1 · Fetch Failed",
     }
   }
@@ -246,12 +246,12 @@ function sourceBadgeState({
   }
   if (verified) {
     return {
-      tone: "border-emerald-500/40 text-emerald-400 bg-emerald-500/5",
+      tone: "border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5",
       label: "EGOV1 · Verified",
     }
   }
   return {
-    tone: "border-red-500/40 text-red-400 bg-red-500/5",
+    tone: "border-red-500/40 text-red-700 dark:text-red-400 bg-red-500/5",
     label: "EGOV1 · Unverified",
   }
 }

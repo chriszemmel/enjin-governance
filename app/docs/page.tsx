@@ -506,7 +506,7 @@ export default function DocsPage() {
               <li className="flex items-start gap-3">
                 <SourceBadgeSample
                   label="EGOV1 · Verified"
-                  tone="border-emerald-500/40 text-emerald-400 bg-emerald-500/5"
+                  tone="border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5"
                 />
                 <span>
                   Bucket sha256 matches our DB record and the hash pinned on
@@ -530,7 +530,7 @@ export default function DocsPage() {
               <li className="flex items-start gap-3">
                 <SourceBadgeSample
                   label="EGOV1 · Unverified"
-                  tone="border-red-500/40 text-red-400 bg-red-500/5"
+                  tone="border-red-500/40 text-red-700 dark:text-red-400 bg-red-500/5"
                 />
                 <span>
                   Bucket sha256 doesn&apos;t match what we expected and no
@@ -541,7 +541,7 @@ export default function DocsPage() {
               <li className="flex items-start gap-3">
                 <SourceBadgeSample
                   label="EGOV1 · Fetch Failed"
-                  tone="border-amber-500/40 text-amber-300 bg-amber-500/5"
+                  tone="border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/5"
                 />
                 <span>
                   The bucket URL didn&apos;t respond. Not a verification
@@ -901,7 +901,10 @@ export default function DocsPage() {
               keep, blur, hide or restore content; only admins can delete a file, for
               legal takedowns, or pause someone&apos;s posting. Every decision needs a
               reason and appears in the{" "}
-              <Link href="/moderation-log" className="text-primary hover:text-purple-dim">
+              <Link
+                href="/moderation-log"
+                className="text-primary hover:text-purple-dim underline underline-offset-2 decoration-primary/40 hover:decoration-current"
+              >
                 public moderation log
               </Link>
               . Proposers can remove their own attachments at any time.
@@ -912,8 +915,8 @@ export default function DocsPage() {
               are stored. Clear violations, such as a readable recovery phrase, are
               rejected or held, depending on the admins&apos; setting; borderline
               files are held back and sent to the moderators&apos; queue, and appear
-              once a moderator has looked. Animated images are judged by their first
-              frame. Proposal text and comments are only ever flagged for a human -
+              once a moderator has looked. Animated images always wait for a
+              moderator, because the model sees only their first frame. Proposal text and comments are only ever flagged for a human -
               the machine never hides text on its own. Admins choose the model, what
               is checked and a daily limit; past the limit, uploads wait for a
               moderator and text is moderated by reports as usual.
@@ -950,7 +953,10 @@ export default function DocsPage() {
                 this page so you don&apos;t lose your spot.
               </li>
               <li>
-                <Link href="/security" className="text-primary hover:text-purple-dim">
+                <Link
+                  href="/security"
+                  className="text-primary hover:text-purple-dim underline underline-offset-2 decoration-primary/40 hover:decoration-current"
+                >
                   Report a security issue
                 </Link>{" "}
                 - private vulnerability disclosures, kept off public channels
@@ -1060,7 +1066,11 @@ function SourceBadgeSample({ label, tone }: { label: string; tone: string }) {
 
 function Pre({ children }: { children: React.ReactNode }) {
   return (
-    <pre className="rounded-lg bg-surface-2 border border-border p-3 text-[11px] font-mono leading-relaxed text-foreground overflow-x-auto whitespace-pre">
+    // Focusable so the keyboard can scroll it where it overflows (phones).
+    <pre
+      tabIndex={0}
+      className="rounded-lg bg-surface-2 border border-border p-3 text-[11px] font-mono leading-relaxed text-foreground overflow-x-auto whitespace-pre"
+    >
       {children}
     </pre>
   )
@@ -1070,7 +1080,7 @@ function A({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
-      className="text-primary hover:text-purple-dim underline-offset-2 hover:underline"
+      className="text-primary hover:text-purple-dim underline underline-offset-2 decoration-primary/40 hover:decoration-current"
     >
       {children}
     </Link>
@@ -1115,7 +1125,7 @@ function ChainCard({
       ? "border-amber-500/30 bg-amber-500/5"
       : "border-purple-border/40 bg-primary/5"
   const accentText =
-    tone === "testnet" ? "text-amber-400" : "text-primary"
+    tone === "testnet" ? "text-amber-700 dark:text-amber-400" : "text-primary"
   return (
     <div className={`rounded-xl border ${accent} p-4 space-y-2`}>
       <div className="flex items-center justify-between gap-2">

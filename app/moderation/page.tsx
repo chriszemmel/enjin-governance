@@ -38,8 +38,8 @@ const ACTION_LABELS: Record<ContentAction, string> = {
 }
 
 const SEVERITY_TONE = {
-  high: "bg-red-500/10 text-red-600 dark:text-red-400",
-  medium: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  high: "bg-red-500/10 text-red-700 dark:text-red-400",
+  medium: "bg-amber-500/10 text-amber-800 dark:text-amber-400",
   low: "bg-surface-2 text-muted-foreground",
 }
 
@@ -287,7 +287,7 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
       <div className="flex items-start justify-between gap-3">
         <h2 className="text-lg font-semibold text-foreground break-all">{itemTitle(item)}</h2>
         {item.state && item.state !== "visible" && (
-          <span className="flex-shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs text-amber-600 dark:text-amber-400 capitalize">
+          <span className="flex-shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs text-amber-800 dark:text-amber-400 capitalize">
             {item.state}
           </span>
         )}
@@ -342,7 +342,7 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
           </p>
           <div className="flex flex-wrap gap-1.5">
             {auto.decision && (
-              <span className="rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-600 dark:text-red-400">
+              <span className="rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-700 dark:text-red-400">
                 {auto.decision}
               </span>
             )}
@@ -445,6 +445,7 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
           <select
             value={suspendDays}
             onChange={(e) => setSuspendDays(Number(e.target.value))}
+            aria-label="Pause length"
             className="rounded-md border border-border bg-surface-1 px-1.5 py-0.5"
           >
             {[1, 7, 30, 90].map((d) => (
@@ -519,11 +520,13 @@ function RolesPanel() {
           value={address}
           onChange={(e) => setAddress(e.target.value.trim())}
           placeholder="Wallet address"
+          aria-label="Wallet address"
           className="flex-1 min-w-[16rem] rounded-xl border border-border bg-surface-1 px-3 py-2 font-mono text-xs focus:outline-none focus:border-primary/50"
         />
         <select
           value={role}
           onChange={(e) => setRoleValue(e.target.value as "moderator" | "admin")}
+          aria-label="Role"
           className="rounded-xl border border-border bg-surface-1 px-3 py-2 text-sm"
         >
           <option value="moderator">Moderator</option>

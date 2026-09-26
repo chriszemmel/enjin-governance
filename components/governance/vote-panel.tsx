@@ -45,12 +45,6 @@ import {
 interface VotingPanelProps {
   referendumIndex: number
   isOngoing: boolean
-  /**
-   * Unused - conviction locks run in the runtime's voteLockingPeriod, not
-   * the track's decision period. Kept until the proposal page stops
-   * passing it.
-   */
-  decisionPeriodBlocks?: number | null
   trackId: number | null
 }
 
@@ -440,7 +434,13 @@ export function VotingPanel({
               <div>
                 <p className="font-semibold text-foreground">Vote recorded on chain</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <span className={vote === "aye" ? "text-green-400" : "text-red-400"}>
+                  <span
+                    className={
+                      vote === "aye"
+                        ? "text-green-700 dark:text-green-400"
+                        : "text-red-700 dark:text-red-400"
+                    }
+                  >
                     {vote === "aye" ? "Aye" : "Nay"}
                   </span>{" "}
                   at {multiplier}x conviction.
@@ -505,8 +505,8 @@ export function VotingPanel({
                   className={cn(
                     "flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-medium transition-all duration-200 disabled:opacity-50",
                     vote === "aye"
-                      ? "border-green-500/50 bg-green-500/10 text-green-400"
-                      : "border-border text-muted-foreground hover:border-green-500/30 hover:text-green-400 hover:bg-green-500/5",
+                      ? "border-green-500/50 bg-green-500/10 text-green-800 dark:text-green-400"
+                      : "border-border text-muted-foreground hover:border-green-500/30 hover:text-green-800 dark:hover:text-green-400 hover:bg-green-500/5",
                   )}
                 >
                   <CheckCircle2 className="w-4 h-4" />
@@ -518,8 +518,8 @@ export function VotingPanel({
                   className={cn(
                     "flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-medium transition-all duration-200 disabled:opacity-50",
                     vote === "nay"
-                      ? "border-red-500/50 bg-red-500/10 text-red-400"
-                      : "border-border text-muted-foreground hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/5",
+                      ? "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-400"
+                      : "border-border text-muted-foreground hover:border-red-500/30 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-500/5",
                   )}
                 >
                   <XCircle className="w-4 h-4" />

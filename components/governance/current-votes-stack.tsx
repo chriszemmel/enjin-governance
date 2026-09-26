@@ -275,7 +275,9 @@ function Card({
           <span
             className={cn(
               "text-[10px] uppercase tracking-wider font-semibold flex items-center gap-1",
-              v.aye ? "text-emerald-400" : "text-red-400",
+              v.aye
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-red-700 dark:text-red-400",
             )}
           >
             <Pencil className="w-2.5 h-2.5" />
@@ -292,7 +294,9 @@ function Card({
         <span
           className={cn(
             "text-base font-semibold",
-            v.aye ? "text-emerald-400" : "text-red-400",
+            v.aye
+              ? "text-emerald-700 dark:text-emerald-400"
+              : "text-red-700 dark:text-red-400",
           )}
         >
           {v.aye ? "Aye" : "Nay"}

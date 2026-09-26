@@ -67,11 +67,38 @@ import { keyFromPublicUrl } from "@/lib/r2/paths"
 export default function CreatePage() {
   // useSearchParams() forces this subtree to opt out of static
   // prerendering. Wrapping in Suspense satisfies Next's CSR-bailout
-  // requirement while keeping the rest of the chunk eligible.
+  // requirement while keeping the rest of the chunk eligible. The fallback
+  // is what the prerendered HTML shows until the scripts have run: the
+  // page's frame and heading instead of a blank page.
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<CreatePageFallback />}>
       <CreatePageInner />
     </Suspense>
+  )
+}
+
+function CreatePageFallback() {
+  return (
+    <Shell>
+      <div className="max-w-3xl mx-auto">
+        <BackToProposals />
+        {/* No network name yet: the saved choice is only read in the browser. */}
+        <Header chainName={null} chainShort={null} />
+        <StepBar current="create" />
+      </div>
+    </Shell>
+  )
+}
+
+function BackToProposals() {
+  return (
+    <Link
+      href="/proposals"
+      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+    >
+      <ArrowLeft className="w-3.5 h-3.5" />
+      Back to Proposals
+    </Link>
   )
 }
 
@@ -798,13 +825,7 @@ function CreatePageInner() {
   return (
     <Shell>
       <div className="max-w-3xl mx-auto">
-        <Link
-          href="/proposals"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Proposals
-        </Link>
+        <BackToProposals />
 
         <Header chainName={chain.name} chainShort={chain.shortName} />
         <StepBar current={step} />
@@ -813,7 +834,10 @@ function CreatePageInner() {
           <div className="mb-4 text-xs text-muted-foreground">
             Filing a runtime upgrade, referendum cancel/kill, whitelist, or other
             non-treasury call?{" "}
-            <Link href="/create/advanced" className="text-primary hover:underline">
+            <Link
+              href="/create/advanced"
+              className="text-primary underline underline-offset-2 decoration-primary/40 hover:decoration-current"
+            >
               Use the advanced composer
             </Link>
             .
@@ -1069,7 +1093,13 @@ function Shell({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Header({ chainName, chainShort }: { chainName: string; chainShort: string }) {
+function Header({
+  chainName,
+  chainShort,
+}: {
+  chainName: string | null
+  chainShort: string | null
+}) {
   return (
     <div className="mb-6 flex items-start gap-4">
       <div className="w-11 h-11 rounded-xl bg-primary/10 border border-purple-border flex items-center justify-center flex-shrink-0">
@@ -1080,9 +1110,15 @@ function Header({ chainName, chainShort }: { chainName: string; chainShort: stri
           Treasury Proposal
         </h1>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Request a payout from the {chainShort} treasury to your
-          connected wallet on{" "}
-          <span className="text-foreground">{chainName}</span>.
+          {chainName && chainShort ? (
+            <>
+              Request a payout from the {chainShort} treasury to your
+              connected wallet on{" "}
+              <span className="text-foreground">{chainName}</span>.
+            </>
+          ) : (
+            "Request a payout from the treasury to your connected wallet."
+          )}
         </p>
       </div>
     </div>

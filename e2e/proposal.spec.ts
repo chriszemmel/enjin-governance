@@ -1,5 +1,19 @@
-import { ATTACHMENTS, MULTISIG, SUMMARY, TITLE } from "./support/data"
+import { ATTACHMENTS, ME, MULTISIG, PROPOSAL_PATH, SUMMARY, TITLE } from "./support/data"
 import { expect, openProposal, test } from "./support/test"
+
+test("proposal title, summary and proposer show before the chain answers", async ({ page }) => {
+  // The chain sockets open but never answer, so nothing from the chain arrives.
+  await page.routeWebSocket(/^wss:\/\//, () => {})
+  await page.goto(PROPOSAL_PATH)
+
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(TITLE)
+  await expect(page.getByText(SUMMARY)).toBeVisible()
+  // The proposer's chip (it opens their profile).
+  await expect(page.locator(`button[title="${ME}"]`)).toBeVisible()
+  // Still waiting for the chain: no status, no tally.
+  await expect(page.getByText("Approved", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Tally" })).toHaveCount(0)
+})
 
 test("proposal page shows the verified EGOV1 text with its table, image and addresses", async ({
   page,

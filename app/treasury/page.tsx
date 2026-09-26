@@ -138,7 +138,7 @@ export default function TreasuryPage() {
                 <Wallet className="w-4 h-4 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">Treasury balance</p>
                 {chain.isTestnet && (
-                  <span className="text-[10px] uppercase tracking-wider text-amber-400 border border-amber-500/40 rounded-full px-1.5 py-0.5">
+                  <span className="text-[10px] uppercase tracking-wider text-amber-800 dark:text-amber-400 border border-amber-500/40 rounded-full px-1.5 py-0.5">
                     Testnet
                   </span>
                 )}

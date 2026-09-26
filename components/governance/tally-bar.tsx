@@ -85,10 +85,10 @@ export function TallyBar({
     return (
       <div className={cn("space-y-1.5", className)}>
         <div className="flex items-center justify-between text-xs">
-          <span className="text-green-400 font-medium">
+          <span className="text-green-700 dark:text-green-400 font-medium">
             {ayePercent.toFixed(0)}% Aye
           </span>
-          <span className="text-red-400 font-medium">
+          <span className="text-red-700 dark:text-red-400 font-medium">
             {nayPercent.toFixed(0)}% Nay
           </span>
         </div>
@@ -126,7 +126,7 @@ export function TallyBar({
       <div className="space-y-3">
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-green-400 font-medium">Aye</span>
+            <span className="text-green-700 dark:text-green-400 font-medium">Aye</span>
             <span className="text-foreground font-semibold tabular-nums">
               {ayePercent.toFixed(1)}%
             </span>
@@ -145,7 +145,7 @@ export function TallyBar({
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-red-400 font-medium">Nay</span>
+            <span className="text-red-700 dark:text-red-400 font-medium">Nay</span>
             <span className="text-foreground font-semibold tabular-nums">
               {nayPercent.toFixed(1)}%
             </span>
@@ -169,7 +169,7 @@ export function TallyBar({
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">
               Raw support{" "}
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 (unweighted)
               </span>
             </span>

@@ -1,8 +1,8 @@
 /**
  * What a referendum page says about itself before the chain is read: the
  * loader (database mocked), the metadata and JSON-LD built from it, the
- * no-JavaScript fallback, and the layout's generateMetadata with and
- * without `?network=`.
+ * no-JavaScript note, the layout's generateMetadata with and without
+ * `?network=`, and the preview the page's header starts from.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -49,7 +49,7 @@ vi.mock("next/headers", () => ({
   },
 }))
 
-import { generateMetadata } from "@/app/proposals/[index]/layout"
+import ProposalLayout, { generateMetadata } from "@/app/proposals/[index]/layout"
 import { enabledChains } from "@/lib/chain/chains"
 import { proposalJsonLd, serializeJsonLd, siteJsonLd } from "@/lib/seo/json-ld"
 import {
@@ -60,6 +60,11 @@ import {
   TITLE_TEMPLATE,
 } from "@/lib/seo/metadata"
 import { loadProposalSeo } from "@/lib/seo/proposal"
+import {
+  proposalHeaderText,
+  proposalPreview,
+  type ProposalPreview,
+} from "@/lib/seo/proposal-preview"
 import { ProposalSeoFallback } from "@/lib/seo/proposal-fallback"
 import {
   chainFromHint,
@@ -86,6 +91,7 @@ function publishedRow(over: Record<string, unknown> = {}) {
     created_at: CREATED,
     edited_at: null,
     withdrawn_at: null,
+    withdrawn_reason: null,
     ...over,
   }
 }
@@ -173,11 +179,22 @@ describe("loadProposalSeo", () => {
 
   it("says nothing of a proposal moderators hid, beyond who proposed it", async () => {
     io.state = { state: "hidden" }
+    io.row = publishedRow({ withdrawn_at: EDITED, withdrawn_reason: "Superseded by #43" })
     const p = await load()
     expect(p.title).toBeNull()
     expect(p.summary).toBeNull()
     expect(p.createdAt).toBeNull()
+    expect(p.withdrawn).toBe(true)
+    expect(p.withdrawnReason).toBeNull()
     expect(p.proposer?.address).toBe(PROPOSER)
+  })
+
+  it("keeps the proposer's withdrawal note, only while withdrawn", async () => {
+    io.row = publishedRow({ withdrawn_at: EDITED, withdrawn_reason: "  Superseded by #43 " })
+    expect(await load()).toMatchObject({ withdrawn: true, withdrawnReason: "Superseded by #43" })
+    // A note left from an undone withdrawal isn't shown.
+    io.row = publishedRow({ withdrawn_at: null, withdrawn_reason: "Superseded by #43" })
+    expect(await load()).toMatchObject({ withdrawn: false, withdrawnReason: null })
   })
 
   it("treats a missing moderation table as visible, like the public state route", async () => {
@@ -338,27 +355,172 @@ describe("structured data", () => {
 })
 
 describe("the no-JavaScript fallback", () => {
-  it("renders the title, summary and status inside <noscript>, and the JSON-LD", async () => {
+  it("renders the status and a Subscan link inside <noscript>, and the JSON-LD", async () => {
     io.row = publishedRow({ withdrawn_at: EDITED })
     const html = await render()
     const noscript = html.match(/<noscript>(.*)<\/noscript>/s)?.[1] ?? ""
-    expect(noscript).toContain("<h1")
-    expect(noscript).toContain("Fund the community tooling grant</h1>")
-    expect(noscript).toContain("Six months of maintenance")
     expect(noscript).toContain(
       `Referendum #42 on the ${defaultChain().name}, proposed by Alice. The proposer has withdrawn it; voting stays open on chain.`,
     )
     expect(noscript).toMatch(
       /<a href="https:\/\/[^"]+\/referenda_v2\/42"[^>]*>View referendum #42 on Subscan<\/a>/,
     )
-    expect(html.match(/<h1/g)).toHaveLength(1)
+    // The page's own HTML has the heading and the summary.
+    expect(html).not.toContain("<h1")
+    expect(noscript).not.toContain("Six months of maintenance")
     expect(ldScripts(html)[0]["@graph"][1].headline).toBe("Fund the community tooling grant")
   })
 
   it("escapes user text", async () => {
-    io.row = publishedRow({ summary: "<img src=x onerror=alert(1)>" })
+    io.user = { display_name: "<img src=x onerror=alert(1)>", handle: null }
     const html = await render()
     expect(html).not.toContain("<img")
-    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;")
+    expect(html).toContain("proposed by &lt;img src=x onerror=alert(1)&gt;")
+  })
+})
+
+describe("the header preview", () => {
+  const preview = async () => proposalPreview(await load())
+
+  it("carries the published text, the proposer and the withdrawal", async () => {
+    io.row = publishedRow({ edited_at: EDITED, withdrawn_at: EDITED, withdrawn_reason: "Moved" })
+    expect(await preview()).toEqual({
+      chainId: defaultChain().id,
+      index: 42,
+      title: "Fund the community tooling grant",
+      summary: "Six months of maintenance for the open-source governance tools.",
+      proposer: { address: PROPOSER, name: "Alice" },
+      edited: true,
+      withdrawn: { reason: "Moved" },
+    })
+  })
+
+  it("is empty without published text, so a hidden proposal's words stay out of the HTML", async () => {
+    io.state = { state: "hidden" }
+    expect(await preview()).toBeNull()
+    io.state = { state: "removed" }
+    expect(await preview()).toBeNull()
+    io.state = null
+    io.row = null
+    expect(await preview()).toBeNull()
+    io.dbConfigured = false
+    expect(await preview()).toBeNull()
+  })
+})
+
+describe("the header text", () => {
+  const PREVIEW: ProposalPreview = {
+    chainId: defaultChain().id,
+    index: 42,
+    title: "From the server",
+    summary: "Server summary",
+    proposer: { address: PROPOSER, name: "Alice" },
+    edited: false,
+    withdrawn: null,
+  }
+  const metadata = {
+    id: "11111111-1111-4111-8111-111111111111",
+    network: defaultChain().id,
+    referendum_index: 42,
+    title: "Edited since",
+    summary: null,
+    body_markdown: "",
+    track: null,
+    beneficiary: null,
+    amount_planck: null,
+    proposer_address: PROPOSER,
+    json_url: "https://example.test/proposal.json",
+    json_sha256: "0".repeat(64),
+    status: "on_chain",
+    edited_at: "2026-08-03T08:30:00.000Z",
+    edit_count: 1,
+    withdrawn_at: "2026-08-04T08:30:00.000Z",
+    withdrawn_reason: "Moved",
+    created_at: "2026-08-01T12:00:00.000Z",
+  }
+
+  it("starts from the server's preview while the browser's read is pending", () => {
+    expect(proposalHeaderText(undefined, PREVIEW, true)).toEqual({
+      title: "From the server",
+      summary: "Server summary",
+      edited: false,
+      withdrawn: null,
+      proposer: { address: PROPOSER, name: "Alice" },
+    })
+  })
+
+  it("holds a placeholder when neither source has answered", () => {
+    expect(proposalHeaderText(undefined, null, true)).toBe("pending")
+  })
+
+  it("takes the browser's read once there, keeping the name the server looked up", () => {
+    expect(proposalHeaderText(metadata, PREVIEW, false)).toEqual({
+      title: "Edited since",
+      summary: null,
+      edited: true,
+      withdrawn: { reason: "Moved" },
+      proposer: { address: PROPOSER, name: "Alice" },
+    })
+    expect(proposalHeaderText(metadata, null, false)).toMatchObject({
+      proposer: { address: PROPOSER, name: null },
+    })
+  })
+
+  it("falls back to the referendum number without published text", () => {
+    const none = { title: null, summary: null, edited: false, withdrawn: null, proposer: null }
+    expect(proposalHeaderText(null, PREVIEW, false)).toEqual(none)
+    // The browser's read failed: the preview still stands, else the number.
+    expect(proposalHeaderText(undefined, PREVIEW, false)).toMatchObject({
+      title: "From the server",
+    })
+    expect(proposalHeaderText(undefined, null, false)).toEqual(none)
+  })
+})
+
+describe("the preview the layout hands the page", () => {
+  type Source = ProposalPreview | null | Promise<ProposalPreview | null>
+  const handed = async (index: string) => {
+    const tree = (await ProposalLayout({
+      params: Promise.resolve({ index }),
+      children: "page",
+    })) as unknown as { props: { children: unknown } } | string
+    if (typeof tree === "string") return { page: tree, preview: null }
+    // The SEO fallback, then the provider around the page.
+    const provider = (tree.props.children as Array<{ props: Record<string, unknown> }>)[1]
+    return { page: provider.props.children, preview: provider.props.preview as Source }
+  }
+
+  it("hands browsers the preview itself when the read is quick", async () => {
+    const { page, preview } = await handed("42")
+    expect(page).toBe("page")
+    expect(preview).toMatchObject({ title: "Fund the community tooling grant" })
+    expect(io.requested).toContainEqual([defaultChain().id, 42])
+  })
+
+  it("streams it to browsers when the read is slow", async () => {
+    io.rowHangs = true
+    vi.useFakeTimers()
+    const pending = handed("42")
+    await vi.advanceTimersByTimeAsync(300)
+    const { preview } = await pending
+    expect(preview).toBeInstanceOf(Promise)
+    // loadProposalSeo gives up on the database and the header falls back.
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(await preview).toBeNull()
+  })
+
+  it("hands crawlers the preview itself, for the linked network", async () => {
+    io.ua = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+    io.hint = other.id
+    const { preview } = await handed("42")
+    expect(preview).toMatchObject({ chainId: other.id, index: 42 })
+  })
+
+  it("hands nothing for a hidden proposal or a segment that isn't a number", async () => {
+    io.state = { state: "hidden" }
+    expect(await (await handed("42")).preview).toBeNull()
+    io.requested = []
+    expect(await handed("nope")).toEqual({ page: "page", preview: null })
+    expect(io.requested).toEqual([])
   })
 })

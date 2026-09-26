@@ -55,12 +55,6 @@ function normaliseVoterAddress(addr: string, chain: ChainConfig): string {
 interface VotesListProps {
   referendumIndex: number
   chain: ChainConfig
-  /**
-   * Unused - conviction locks run in the runtime's voteLockingPeriod, not
-   * the track's decision period. Kept until the proposal page stops
-   * passing it.
-   */
-  decisionPeriodBlocks?: number | null
 }
 
 export function VotesList({

@@ -93,9 +93,9 @@ export function VoteDetailModal({
                 className={cn(
                   "text-2xl font-semibold tabular-nums",
                   aye === true
-                    ? "text-green-400"
+                    ? "text-green-700 dark:text-green-400"
                     : aye === false
-                      ? "text-red-400"
+                      ? "text-red-700 dark:text-red-400"
                       : "text-foreground",
                 )}
               >

@@ -1,13 +1,13 @@
 import { subscanReferendumUrl, type ChainId } from "@/lib/chain/chains"
 import { JsonLd, proposalJsonLd } from "./json-ld"
-import { proposalTitle } from "./metadata"
 import { loadProposalSeo } from "./proposal"
 
 /**
- * The server-rendered part of a referendum page: its structured data and,
- * for crawlers and visitors without JavaScript, the title, summary and what
- * we know of its status. With JavaScript the <noscript> block never shows -
- * the page renders the same facts itself once it has read the chain.
+ * The server-rendered part of a referendum page besides its header: the
+ * structured data and, for visitors without JavaScript, what we know of the
+ * referendum and where its live state can be read. The page's own HTML
+ * already has the heading, the summary and the proposer (see
+ * proposal-preview.ts), so the note doesn't repeat them as a second <h1>.
  */
 export async function ProposalSeoFallback({ chainId, index }: { chainId: ChainId; index: number }) {
   const p = await loadProposalSeo(chainId, index)
@@ -16,11 +16,7 @@ export async function ProposalSeoFallback({ chainId, index }: { chainId: ChainId
       <JsonLd data={proposalJsonLd(p)} />
       <noscript>
         <section className="mx-auto max-w-5xl px-4 pt-24 sm:px-6 lg:px-8">
-          <h1 className="text-2xl font-semibold text-foreground break-words">{proposalTitle(p)}</h1>
-          {p.summary && (
-            <p className="mt-2 text-muted-foreground [overflow-wrap:anywhere]">{p.summary}</p>
-          )}
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Referendum #{p.index} on the {p.chain.name}
             {p.proposer && <>, proposed by {p.proposer.name ?? p.proposer.address}</>}
             {p.withdrawn && <>. The proposer has withdrawn it; voting stays open on chain</>}.

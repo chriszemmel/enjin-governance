@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react"
 import { isMobileUserAgent } from "@/lib/wallet/deep-link"
+import { useModalFocus } from "@/lib/utils/use-modal-focus"
 import type { TxStatus } from "@/lib/query/hooks/use-tx"
 
 interface SignRequestModalProps {
@@ -102,6 +103,8 @@ export function SignRequestModal({
   useEffect(() => {
     setMobile(isMobileUserAgent())
   }, [])
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalFocus(dialogRef, open, onClose)
 
   // Auto-dismiss for `successAt: "in-block"` flows. The cache
   // invalidation already ran in useExtrinsic's fireSuccess, so the page
@@ -167,7 +170,9 @@ export function SignRequestModal({
       />
 
       <div
-        className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden outline-none"
         role="dialog"
         aria-modal="true"
         aria-label={title}

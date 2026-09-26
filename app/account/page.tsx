@@ -364,7 +364,10 @@ export default function AccountPage() {
                 ) : allDrafts.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
                     You haven&apos;t filed any proposals on this network yet.{" "}
-                    <Link href="/create" className="text-primary hover:text-purple-dim">
+                    <Link
+                      href="/create"
+                      className="text-primary hover:text-purple-dim underline underline-offset-2 decoration-primary/40 hover:decoration-current"
+                    >
                       File one
                     </Link>
                     .
