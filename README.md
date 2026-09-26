@@ -152,13 +152,12 @@
 - **Real signing** - `useExtrinsic` wraps build → sign → broadcast →
   finalise with toast progress and human-readable module-error decoding.
   Routes governance calls through the runtime's multi-token `convictionVoting`
-  fork (with a `voteManager` fallback for chains that expose it), probing
-  metadata for the right call arity so the per-vote `currency` arg is never
-  dropped.
+  fork (and `voteManager` on runtimes that have it), probing metadata for
+  the right call arity so the per-vote `currency` arg is never dropped.
 - **Unified sign-request UX** - every signature (vote, treasury submit,
   sign-in) flows through the same modal that the connect QR uses, so
   WalletConnect sessions never get a stale prompt and the wake/redirect
-  always targets the right peer. Sign-request TTL capped at 120s.
+  always targets the right peer.
 - **Treasury proposals end to end** - create wizard batches `preimage.notePreimage`
   + `referenda.submit` + `preimage.notePreimage(envelope)` +
   `referenda.setMetadata` via `utility.batchAll`. The referendum's
@@ -218,8 +217,15 @@
 - **Optional automatic checks** - with an Anthropic API key, uploads and
   text can be checked by an AI model before moderators see them. Admins
   choose the model, what is checked, how clear violations are handled
-  and a daily limit, and see this month's usage and cost. Text is only ever flagged for a human, never hidden
-  automatically. See [Moderation](#moderation).
+  and a daily limit, and see this month's usage and cost. Text is only
+  ever flagged for a human, never hidden automatically. See
+  [Moderation](#moderation).
+- **Status page for admins** - Moderation → Status checks the setup
+  after a deploy: database and migrations, storage and the public URL,
+  the rate-limit store, Telegram (with a test message), the automatic
+  checks and the legal details. A check that fails because of the setup
+  (bad key, retired model, no credit left) shows there and is reported
+  to the moderators' Telegram chat once a day.
 
 ### Legal
 
@@ -233,14 +239,14 @@
 
 - **Sign-in by signature** - SIWE-style nonce flow against
   `signRaw`. No password, no transaction, no fee - the signature only
-  proves you control the connected address. Session is httpOnly +
-  rotating, gated by a Neon `wallet_sessions` table.
+  proves you control the connected address. Sessions are httpOnly
+  cookies backed by a Neon `wallet_sessions` table; nonces are used once.
 - **Profiles** - display name, `@handle`, bio, 150×150 avatar (R2 with
   content-type sniffing). Avatar fallback is a deterministic colour
   block from the SS58. Public read at `/user/<address>`.
-- **Comments per proposal** - threaded, soft-deletable, stored in Neon.
-  Show the proposer's profile (when signed in as themselves), the
-  voter's profile, or fall back to the SS58.
+- **Comments per proposal** - stored in Neon, editable by their author
+  for 15 minutes and soft-deletable. Show the author's profile, or fall
+  back to the SS58.
 
 ### Pages
 
@@ -277,7 +283,8 @@
   reports persist to the DB and optionally fan out to Telegram. IP
   rate-limited and honeypot-guarded against bot spam.
 - **`/user/[address]`** - public profile + voting history.
-- **`/unlock`** - claims expired conviction locks.
+- **`/unlock`** - the site password page, used only while the password
+  gate is on (staging).
 - **`/moderation`** - review queue for moderators; **Roles** and
   **Settings** (automatic checks) for admins. The nav link only appears
   for moderators and admins.
@@ -306,8 +313,14 @@
   on the site-access password gate, input-size caps on the batch-read
   endpoints, and a honeypot on the public disclosure form that silently
   drops bots.
-- **Open-source ready** - TS strict, ESLint clean, knip-clean, 667
-  vitest tests, CI on every pull request and on `main`.
+- **Found by search engines** - robots.txt, a sitemap with every
+  referendum, a web app manifest, per-page titles, descriptions,
+  canonical URLs and share previews, structured data on proposal pages,
+  and noindex on private areas.
+- **Tested at three levels** - unit and route tests with Vitest,
+  database tests against real Postgres (PGlite) with the real
+  migrations, and Playwright browser tests against the production build.
+  CI runs all of them on every pull request and on `main`.
 
 ---
 
@@ -370,7 +383,7 @@ See **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** and
 | State | Zustand | Wallet session + active chain |
 | Validation | Zod + `@t3-oss/env-nextjs` | `lib/env.ts` is the single source of truth |
 | Content checks | Anthropic API (optional) | Model chosen by admins; structured output, one request per item |
-| Tests | Vitest | Pallet + chain primitives + auth + format helpers + route security |
+| Tests | Vitest, PGlite, Playwright | Unit and route tests; SQL against real Postgres with the real migrations; browser tests against the production build |
 | CI | GitHub Actions | typecheck + lint + knip + test + build on every pull request and push to `main` |
 
 ---
@@ -389,6 +402,7 @@ pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
 pnpm test         # Vitest (667 tests)
 pnpm test:watch   # Vitest watch
+pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
 ```
 
 ---
@@ -406,10 +420,11 @@ app/                   Next.js routes (live RPC reads via React Query)
   moderation/          Review queue, roles and content-check settings
   moderation-log/      Public log of moderation decisions
   imprint/ privacy/ terms/   Legal pages (filled from LEGAL_* env vars)
+  robots.ts sitemap.ts manifest.ts   Search and install metadata
   docs/                User guide + content policy
   proposals/           List + detail page
   treasury/            Live balance + treasury-tier referenda
-  unlock/              Conviction-lock claim flow
+  unlock/              Site password page (staging gate)
   user/[address]/      Public profile + voting history
   api/auth/            Nonce + verify + me + logout (SIWE-style; rate-limited)
   api/proposals/       Draft (R2 + DB), confirm, cancel, withdraw, edit/delete,
@@ -422,7 +437,7 @@ app/                   Next.js routes (live RPC reads via React Query)
   api/unlock/          Site-access password gate (rate-limited)
   api/subscan/         Server proxies (referendum / preimage / votes).
                        Honour Subscan's 5 req/s ceiling with CDN cache
-                       headers and structured Vercel logs.
+                       headers.
 components/
   layout/              Nav, footer, theme toggle, network switcher, brand
   governance/          ProposalCard, TallyBar (split-bar + detail variants),
@@ -449,8 +464,7 @@ lib/
                        call-extract (treasury-spend intent normaliser) +
                        vote-decode (vote byte + currency) + lifecycle +
                        proposal-metadata (EGOV1 schema) +
-                       submit-treasury-proposal (batch builder) +
-                       first-statement (auto-fill template)
+                       submit-treasury-proposal (batch builder)
   wallet/              Connectors (WC with sessionProperties / peerMetadata
                        name extraction + extension), registry, store,
                        signer adapter, deep-link builder
@@ -460,6 +474,7 @@ lib/
   moderation/          Policy (roles, actions, states), automatic checks
                        (scan + auto-flag), check settings + usage
   legal/               Operator details for the legal pages
+  seo/                 Page metadata, structured data, sitemap sources
   uploads/             Upload limit shared by browser and server, and
                        in-browser shrinking of large photos
   rate-limit.ts        Fixed-window limiter (pure core + in-process store)
@@ -475,8 +490,7 @@ lib/
                        -my-drafts / -comments)
   subscan/             Server-side Subscan API wrapper (referendum + votes +
                        preimage endpoints, with normaliseSubscanCall to
-                       handle Subscan's varying response shapes and a
-                       masked-key Vercel logger for diagnosing failures)
+                       handle Subscan's varying response shapes)
   og/                  Shared OpenGraph card renderer for the per-route
                        opengraph-image.tsx files (next/og)
   env.ts               t3-env zod schema
@@ -485,7 +499,9 @@ docs/                  ARCHITECTURE · CHAIN_FLOW · GOVERNANCE_FLOW ·
                        WALLET_INTEGRATION · ENVIRONMENT · DEPLOYMENT ·
                        HANDOVER · screenshots/ (README images)
 scripts/               SQL migrations (004-013) + run-migrations.mjs
-.github/workflows/     CI
+e2e/                   Playwright browser tests, fixtures and API mocks
+test/                  PGlite database helper and the server-only stub
+.github/workflows/     CI (verify + browser tests)
 ```
 
 </details>
@@ -587,7 +603,7 @@ Moderation and legal pages:
 GOVERNANCE_ADMIN_PUBLIC_KEYS=<your wallet>   # SS58 (any network) or 0x public key; comma separated
 LEGAL_OPERATOR_NAME=<your name>              # default: NEXT_PUBLIC_SITE_MAINTAINER
 LEGAL_OPERATOR_ADDRESS=<street | postcode city | country>   # optional, e.g. a c/o address
-LEGAL_CONTACT_EMAIL=<contact address>        # default: chris@zyric.de
+LEGAL_CONTACT_EMAIL=<contact address>        # shown on the legal pages; set your own
 NEXT_PUBLIC_SITE_MAINTAINER=<name shown in the footer>
 NEXT_PUBLIC_SOURCE_URL=<public repository URL>   # AGPL source offer in the footer
 ```
@@ -608,7 +624,8 @@ The legal pages are rendered at build time: after changing a `LEGAL_*`
 variable, redeploy.
 
 In Reown Cloud → **Allowed Domains**: add your production domain.
-Apply `scripts/0*.sql` to the Neon project (or run `pnpm db:migrate`).
+Run `pnpm db:migrate` against the Neon project; it records what it applied,
+so don't also paste the SQL files by hand.
 Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---
@@ -702,8 +719,8 @@ the ecosystem.
 
 1. Branch from `main`.
 2. Make changes following the existing module conventions.
-3. Run `pnpm typecheck && pnpm lint && pnpm knip && pnpm test && pnpm build` -
-   all must pass.
+3. Run `pnpm typecheck && pnpm lint && pnpm knip && pnpm test && pnpm build`
+   and `pnpm test:e2e`; all must pass.
 4. Open a PR. CI runs the same checks.
 
 For substantial changes (new pallet, new write flow, new architecture layer),
@@ -713,16 +730,14 @@ open an issue first to align on approach.
 
 ## Changelog
 
-| Version | What changed |
-|---|---|
-| **1.8** | Uploads capped at 4 MB to match the host's request limit, with large photos shrunk in the browser first. Attachment size, type and hash are checked against the stored file. The supported AI models live in one table, so a newer model is one entry. Fixes from a security review: every staged draft version is kept, a copied EGOV1 envelope can't block or claim a submission, unsigned drafts are private to their proposer, and the daily check limit is a hard cap. Route tests for sign-in, profiles, the password gate, comments, withdrawals, roles, the review queue and uploads (667 tests), and the fixes they led to: no redirect to another site after unlocking, no look-alike handles, comments only on published proposals, and a failed undo no longer withdraws again. |
-| **1.7** | Content-check settings for admins: on/off, model, what is checked, reject or hold clear violations, daily limit, monthly usage and cost. Replaces the `CONTENT_SCAN` variable. Migrations `012` and `013`. New reports are posted to Telegram. |
-| **1.6** | Imprint, privacy policy and terms (filled from `LEGAL_*`), footer with legal links, disclaimer and AGPL source link. |
-| **1.5** | Automatic checks of uploads, proposal text and comments; borderline items go to the review queue. |
-| **1.4** | Moderation: reports, review queue, roles by wallet, posting pauses, public moderation log. Migration `011`. |
-| **1.3** | Advanced proposals get a title, description and EGOV1 record (EGOV1 1.2.0 with `call` and `enactment`). |
-| **1.2** | Proposal text with Markdown, inline images, address chips and a live preview; image viewer and thumbnails. |
-| **1.1** | Wrong-network address check, drafts updated in place, resume and sign-in from the drafts panel, readable API errors, long-word wrapping. |
+**2.0.0** brings together everything since 1.0: better and advanced
+proposals, moderation with optional automatic checks and a status page,
+legal pages, search metadata, safer uploads, several rounds of security
+review, and tests at three levels. Upgrading from 1.0 needs migrations
+`011` to `013` and a few environment variables.
+
+Every version, and the upgrade steps, are in
+**[`CHANGELOG.md`](CHANGELOG.md)**.
 
 ---
 
