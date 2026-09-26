@@ -214,8 +214,11 @@ export function AttachmentDropzone({
             <span className="text-foreground font-medium text-balance">
               Drop images or PDFs here, or click to browse
             </span>
+            {/* Breaks only between the three parts, never inside the list of types. */}
             <span className="text-[11px] text-muted-foreground text-balance">
-              PNG / JPG / WEBP / GIF / PDF · up to {MAX_UPLOAD_LABEL} · max {MAX_FILES} files
+              <span className="whitespace-nowrap">PNG / JPG / WEBP / GIF / PDF&nbsp;·</span>{" "}
+              <span className="whitespace-nowrap">up to {MAX_UPLOAD_LABEL}&nbsp;·</span>{" "}
+              <span className="whitespace-nowrap">max {MAX_FILES} files</span>
             </span>
           </>
         )}
