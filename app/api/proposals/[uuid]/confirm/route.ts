@@ -181,6 +181,8 @@ async function filedByProposer(
   }
   let ongoing: OngoingStatus | null = null
   let deposit: { who: string } | null = null
+  // The archive read failed (or found nothing): a later try may still work.
+  let historyUnread = false
   try {
     await withDeadline(
       (async () => {
@@ -200,6 +202,8 @@ async function filedByProposer(
           if (past?.status.type === "Ongoing") {
             ongoing = past.status
             deposit = deposit ?? past.status.submissionDeposit
+          } else if (!past) {
+            historyUnread = true
           }
         }
       })(),
@@ -214,6 +218,14 @@ async function filedByProposer(
     }
   }
   const filer = deposit as { who: string } | null
+  if (!filer && historyUnread) {
+    return {
+      ok: false,
+      status: 503,
+      error: `Could not read who filed referendum ${index} - retry shortly.`,
+      retryable: true,
+    }
+  }
   if (!filer) {
     return {
       ok: false,

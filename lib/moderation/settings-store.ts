@@ -63,8 +63,8 @@ export async function reserveScan(kind: ScanKind, plan: ScanPlan): Promise<boole
   try {
     return await reserveScanCheck(plan.model, kind, plan.settings.dailyLimit)
   } catch {
-    // Can't count: check anyway. Posting needs the database too, so this
-    // only happens briefly.
+    // Couldn't even count it: check anyway. Posting needs the database
+    // too, so this only happens briefly. Once counted, a failure refuses.
     return true
   }
 }

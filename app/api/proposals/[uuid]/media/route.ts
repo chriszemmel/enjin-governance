@@ -30,6 +30,7 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById, listAttachments } from "@/lib/db/proposals"
+import { anyVersionListsFile, listVersionKeys } from "@/lib/governance/draft-versions"
 import { thumbKeyFor } from "@/lib/governance/proposal-media"
 import { isR2Configured } from "@/lib/r2/client"
 import {
@@ -389,11 +390,22 @@ export async function DELETE(
           { status: 409 },
         )
       }
-      // Still listed in the saved draft: keep it until the draft is saved
-      // without it (re-staging cleans up files it no longer lists).
+      // Listed by a saved version of the draft: keep it. The draft can be
+      // switched back to any version that gets signed, so its files stay
+      // until the whole draft is deleted.
       const saved = await listAttachments(proposalUuid)
       if (saved.some((a) => a.bucket_key === key)) {
         return NextResponse.json({ ok: true, deleted: false })
+      }
+      try {
+        if (await anyVersionListsFile(await listVersionKeys(existing), key)) {
+          return NextResponse.json({ ok: true, deleted: false })
+        }
+      } catch {
+        return NextResponse.json(
+          { ok: false, error: "Storage error - the file was not removed." },
+          { status: 503 },
+        )
       }
     }
   }

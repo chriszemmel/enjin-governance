@@ -360,19 +360,25 @@ export async function reserveScanCheck(
     ON CONFLICT (day, model, kind) DO UPDATE
       SET checks = moderation_scan_usage.checks + 1
   `
-  const rows = (await sql`
-    SELECT COALESCE(SUM(checks), 0)::int AS total,
-           COALESCE(SUM(checks) FILTER (WHERE kind IN ('proposals', 'comments')), 0)::int AS text
-      FROM moderation_scan_usage
-     WHERE day = (NOW() AT TIME ZONE 'UTC')::date
-  `) as { total: number; text: number }[]
-  const { total, text } = rows[0] ?? { total: 0, text: 0 }
-  const isText = kind === "proposals" || kind === "comments"
-  if (total <= limit && (!isText || text <= Math.floor(limit / 2))) return true
+  // Counted from here on: if the totals can't be read, refuse rather than
+  // let a check past the limit.
+  try {
+    const rows = (await sql`
+      SELECT COALESCE(SUM(checks), 0)::int AS total,
+             COALESCE(SUM(checks) FILTER (WHERE kind IN ('proposals', 'comments')), 0)::int AS text
+        FROM moderation_scan_usage
+       WHERE day = (NOW() AT TIME ZONE 'UTC')::date
+    `) as { total: number; text: number }[]
+    const { total, text } = rows[0] ?? { total: 0, text: 0 }
+    const isText = kind === "proposals" || kind === "comments"
+    if (total <= limit && (!isText || text <= Math.floor(limit / 2))) return true
+  } catch {
+    // Refused below.
+  }
   await sql`
     UPDATE moderation_scan_usage SET checks = GREATEST(checks - 1, 0)
      WHERE day = (NOW() AT TIME ZONE 'UTC')::date AND model = ${model} AND kind = ${kind}
-  `
+  `.catch(() => undefined)
   return false
 }
 

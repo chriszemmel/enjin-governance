@@ -25,6 +25,7 @@ vi.mock("@/lib/r2/client", () => ({
   isR2Configured: () => true,
   r2Bucket: () => "enjin-governance",
   publicAssetBase: () => "https://fake.local/r",
+  r2PublicBase: () => "https://pub.r2.dev",
 }))
 vi.mock("@/lib/db/users", () => ({
   upsertUserByAddress: async (address: string) => ({
@@ -328,7 +329,7 @@ describe("media DELETE", () => {
     expect(bucketMod.bucket.has(`${k}.thumb.webp`)).toBe(false)
   })
 
-  it("keeps a file the saved draft still lists until it is re-staged", async () => {
+  it("keeps a file the saved draft lists", async () => {
     const k = mediaKey(OWN_ID)
     db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: proposalJsonKey(NET, OWN_ID) })
     db.seedAttachment({ proposal_id: OWN_ID, bucket_key: k })
@@ -337,6 +338,28 @@ describe("media DELETE", () => {
     expect(res.status).toBe(200)
     expect((await res.json()).deleted).toBe(false)
     expect(bucketMod.bucket.has(k)).toBe(true)
+  })
+
+  it("keeps a file an older version lists, since the draft can switch back to it", async () => {
+    const older = mediaKey(OWN_ID, "aaaa1111-older.png")
+    const loose = mediaKey(OWN_ID, "dddd4444-loose.png")
+    const current = proposalJsonKey(NET, OWN_ID)
+    const olderJson = `proposals/${NET}/${OWN_ID}/proposal-${"1".repeat(16)}.json`
+    db.seedProposal({ id: OWN_ID, network: NET, proposer_address: ATTACKER, status: "draft", json_key: current })
+    bucketMod.bucket.set(current, { body: JSON.stringify({ attachments: [] }), contentType: "application/json" })
+    bucketMod.bucket.set(olderJson, {
+      body: JSON.stringify({ attachments: [{ url: `https://pub.r2.dev/${older}` }] }),
+      contentType: "application/json",
+    })
+    put(older)
+    put(loose)
+    const kept = await del(OWN_ID, older)
+    expect(kept.status).toBe(200)
+    expect((await kept.json()).deleted).toBe(false)
+    expect(bucketMod.bucket.has(older)).toBe(true)
+    const gone = await del(OWN_ID, loose)
+    expect((await gone.json()).deleted).toBe(true)
+    expect(bucketMod.bucket.has(loose)).toBe(false)
   })
 
   it("never removes files of submitted or foreign proposals, or keys outside the folder", async () => {

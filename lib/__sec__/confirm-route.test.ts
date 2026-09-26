@@ -39,6 +39,7 @@ vi.mock("@/lib/db/client", () => ({ isDbConfigured: () => true }))
 vi.mock("@/lib/r2/client", () => ({
   isR2Configured: () => true,
   publicAssetBase: () => "https://fake.local/r",
+  r2PublicBase: () => "https://pub.r2.dev",
 }))
 vi.mock("@/lib/r2/upload", async () => await import("./fake-bucket"))
 vi.mock("@/lib/moderation/auto-flag", () => ({ flagText: () => undefined }))
@@ -83,7 +84,7 @@ import * as bucket from "./fake-bucket"
 import { POST } from "@/app/api/proposals/[uuid]/confirm/route"
 
 /** Store one version of the draft's JSON; returns its key, url and hash. */
-function storeVersion(title: string) {
+function storeVersion(title: string, base = BASE) {
   const text = stringifyStable({
     title,
     summary: null,
@@ -97,7 +98,7 @@ function storeVersion(title: string) {
   const sha = createHash("sha256").update(text, "utf8").digest("hex")
   const key = `proposals/${NET}/${PID}/proposal-${sha.slice(0, 16)}.json`
   bucket.bucket.set(key, { body: text, contentType: "application/json" })
-  return { key, url: `${BASE}/${key}`, sha }
+  return { key, url: `${base}/${key}`, sha }
 }
 
 const ongoing = (who: string, proposal: unknown) => ({
@@ -170,7 +171,12 @@ describe("confirm", () => {
 
   it("reads a concluded referendum's filer and call from its last ongoing state", async () => {
     chain.ref = { index: 7, status: { type: "Killed", at: 100 } }
-    expect((await confirm()).status).toBe(409) // no history: can't tell
+    // The archive read failed: worth another try, not a final answer.
+    const unread = await confirm()
+    expect(unread.status).toBe(503)
+    expect(((await unread.json()) as { retryable: boolean }).retryable).toBe(true)
+    chain.history = { index: 7, status: { type: "Killed", at: 99 } }
+    expect((await confirm()).status).toBe(409) // no ongoing state to read: can't tell
     chain.history = ongoing(ALICE, lookup)
     expect((await confirm()).status).toBe(200)
     chain.history = ongoing(MALLORY, lookup)
@@ -190,5 +196,20 @@ describe("confirm", () => {
     chain.ref = ongoing(ALICE, lookup)
     expect((await confirm()).status).toBe(200)
     expect(db.row).toMatchObject({ json_key: signed.key, title: "Tooling fund" })
+  })
+
+  it("finds an older version staged under the bucket's own URL", async () => {
+    const signed = storeVersion("Tooling fund", "https://pub.r2.dev")
+    current = storeVersion("Tooling fund, edited later")
+    Object.assign(db.row!, {
+      title: "Tooling fund, edited later",
+      json_url: current.url,
+      json_key: current.key,
+      json_sha256: current.sha,
+    })
+    chain.metadata = expectedMetadataHash(signed.url, signed.sha)
+    chain.ref = ongoing(ALICE, lookup)
+    expect((await confirm()).status).toBe(200)
+    expect(db.row).toMatchObject({ json_key: signed.key, json_url: signed.url })
   })
 })
