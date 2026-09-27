@@ -365,9 +365,13 @@ describe("the no-JavaScript fallback", () => {
     expect(noscript).toMatch(
       /<a href="https:\/\/[^"]+\/referenda_v2\/42"[^>]*>View referendum #42 on Subscan<\/a>/,
     )
-    // The page's own HTML has the heading and the summary.
+    // The streamed header may never move into place without scripts, so the
+    // note repeats the title and summary, as paragraphs rather than an <h1>.
     expect(html).not.toContain("<h1")
-    expect(noscript).not.toContain("Six months of maintenance")
+    expect(noscript).toContain(">Fund the community tooling grant</p>")
+    expect(noscript).toContain(
+      ">Six months of maintenance for the open-source governance tools.</p>",
+    )
     expect(ldScripts(html)[0]["@graph"][1].headline).toBe("Fund the community tooling grant")
   })
 

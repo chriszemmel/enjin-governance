@@ -1,6 +1,6 @@
 /**
- * Request facts the referendum layout and page share: which referendum the
- * URL names, and whether a crawler is asking.
+ * Request facts for the referendum layout: which referendum the URL names,
+ * and whether a crawler is asking.
  */
 
 import "server-only"

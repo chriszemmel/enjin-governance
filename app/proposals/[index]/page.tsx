@@ -192,7 +192,7 @@ export default function ProposalDetailPage() {
   // chain query so we have a fallback for old referenda.
   const subscanPreimageQuery = useSubscanPreimage(earlyProposalRef?.hash ?? null)
 
-  if (!Number.isFinite(index) || index < 0) {
+  if (!Number.isSafeInteger(index) || index < 0) {
     return (
       <Shell>
         <NotFound message="That doesn't look like a valid referendum index." />

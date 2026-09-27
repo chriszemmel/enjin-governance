@@ -6,8 +6,9 @@ import { loadProposalSeo } from "./proposal"
  * The server-rendered part of a referendum page besides its header: the
  * structured data and, for visitors without JavaScript, what we know of the
  * referendum and where its live state can be read. The page's own HTML
- * already has the heading, the summary and the proposer (see
- * proposal-preview.ts), so the note doesn't repeat them as a second <h1>.
+ * streams the heading, the summary and the proposer (see
+ * proposal-preview.ts), which without scripts may never move into place,
+ * so the note repeats the title and summary, as a paragraph, not an <h1>.
  */
 export async function ProposalSeoFallback({ chainId, index }: { chainId: ChainId; index: number }) {
   const p = await loadProposalSeo(chainId, index)
@@ -16,7 +17,9 @@ export async function ProposalSeoFallback({ chainId, index }: { chainId: ChainId
       <JsonLd data={proposalJsonLd(p)} />
       <noscript>
         <section className="mx-auto max-w-5xl px-4 pt-24 sm:px-6 lg:px-8">
-          <p className="text-sm text-muted-foreground">
+          {p.title && <p className="text-lg font-semibold text-foreground">{p.title}</p>}
+          {p.summary && <p className="mt-2 text-sm text-muted-foreground">{p.summary}</p>}
+          <p className="mt-3 text-sm text-muted-foreground">
             Referendum #{p.index} on the {p.chain.name}
             {p.proposer && <>, proposed by {p.proposer.name ?? p.proposer.address}</>}
             {p.withdrawn && <>. The proposer has withdrawn it; voting stays open on chain</>}.

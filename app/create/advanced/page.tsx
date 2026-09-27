@@ -1144,7 +1144,7 @@ export default function AdvancedCreatePage() {
                       `On chain, but linking on this site failed: ${linkState.message} You can link it later from your drafts.`}
                   </p>
                   <Link
-                    href={`/proposals/${submittedIndex}`}
+                    href={`/proposals/${submittedIndex}?network=${chain.id}`}
                     className="inline-flex items-center gap-1 text-xs text-primary hover:text-purple-dim"
                   >
                     View the proposal <ArrowRight className="w-3 h-3" />

@@ -371,10 +371,12 @@ link previews see comes from the server side of `app/` and `lib/seo/`:
   database knows (`loadProposalSeo` in `lib/seo/proposal.ts`): the title,
   summary, proposer and withdrawal of a proposal that reached the chain,
   within 1.5 s, and nothing for one moderators hid or removed. It sets the
-  metadata, Article and breadcrumb JSON-LD, and a `<noscript>` summary
-  (`lib/seo/proposal-fallback.tsx`). Crawlers get that part in place;
-  browsers get it streamed. Without a database, or past the budget, the
-  page falls back to "Referendum #n". Another network's pages
+  metadata, Article and breadcrumb JSON-LD, a `<noscript>` note with the
+  title and summary (`lib/seo/proposal-fallback.tsx`), and the header
+  preview (`lib/seo/proposal-preview.ts`), so the title shows before the
+  chain connection. Crawlers wait for all of it; browsers wait at most
+  300 ms and get the rest streamed. Without a database, or past the
+  budget, the page falls back to "Referendum #n". Another network's pages
   (`?network=`, read through the proxy's header) and user profiles are
   `noindex, follow`.
 - **`/robots.txt`** (`app/robots.ts`) is built per request, so it follows

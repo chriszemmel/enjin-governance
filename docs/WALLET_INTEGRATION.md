@@ -28,7 +28,8 @@ greyed out and, when it has one, links to its install page.
 | `lib/wallet/deep-link.ts` | Enjin Wallet deep links and mobile detection |
 | `lib/wallet/use-sign-flow.ts` | State and deep link for the sign-request modal |
 | `lib/wallet/use-ensure-signed-in.ts` | Signs in before a write that needs a session |
-| `components/wallet/wallet-modal.tsx` | Connect modal, QR view, account picker and switcher |
+| `components/wallet/wallet-modal.tsx` | Loads the connect dialog when the page is idle or on first open |
+| `components/wallet/wallet-dialog.tsx` | Connect dialog, QR view, account picker and switcher |
 | `components/wallet/sign-request-modal.tsx` | Status modal for WalletConnect signatures |
 | `components/wallet/branded-qr.tsx` | QR code with the wallet's logo in the middle |
 

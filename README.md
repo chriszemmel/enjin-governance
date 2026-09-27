@@ -336,7 +336,7 @@
 | TypeScript source files (excl. vendored shadcn and tests) | **~300** |
 | Docs files | **7** |
 | Unit tests | **971** (84 files), including route tests and database tests against PGlite |
-| Browser tests | **16** (Playwright, against the production build) |
+| Browser tests | **18** (Playwright, against the production build) |
 | Test coverage (lines) | **88%** of API routes, **80%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and components are covered by the browser tests, not by unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
