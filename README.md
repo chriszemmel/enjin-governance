@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-667%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-971%20passing-22c55e?style=flat-square" />
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
@@ -333,10 +333,11 @@
 
 | | |
 |---|---|
-| TypeScript source files (excl. vendored shadcn) | **~260** |
+| TypeScript source files (excl. vendored shadcn and tests) | **~300** |
 | Docs files | **7** |
-| Unit tests | **667** (58 files) |
-| Test coverage (lines) | **82%** of API routes, **72%** of server code. Pages and components have no unit tests. |
+| Unit tests | **971** (84 files), including route tests and database tests against PGlite |
+| Browser tests | **16** (Playwright, against the production build) |
+| Test coverage (lines) | **88%** of API routes, **80%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and components are covered by the browser tests, not by unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
 | External indexer dependencies | **0 required** (Subscan optional, only for very old finalised refs) |
@@ -405,7 +406,7 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (667 tests)
+pnpm test         # Vitest (971 tests)
 pnpm test:watch   # Vitest watch
 pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
 ```

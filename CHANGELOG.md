@@ -3,7 +3,7 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
-## 2.0.0 - 2026-09-26
+## 2.0.0 - unreleased
 
 Everything since 1.0.0 in one release: the patches 1.1 to 1.9 below.
 Highlights:
@@ -51,6 +51,11 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   page; a dialog opened by touch no longer rings its close button; the
   advanced proposal page says a wallet is needed before its fields
   unlock; a shorter footer that shows the release.
+- **Faster proposal pages:** the title and summary come with the page
+  from the server, so they show before the chain connection is up. The
+  wallet dialog loads only when it's opened.
+- **Accessibility:** names for the vote carousel buttons, focus that
+  stays in dialogs, and stronger contrast in the light theme.
 
 ## 1.9
 
