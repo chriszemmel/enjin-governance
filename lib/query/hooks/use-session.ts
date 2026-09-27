@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback } from "react"
 import type { Signer } from "@polkadot/api/types"
 import { stringToHex } from "@polkadot/util"
-import { encodeForChain } from "@/lib/chain/ss58"
+import { encodeForChain, samePublicKey } from "@/lib/chain/ss58"
 import { getActiveChain } from "@/lib/chain/use-chain"
 import { formatError } from "@/lib/utils/format-error"
 import { getConnectorMeta } from "@/lib/wallet/connector-registry"
@@ -29,17 +29,15 @@ async function requestNonce(address: string): Promise<IssuedNonce> {
 
 /**
  * Pre-fetch a fresh nonce as soon as the user lands on an account-aware
- * page. The voting flow auto-opens the wallet on mobile because
- * click → signAndSend has no async hops between them, so iOS Safari
- * still considers the synthetic deep-link click a user gesture. A
- * network round-trip to /api/auth/nonce in the sign-in path would spend
- * that gesture before signRaw fires the wake deep link, leaving the
- * wallet to not auto-open. Pre-fetching the nonce here keeps the path
- * hop-free, so sign-in feels identical to voting.
+ * page, so clicking Sign-in goes straight to signRaw without a round-trip
+ * to /api/auth/nonce first - the request reaches the wallet sooner. (On
+ * mobile the wallet is opened by the SignRequestModal's "Open in <wallet>"
+ * link, which the user taps; nothing here fires a deep link.)
  *
- * Refresh well inside the server-side TTL (5 min) so the cached nonce
- * is always live. We don't poll faster - each request mints a fresh
- * entry server-side, so over-refreshing just bloats the in-memory map.
+ * Refresh well inside the server-side TTL (30 min - NONCE_TTL_MS in
+ * lib/auth/siwe.ts) so the cached nonce is always live. We don't poll
+ * faster - each request inserts a fresh row into the `auth_nonces` table,
+ * so over-refreshing just leaves more rows for the expiry sweep.
  */
 export function useNoncePrefetch(): IssuedNonce | undefined {
   const { activeAddress, status } = useWallet()
@@ -81,6 +79,14 @@ type Me = {
 
 const ME_KEY = ["me"] as const
 
+async function fetchMe(): Promise<Me | null> {
+  const res = await fetch("/api/auth/me", { credentials: "include" })
+  if (res.status === 401) return null
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const json = (await res.json()) as { ok: true; user: Me }
+  return json.user
+}
+
 /**
  * Current sign-in state. Returns the connected user when the session
  * cookie is valid, otherwise null. Polls every 60s so a server-side
@@ -89,13 +95,7 @@ const ME_KEY = ["me"] as const
 export function useMe() {
   return useQuery<Me | null>({
     queryKey: ME_KEY,
-    queryFn: async () => {
-      const res = await fetch("/api/auth/me", { credentials: "include" })
-      if (res.status === 401) return null
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = (await res.json()) as { ok: true; user: Me }
-      return json.user
-    },
+    queryFn: fetchMe,
     staleTime: 30_000,
     refetchInterval: 60_000,
   })
@@ -127,9 +127,7 @@ export function useSignIn(prefetched?: IssuedNonce) {
         }
 
         // Use the pre-fetched nonce when it matches the address we're
-        // about to sign for. Skipping the fetch hop here is what lets
-        // the wake deep link fire inside the user-gesture window so
-        // iOS Safari auto-opens the wallet - same timing as voting.
+        // about to sign for, skipping the fetch hop.
         const issued: IssuedNonce =
           prefetched && prefetched.address === signingAddress
             ? prefetched
@@ -191,10 +189,10 @@ export function useSignIn(prefetched?: IssuedNonce) {
 
   // No sync wake from this layer. The caller (account page /
   // comments section) opens the SignRequestModal on click and the
-  // modal's "Open in Enjin Wallet" button fires the deep link from
-  // its own click frame - that's the iOS-reliable mechanism the pair
-  // flow uses. signClient.request still publishes the request to the
-  // relay; the wallet picks it up over its existing session.
+  // modal's "Open in <wallet>" link opens the wallet when the user
+  // taps it - that's the iOS-reliable mechanism the pair flow uses.
+  // signClient.request still publishes the request to the relay; the
+  // wallet picks it up over its existing session.
   const submit = useCallback(() => {
     return mutation.mutateAsync()
   }, [mutation])
@@ -218,4 +216,22 @@ export function useSignOut() {
     onSuccess: reset,
     onError: reset,
   })
+}
+
+/**
+ * The wallet modal's account-switch rule, for code that changes the active
+ * account outside the modal (wallet restore falling back to another
+ * account): the sign-in session was minted for one public key, so it is
+ * dropped when `address` is a different account.
+ */
+export function useSignOutIfOtherAccount(): (address: string) => Promise<void> {
+  const qc = useQueryClient()
+  const { mutateAsync: signOut } = useSignOut()
+  return useCallback(
+    async (address: string) => {
+      const me = await qc.fetchQuery({ queryKey: ME_KEY, queryFn: fetchMe })
+      if (me && !samePublicKey(me.address, address)) await signOut()
+    },
+    [qc, signOut],
+  )
 }

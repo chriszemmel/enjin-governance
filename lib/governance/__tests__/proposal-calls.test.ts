@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { ApiPromise } from "@polkadot/api"
-import { stringToHex } from "@polkadot/util"
+import { hexToU8a, stringToHex } from "@polkadot/util"
 import {
   buildProposalCall,
   PROPOSAL_KIND_META,
@@ -73,14 +73,24 @@ describe("buildProposalCall", () => {
     expect(sink[0]).toEqual({ call: "system.remark", args: [stringToHex("hello")] })
   })
 
-  it("rawCall → api.createType('Call', hex)", () => {
-    const api = fakeApi([])
+  it("rawCall → api.createType('Call', hex), only when it re-encodes to the same bytes", () => {
+    // A decoder that, like the real one, stops at the end of the first call.
+    const api = {
+      createType: (_type: string, hex: string) => ({
+        __call: "Call",
+        value: hex,
+        toU8a: () => hexToU8a(hex).slice(0, 2),
+      }),
+    } as unknown as ApiPromise
     const call = buildProposalCall(api, { kind: "rawCall", callHex: "0x0102" }) as unknown as {
       __call: string
       value: unknown
     }
     expect(call.__call).toBe("Call")
     expect(call.value).toBe("0x0102")
+    expect(() => buildProposalCall(api, { kind: "rawCall", callHex: "0x0102deadbeef" })).toThrow(
+      /exactly one call/,
+    )
   })
 })
 

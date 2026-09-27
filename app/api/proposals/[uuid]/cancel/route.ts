@@ -16,6 +16,7 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById, markProposalCancelled } from "@/lib/db/proposals"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -63,6 +64,14 @@ export async function POST(
     )
   }
 
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalCancel, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests - please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    )
+  }
+
   const existing = await getProposalById(parsed.data)
   if (!existing) {
     return NextResponse.json(
@@ -86,5 +95,11 @@ export async function POST(
   }
 
   const row = await markProposalCancelled(parsed.data, body.reason ?? null)
+  if (!row) {
+    return NextResponse.json(
+      { ok: false, error: "Proposal is already on-chain - cancel is a no-op" },
+      { status: 409 },
+    )
+  }
   return NextResponse.json({ ok: true, id: row.id, status: row.status })
 }

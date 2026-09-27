@@ -7,7 +7,6 @@ import { env } from "@/lib/env"
 import { getChain } from "@/lib/chain/chains"
 import { getActiveChain } from "@/lib/chain/use-chain"
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/config"
-import { isMobileUserAgent } from "@/lib/wallet/deep-link"
 import type {
   ConnectOptions,
   ConnectedSession,
@@ -320,32 +319,6 @@ function chainNameForCaip(caip: string): string | null {
 }
 
 /**
- * Synchronously click a synthetic `<a target="_blank">` pointing at the
- * wallet's deep link. Has to be invoked inside a live user-gesture
- * window (i.e. directly inside a click handler, no awaits in front) so
- * iOS Safari honours the navigation. Using a hidden anchor rather than
- * `window.location.href` keeps the dapp's tab alive - setting
- * location.href on iOS tends to surface an "Open in Enjin Wallet?"
- * prompt that re-mounts React on return, which has previously caused
- * double-fired sign requests.
- */
-function fireDeepLink(url: string): void {
-  if (typeof window === "undefined") return
-  try {
-    const a = document.createElement("a")
-    a.href = url
-    a.target = "_blank"
-    a.rel = "noopener noreferrer"
-    a.style.display = "none"
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-  } catch {
-    /* non-fatal */
-  }
-}
-
-/**
  * Trim `SignerPayloadJSON` down to the fields `polkadot_signTransaction`
  * actually defines.
  *
@@ -386,12 +359,12 @@ function buildSigner(
   // wallet never opens, the request hangs at the relay, and the
   // wallet eventually returns code 5000.
   //
-  // The reliable path is the pair flow's mechanism: a deep link fired
-  // synchronously from inside the click handler (`wakeWallet` on the
-  // connector, called from useExtrinsic.submit / useSignIn.submit).
-  // Wipe WALLETCONNECT_DEEPLINK_CHOICE here so the library's redirect
-  // short-circuits at `if (!wcDeepLink) return` - our sync wake is
-  // the single authoritative deep link.
+  // The reliable path is the pair flow's mechanism: a deep link the user
+  // taps. SignRequestModal renders an "Open in <wallet>" `<a>` built by
+  // buildSignRequestDeepLink (via useSignFlow) while the request is
+  // pending. Wipe WALLETCONNECT_DEEPLINK_CHOICE here so the library's
+  // redirect short-circuits at `if (!wcDeepLink) return` - the modal's
+  // link is the single authoritative deep link.
   const suppressInternalRedirect = (): void => {
     if (typeof window === "undefined") return
     try {
@@ -563,27 +536,6 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       }
 
       return buildSigner(signClient, topic, active.caip2)
-    },
-
-    wakeWallet(session: ConnectedSession): void {
-      if (typeof window === "undefined") return
-      if (!isMobileUserAgent()) return
-      const peerRedirect =
-        (session.meta.peerRedirect as string | null | undefined) ?? null
-      const topic = (session.meta.topic as string | undefined) ?? null
-      // Mirror the pair flow's deep-link shape - `enjinwallet://wc?...` -
-      // so the wallet routes through its WalletConnect handler rather
-      // than just opening to home. We don't have the per-request id
-      // synchronously (it's generated inside signClient.request), so
-      // include sessionTopic as the strongest hint we can give the
-      // wallet about which session this is for. The request itself
-      // arrives over the WC relay a moment later.
-      const base = peerRedirect ?? "enjinwallet://"
-      const baseNoSlash = base.endsWith("/") ? base.slice(0, -1) : base
-      const url = topic
-        ? `${baseNoSlash}/wc?sessionTopic=${encodeURIComponent(topic)}`
-        : base
-      fireDeepLink(url)
     },
 
     async restore(): Promise<ConnectedSession | null> {

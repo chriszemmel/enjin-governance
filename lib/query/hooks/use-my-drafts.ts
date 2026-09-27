@@ -3,6 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
+import { confirmWithRetry } from "@/lib/governance/confirm-client"
+import { useMe } from "@/lib/query/hooks/use-session"
+import { readApiError } from "@/lib/utils/api-error"
 
 export type MyDraftStatus =
   | "draft"
@@ -19,18 +22,22 @@ export type MyDraft = {
   tx_hash: string | null
   json_url: string
   created_at: string
+  /** Treasury drafts can be resumed in the wizard; advanced ones can't. */
+  is_treasury?: boolean
 }
 
 /**
  * Lists every proposal row authored by the connected address on the
  * active chain. Used by the wizard to surface old un-landed drafts so
- * the proposer can mark them outdated.
+ * the proposer can mark them outdated. Unsigned drafts only come back
+ * while their proposer is signed in, so the list refetches on sign-in.
  */
 export function useMyDrafts(address: string | null, chain?: ChainConfig) {
   const active = useActiveChain()
   const target = chain ?? active
+  const session = useMe().data?.address ?? null
   return useQuery<MyDraft[]>({
-    queryKey: ["my-drafts", target.id, address],
+    queryKey: ["my-drafts", target.id, address, session],
     queryFn: async () => {
       if (!address) return []
       const res = await fetch(
@@ -54,10 +61,7 @@ export function useCancelDraft() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(reason ? { reason } : {}),
       })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || `HTTP ${res.status}`)
-      }
+      if (!res.ok) throw new Error(await readApiError(res))
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["my-drafts"] })
@@ -72,10 +76,34 @@ export function useDeleteDraft() {
       const res = await fetch(`/api/proposals/${id}`, {
         method: "DELETE",
       })
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(text || `HTTP ${res.status}`)
-      }
+      if (!res.ok) throw new Error(await readApiError(res))
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["my-drafts"] })
+    },
+  })
+}
+
+/**
+ * Link a draft to the referendum it already created on chain - for a
+ * submission that landed but whose confirm step never went through. The
+ * server only accepts it if that referendum's on-chain metadata is exactly
+ * this draft's envelope.
+ */
+export function useLinkDraft() {
+  const qc = useQueryClient()
+  return useMutation<
+    void,
+    Error,
+    { id: string; referendumIndex: number; onUnauthorized?: () => Promise<boolean> }
+  >({
+    mutationFn: async ({ id, referendumIndex, onUnauthorized }) => {
+      const error = await confirmWithRetry(
+        id,
+        { referendum_index: referendumIndex, tx_hash: null, block_hash: null, block_number: null },
+        onUnauthorized,
+      )
+      if (error) throw new Error(error)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["my-drafts"] })

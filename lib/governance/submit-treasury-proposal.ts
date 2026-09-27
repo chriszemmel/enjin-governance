@@ -4,7 +4,7 @@
  * Four calls, atomically batched:
  *
  *   1. preimage.notePreimage(<spend_local call bytes>)
- *   2. referenda.submit(<track origin>, Lookup{hash,len}, After 0)
+ *   2. referenda.submit(<track origin>, Lookup{hash,len}, <enactment>)
  *   3. preimage.notePreimage(EGOV1:{"u":"<json url>","h":"<sha256>"})
  *   4. referenda.setMetadata(<index>, blake2_256(envelope bytes))
  *

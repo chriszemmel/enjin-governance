@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ArrowRight,
   ExternalLink,
@@ -45,6 +46,7 @@ import { buildSignRequestDeepLink } from "@/lib/wallet/deep-link"
 import { encodeForChain, shortenAddress } from "@/lib/chain/ss58"
 import { cn } from "@/lib/utils"
 import { formatError } from "@/lib/utils/format-error"
+import { safeRedirectPath } from "@/lib/utils/safe-redirect"
 
 // Match the proposals filter UX: pill row of statuses, default to Live.
 const DRAFT_FILTERS: { label: string; value: MyDraftStatus | "all" }[] = [
@@ -61,9 +63,15 @@ export default function AccountPage() {
   // CTA against the env default and then snapping to the real session is
   // jarring. `hydrated` flips after the first effect runs (post-hydration).
   const [hydrated, setHydrated] = useState(false)
+  // `?next=/create` - where to go back to once signed in (e.g. from the
+  // drafts panel on the create page). Read once on mount; only same-site
+  // paths are accepted.
+  const [nextPath, setNextPath] = useState<string | null>(null)
   useEffect(() => {
     setHydrated(true)
+    setNextPath(safeRedirectPath(new URLSearchParams(window.location.search).get("next")))
   }, [])
+  const router = useRouter()
   const { status: walletStatus, activeAddress, session: walletSession, connectorId } = useWallet()
   const isWalletConnected = walletStatus === "connected"
   const [walletOpen, setWalletOpen] = useState(false)
@@ -205,6 +213,7 @@ export default function AccountPage() {
                   await signIn.submit()
                   setSignModalOpen(false)
                   toast.success("Signed in")
+                  if (nextPath) router.push(nextPath)
                 } catch (e) {
                   const message = formatError(e)
                   setSignError(message)
@@ -355,7 +364,10 @@ export default function AccountPage() {
                 ) : allDrafts.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
                     You haven&apos;t filed any proposals on this network yet.{" "}
-                    <Link href="/create" className="text-primary hover:text-purple-dim">
+                    <Link
+                      href="/create"
+                      className="text-primary hover:text-purple-dim underline underline-offset-2 decoration-primary/40 hover:decoration-current"
+                    >
                       File one
                     </Link>
                     .
@@ -419,6 +431,7 @@ export default function AccountPage() {
             .then(() => {
               setSignModalOpen(false)
               toast.success("Signed in")
+              if (nextPath) router.push(nextPath)
             })
             .catch((e) => {
               setSignError(formatError(e))
@@ -495,7 +508,10 @@ function DraftListItem({
 }) {
   const isOnChain = draft.status === "on_chain" && draft.referendum_index != null
   const isCancelled = draft.status === "cancelled"
-  const isDraft = draft.status === "draft" || draft.status === "submitted"
+  // Only treasury drafts can be reopened in the treasury wizard; drafts
+  // from the advanced composer carry a call it doesn't edit.
+  const isDraft =
+    (draft.status === "draft" || draft.status === "submitted") && draft.is_treasury !== false
   const subtitle = `${draftStatusLabel(draft)} · ${new Date(draft.created_at).toLocaleDateString()}`
   return (
     <li className="flex items-center gap-3 p-3 rounded-lg bg-surface-1 border border-border">

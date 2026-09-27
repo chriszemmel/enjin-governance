@@ -1,3 +1,4 @@
+import { TypeRegistry } from "@polkadot/types"
 import { describe, expect, it } from "vitest"
 import { decodeReferendumInfo, decodeStatus } from "@/lib/governance/status"
 
@@ -85,13 +86,12 @@ describe("decodeStatus - Ongoing", () => {
     expect(s.decisionDeposit).toBeNull()
   })
 
-  it("decodes an Inline proposal to its bytes", () => {
-    const bytes = new Uint8Array([1, 2, 3])
-    const s = decodeStatus(
-      ongoing({ proposal: { isInline: true, asInline: { toU8a: () => bytes } } }),
-    )
+  it("decodes an Inline proposal to its bare call bytes (no length prefix)", () => {
+    // Real `Bytes` codec: toU8a() is 0x0c010203, toU8a(true) is 0x010203.
+    const inline = new TypeRegistry().createType("Bytes", "0x010203")
+    const s = decodeStatus(ongoing({ proposal: { isInline: true, asInline: inline } }))
     if (s.type !== "Ongoing") throw new Error("unreachable")
-    expect(s.proposal).toEqual({ type: "Inline", bytes })
+    expect(s.proposal).toEqual({ type: "Inline", bytes: new Uint8Array([1, 2, 3]) })
   })
 
   it("decodes a Legacy proposal (len forced to 0)", () => {

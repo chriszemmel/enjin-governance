@@ -40,6 +40,30 @@ import { hashCall } from "./preimage"
 export const REMARK_MAGIC = "EGOV1:"
 export const PROPOSAL_SCHEMA = "enjin-governance-proposal"
 export const PROPOSAL_SCHEMA_VERSION = "1.1.0"
+/**
+ * 1.2.0 adds the optional `call` and `enactment` sections, written for
+ * proposals filed through the advanced composer. Everything else is
+ * unchanged, so 1.1.0 readers keep working.
+ */
+export const PROPOSAL_SCHEMA_VERSION_WITH_CALL = "1.2.0"
+
+/** What the referendum enacts, as recorded when it was filed. */
+export type ProposalCallMeta = {
+  /** e.g. "system" / "setCode". */
+  section: string
+  method: string
+  /** Track origin label, e.g. "Root", "ReferendumCanceller". */
+  origin: string
+  /** blake2-256 of the call bytes (the preimage hash). */
+  preimage_hash: string
+  preimage_len: number
+  /** Submitted inline (≤ 128 bytes) rather than as a noted preimage. */
+  inline: boolean
+  /** blake2-256 of the runtime code, for runtime upgrades. */
+  code_hash?: string | null
+}
+
+export type ProposalEnactmentMeta = { type: "At" | "After"; block: number }
 
 export type ProposalAttachmentMeta = {
   name: string
@@ -55,7 +79,7 @@ export type ProposalAttachmentMeta = {
  */
 export type ProposalJson = {
   schema: typeof PROPOSAL_SCHEMA
-  version: typeof PROPOSAL_SCHEMA_VERSION
+  version: typeof PROPOSAL_SCHEMA_VERSION | typeof PROPOSAL_SCHEMA_VERSION_WITH_CALL
   network: ChainId
   proposer: string
   title: string
@@ -67,6 +91,10 @@ export type ProposalJson = {
     amount_planck: string
   } | null
   attachments: ProposalAttachmentMeta[]
+  /** 1.2.0: the call the referendum enacts. */
+  call?: ProposalCallMeta | null
+  /** 1.2.0: the enactment moment chosen at submission. */
+  enactment?: ProposalEnactmentMeta | null
   preimage_hash: string | null
   preimage_len: number | null
   created_at: string

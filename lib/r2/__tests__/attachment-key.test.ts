@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { ownMediaKey, proposalJsonKey, proposalPrefix } from "@/lib/r2/paths"
+import {
+  keyFromPublicUrl,
+  ownMediaKey,
+  proposalJsonKey,
+  proposalMediaKey,
+  proposalPrefix,
+  uniqueMediaName,
+} from "@/lib/r2/paths"
 
 const NET = "enjin-relay"
 const ID = "11111111-1111-4111-8111-111111111111"
@@ -56,5 +63,35 @@ describe("ownMediaKey", () => {
     for (const name of ["a b.png", "a%2fb.png", "..%2f..%2fx.json", "a\u0000.png", "ä.png", "a\nb.png", "a".repeat(121)]) {
       expect(ownMediaKey(`proposals/${NET}/${ID}/media/${name}`, NET, ID)).toBeNull()
     }
+  })
+})
+
+describe("keyFromPublicUrl", () => {
+  const key = `proposals/${NET}/${ID}/media/roadmap.png`
+  it("handles app-origin /r URLs and bucket URLs", () => {
+    expect(keyFromPublicUrl(`https://gov.enjin.cloud/r/${key}`)).toBe(key)
+    expect(keyFromPublicUrl(`https://pub-abc.r2.dev/${key}`)).toBe(key)
+  })
+  it("returns the input unchanged when it isn't a URL", () => {
+    expect(keyFromPublicUrl(key)).toBe(key)
+  })
+})
+
+describe("uniqueMediaName", () => {
+  it("prefixes the sanitised name so same-name uploads don't collide", () => {
+    expect(uniqueMediaName("My Photo (1).JPG", "ab12cd34")).toBe("ab12cd34-My_Photo_1_.JPG")
+    expect(uniqueMediaName("image.png", "ab12cd34")).not.toBe(uniqueMediaName("image.png", "ef56ab78"))
+  })
+
+  it("never produces a name that looks like another file's thumbnail", () => {
+    expect(uniqueMediaName("seed.thumb.webp", "ab12cd34")).toBe("ab12cd34-seed-thumb.webp")
+  })
+
+  it("falls back to 'file' and stays a valid media key with room for a thumbnail", () => {
+    expect(uniqueMediaName("???", "ab12cd34")).toBe("ab12cd34-file")
+    const name = uniqueMediaName("x".repeat(500) + ".png", "ab12cd34")
+    expect(name.length).toBeLessThanOrEqual(100)
+    const key = proposalMediaKey(NET, ID, name)
+    expect(ownMediaKey(key, NET, ID)).toBe(key)
   })
 })

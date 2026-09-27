@@ -21,7 +21,8 @@ import { FoundABugModal } from "@/components/layout/found-a-bug-modal"
 import { CHAINS } from "@/lib/chain/chains"
 
 export const metadata = {
-  title: "Docs - Enjin Governance",
+  title: "Docs",
+  alternates: { canonical: "/docs" },
   description:
     "How the Enjin Governance client works, the EGOV1 metadata standard, and integration notes for indexers and wallets.",
 }
@@ -191,7 +192,7 @@ export default function DocsPage() {
               <li>
                 Non-ASCII characters are emitted{" "}
                 <strong>literally as UTF-8</strong>, never as{" "}
-                <Code>\uXXXX</Code> escapes. This is the second way a
+                <Code>\uXXXX</Code>{" "}escapes. This is the second way a
                 reimplementation silently diverges: Python&apos;s{" "}
                 <Code>json.dumps</Code> escapes non-ASCII by default, so any
                 proposal containing an em dash, a curly quote or an accented
@@ -205,7 +206,7 @@ export default function DocsPage() {
             </h3>
             <Pre>{`{
   "schema": "enjin-governance-proposal",
-  "version": "1.1.0",
+  "version": "1.1.0" | "1.2.0",
   "network": "enjin-relay" | "enjin-matrix" | "canary-relay" | "canary-matrix",
   "proposer": "<SS58 address>",
   "title": "<≤ 200 chars>",
@@ -223,6 +224,16 @@ export default function DocsPage() {
     "content_type": "<MIME>",
     "size_bytes": <int>
   }],
+  "call": {                       // 1.2.0, optional
+    "section": "<pallet, e.g. system>",
+    "method": "<call, e.g. setCode>",
+    "origin": "<track origin, e.g. Root>",
+    "preimage_hash": "<0x… blake2-256 of the call>",
+    "preimage_len": <int>,
+    "inline": <bool>,
+    "code_hash": "<0x… blake2-256 of the runtime> | null"
+  } | null,
+  "enactment": { "type": "At" | "After", "block": <int> } | null,  // 1.2.0
   "preimage_hash": "<0x… hex> | null",
   "preimage_len": <int> | null,
   "created_at": "<ISO 8601>",
@@ -237,6 +248,33 @@ export default function DocsPage() {
               All <Code>amount_planck</Code> values are decimal strings (not
               numbers) to preserve precision - the relay has 18
               decimals, which overflows <Code>Number</Code>.
+            </p>
+            <p>
+              <strong>Version 1.2.0</strong> adds the optional{" "}
+              <Code>call</Code> and <Code>enactment</Code> sections, written
+              for proposals filed through the advanced composer (runtime
+              upgrades, cancel / kill, whitelisting, remarks, raw calls).
+              Every other field is unchanged, so 1.1.0 readers keep working.
+              The <Code>call</Code> section is what the proposer recorded;
+              the proposal page still decodes the call from the preimage on
+              chain, and for runtime upgrades shows the code hash computed
+              from it. Referenda filed elsewhere can get the same details
+              afterwards: the account that submitted one signs{" "}
+              <Code>preimage.notePreimage</Code> +{" "}
+              <Code>referenda.setMetadata</Code> while it is ongoing.
+            </p>
+            <p>
+              <strong>Attachments</strong> live next to the JSON under{" "}
+              <Code>proposals/&lt;network&gt;/&lt;id&gt;/media/</Code>. The
+              server builds each <Code>url</Code> from that key, and images
+              are stored without their metadata (no GPS) and scaled to fit
+              2560 px; the <Code>sha256</Code> is of the stored file. The
+              body can show an attachment with{" "}
+              <Code>![caption](&lt;attachment url or file name&gt;)</Code>.
+              Only the proposal&apos;s own attachments render as images;
+              any other image link is shown as a plain link, so nothing in a
+              proposal can be swapped or used to track readers after voting
+              starts.
             </p>
             <p>
               <Code>track</Code> is a free-form label, not an enum, and{" "}
@@ -272,7 +310,7 @@ export default function DocsPage() {
                 the JSON committed on chain at <Code>h</Code>; if the
                 proposer edited later (see{" "}
                 <A href="#editing">Editing &amp; withdrawal</A>) the bucket
-                bytes will differ from <Code>h</Code> - that&apos;s the
+                bytes will differ from <Code>h</Code>{" "}- that&apos;s the
                 public signal an edit happened.
               </li>
               <li>
@@ -312,11 +350,11 @@ export default function DocsPage() {
             <p>
               <strong>Withdraw</strong>{" "}is the social signal for &quot;I
               filed this in error, please vote NAY&quot;: it records a{" "}
-              <Code>withdrawn_at</Code> timestamp plus an optional reason, and
+              <Code>withdrawn_at</Code>{" "}timestamp plus an optional reason, and
               the detail page renders a destructive-tone banner. The on-chain
               referendum is unchanged - substrate&apos;s{" "}
               <Code>referenda.cancel</Code> is locked to the{" "}
-              <Code>ReferendumCanceller</Code> origin, not the proposer. To
+              <Code>ReferendumCanceller</Code>{" "}origin, not the proposer. To
               actually move the tally you can vote NAY yourself with high
               conviction, file a separate cancellation referendum, or wait
               for the decision period to expire if the deposit isn&apos;t
@@ -333,10 +371,10 @@ export default function DocsPage() {
               Votes carry a conviction multiplier between 1x and 6x. Higher
               conviction multiplies the vote&apos;s tally weight but locks
               the underlying balance for a period after the referendum
-              resolves. The lock grows with conviction, roughly doubling each
-              step: 1x = 1, 2x = 2, 3x = 4, 4x = 8, 5x = 16, 6x = 32 lock
-              periods. Lock duration is per track-class - the same conviction
-              on BigSpender is much longer than on SmallTipper.
+              resolves. The lock grows with conviction, doubling each step:
+              1x = 1, 2x = 2, 3x = 4, 4x = 8, 5x = 16, 6x = 32 lock periods.
+              One period is set by the runtime (7 days on Enjin and Canary)
+              and is the same on every track, so 6x locks for 224 days.
             </p>
 
             <h3 className="text-base font-semibold text-foreground pt-2">
@@ -353,7 +391,7 @@ export default function DocsPage() {
                 <strong>Change a vote</strong> - re-submit{" "}
                 <Code>vote</Code> for the same referendum to swap the
                 verdict, conviction, or source. The chain overwrites the
-                previous <Code>AccountVote</Code> in the same lock class
+                previous <Code>AccountVote</Code>{" "}in the same lock class
                 - no separate &quot;edit&quot; extrinsic.
               </li>
               <li>
@@ -468,7 +506,7 @@ export default function DocsPage() {
               <li className="flex items-start gap-3">
                 <SourceBadgeSample
                   label="EGOV1 · Verified"
-                  tone="border-emerald-500/40 text-emerald-400 bg-emerald-500/5"
+                  tone="border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5"
                 />
                 <span>
                   Bucket sha256 matches our DB record and the hash pinned on
@@ -492,7 +530,7 @@ export default function DocsPage() {
               <li className="flex items-start gap-3">
                 <SourceBadgeSample
                   label="EGOV1 · Unverified"
-                  tone="border-red-500/40 text-red-400 bg-red-500/5"
+                  tone="border-red-500/40 text-red-700 dark:text-red-400 bg-red-500/5"
                 />
                 <span>
                   Bucket sha256 doesn&apos;t match what we expected and no
@@ -503,7 +541,7 @@ export default function DocsPage() {
               <li className="flex items-start gap-3">
                 <SourceBadgeSample
                   label="EGOV1 · Fetch Failed"
-                  tone="border-amber-500/40 text-amber-300 bg-amber-500/5"
+                  tone="border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/5"
                 />
                 <span>
                   The bucket URL didn&apos;t respond. Not a verification
@@ -617,22 +655,31 @@ export default function DocsPage() {
               Connecting a wallet only proves the wallet exposed an address;
               signing a server-issued nonce proves the wallet controls the
               private key. The sign-in flow follows the SIWE pattern adapted
-              for Substrate: <Code>POST /api/auth/nonce</Code> hands back a
+              for Substrate: <Code>POST /api/auth/nonce</Code>{" "}hands back a
               16-byte hex nonce, the client builds a plain-text message
               (&quot;Enjin Governance - sign in&quot; + address +
               nonce + issued timestamp), the wallet signs it, and{" "}
               <Code>POST /api/auth/verify</Code> checks the signature with{" "}
               <Code>@polkadot/util-crypto</Code>&apos;s{" "}
-              <Code>signatureVerify</Code> (accepts the wallet&apos;s{" "}
+              <Code>signatureVerify</Code>{" "}(accepts the wallet&apos;s{" "}
               <Code>&lt;Bytes&gt;</Code> wrapping, plain, and{" "}
               <Code>0x</Code>-hex forms).
+            </p>
+            <p>
+              Sign-in uses the address in the format of the network
+              you&apos;re on: Enjin Relaychain (<Code>en…</Code>) or Canary Relaychain
+              (<Code>cn…</Code>). The client converts whatever the wallet
+              shows - a generic <Code>5…</Code>{" "}address, say - before it
+              asks for a nonce, and the server refuses other formats, so
+              every account belongs to one network and its handle is unique
+              there.
             </p>
             <p>
               On success the server returns a 32-byte opaque bearer token in
               the <Code>enjin-governance:session</Code> cookie
               (<Code>HttpOnly</Code>, <Code>Secure</Code> in production,{" "}
               <Code>SameSite=Lax</Code>, 30-day TTL). Only the SHA-256 hash
-              of the token lives in <Code>wallet_sessions</Code> - the
+              of the token lives in <Code>wallet_sessions</Code>{" "}- the
               raw secret never persists, so a DB leak doesn&apos;t hand out
               live sessions. Sessions never authorise on-chain transactions;
               they only gate the off-chain social writes below.
@@ -651,14 +698,17 @@ export default function DocsPage() {
               </li>
               <li>
                 <strong>Display name</strong> - up to 80 chars, free
-                text.
+                text. Invisible and text-direction characters are removed
+                and odd spaces become plain ones before it&apos;s checked
+                and stored.
               </li>
               <li>
                 <strong>Bio</strong> - up to 500 chars.
               </li>
               <li>
-                <strong>Avatar</strong> - PNG/JPEG/WebP/GIF up to
-                6 MB, transcoded server-side to a 150&times;150 PNG with
+                <strong>Avatar</strong>{" "}- PNG/JPEG/WebP/GIF up to
+                4 MB (larger photos are shrunk in the browser first),
+                transcoded server-side to a 150&times;150 PNG with
                 EXIF stripped, stored in R2 at{" "}
                 <Code>user-avatars/&#123;user_uuid&#125;.png</Code>.
               </li>
@@ -669,7 +719,7 @@ export default function DocsPage() {
               (no auth, cached 60s edge / 600s stale-while-revalidate) and
               written only by the owner via{" "}
               <Code>PATCH /api/users/me</Code>. A separate{" "}
-              <Code>is_verified</Code> boolean is reserved for manual
+              <Code>is_verified</Code>{" "}boolean is reserved for manual
               attestation by the maintainers - there&apos;s no
               self-service path to turn it on.
             </p>
@@ -680,7 +730,7 @@ export default function DocsPage() {
             <p>
               Each referendum carries a flat comment thread.{" "}
               <Code>GET /api/proposals/&#123;uuid&#125;/comments</Code> is
-              public; <Code>POST</Code> requires a valid session, accepts
+              public; <Code>POST</Code>{" "}requires a valid session, accepts
               1-10,000 chars of markdown, and stamps the comment with
               the signer&apos;s <Code>user_id</Code> and{" "}
               <Code>address</Code> so authorship is always traceable to a
@@ -690,15 +740,26 @@ export default function DocsPage() {
               <Code>author_is_verified</Code> for the UI.
             </p>
             <p>
+              Authors can edit their own comment for 15 minutes after
+              posting via <Code>PATCH /api/comments/&#123;id&#125;</Code>{" "}
+              - same 1-10,000 character limit, not once it&apos;s deleted or
+              hidden by moderators, and not while their posting is paused.
+              The new text replaces the old one (no history is kept),{" "}
+              <Code>edited_at</Code>{" "}is set so the thread shows
+              &quot;edited&quot;, and the automatic text check runs again on
+              the new text.
+            </p>
+            <p>
               Authors can soft-delete their own comments via{" "}
               <Code>DELETE /api/comments/&#123;id&#125;</Code> - the
               row stays with <Code>is_deleted = true</Code> and the body
-              replaced by <Code>[deleted]</Code>. There is no edit endpoint,
-              no moderator delete, no flag/report flow, and no reaction or
-              upvote UI. The <Code>parent_id</Code> column on{" "}
-              <Code>comments</Code> reserves space for threading, but the
-              current UI renders the thread flat by{" "}
-              <Code>created_at</Code>.
+              replaced by <Code>[deleted]</Code>. Moderators don&apos;t
+              delete comments; they can hide them (see{" "}
+              <A href="#content-policy">Content policy &amp; moderation</A>
+              ). There is no reaction or upvote UI. The{" "}
+              <Code>parent_id</Code>{" "}column on <Code>comments</Code>{" "}
+              reserves space for threading, but the current UI renders the
+              thread flat by <Code>created_at</Code>.
             </p>
 
             <h3 className="text-base font-semibold text-foreground pt-2">
@@ -719,8 +780,8 @@ export default function DocsPage() {
             </h3>
             <p>
               No direct messages, no upvotes or reactions, no
-              proposal-agnostic forum, no threaded reply UI, no moderation
-              tools, no comment edit history. The social layer exists to give
+              proposal-agnostic forum, no threaded reply UI, no comment
+              edit history. The social layer exists to give
               voters context and let proposers respond - if the conversation
               outgrows what a flat per-referendum thread can carry, that&apos;s
               the signal to move the discussion to a dedicated venue, not to
@@ -804,11 +865,72 @@ export default function DocsPage() {
               </li>
               <li>
                 <strong>Off-chain withdrawal</strong> (this app) - the
-                Withdraw button sets <Code>withdrawn_at</Code> and surfaces a
+                Withdraw button sets <Code>withdrawn_at</Code>{" "}and surfaces a
                 banner. Doesn&apos;t change on-chain state, but tells voters
                 clearly to vote NAY.
               </li>
             </ul>
+          </Section>
+
+          <Section id="content-policy" title="Content policy & moderation" icon={<ShieldCheck />}>
+            <p>
+              Proposals, images and comments are public. These aren&apos;t allowed:
+            </p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                <strong>Secrets:</strong> wallet recovery phrases, private keys or
+                screenshots showing them - anyone could take the funds.
+              </li>
+              <li>
+                <strong>Personal data</strong> of others: ID documents, home addresses,
+                phone numbers, private photos.
+              </li>
+              <li>
+                <strong>Scams and phishing:</strong> fake airdrops, impersonation, links
+                that ask for a wallet signature or seed.
+              </li>
+              <li>
+                <strong>Sexual or violent</strong> content, and harassment or hate.
+              </li>
+              <li>Illegal content and spam.</li>
+            </ul>
+            <p>
+              <strong>How it works.</strong>{" "}Anyone signed in can report a proposal
+              (the &quot;…&quot; menu on its About card), an image (in the image
+              viewer) or a comment. Moderators review reports in one queue and can
+              keep, blur, hide or restore content; only admins can delete a file, for
+              legal takedowns, or pause someone&apos;s posting. Every decision needs a
+              reason and appears in the{" "}
+              <Link
+                href="/moderation-log"
+                className="text-primary hover:text-purple-dim underline underline-offset-2 decoration-primary/40 hover:decoration-current"
+              >
+                public moderation log
+              </Link>
+              . Proposers can remove their own attachments at any time.
+            </p>
+            <p>
+              <strong>Automatic checks</strong>{" "}(when enabled): uploaded images and
+              PDFs are checked by an AI model (Anthropic&apos;s Claude) before they
+              are stored. Clear violations, such as a readable recovery phrase, are
+              rejected or held, depending on the admins&apos; setting; borderline
+              files are held back and sent to the moderators&apos; queue, and appear
+              once a moderator has looked. Animated images always wait for a
+              moderator, because the model sees only their first frame. Proposal text and comments are only ever flagged for a human -
+              the machine never hides text on its own. Admins choose the model, what
+              is checked and a daily limit; past the limit, uploads wait for a
+              moderator and text is moderated by reports as usual.
+            </p>
+            <p>
+              <strong>What moderation never does:</strong>{" "}nobody can rewrite someone
+              else&apos;s text, and referenda, votes and on-chain records are never
+              touched. A proposal&apos;s <Code>proposal.json</Code>{" "}stays byte-identical,
+              so its EGOV1 verification keeps working even when an image is hidden or
+              removed. Hidden images are no longer served by this site; deleted files
+              are removed from storage itself. Older proposals may still link straight
+              to the storage bucket, where a hidden (not deleted) file stays
+              reachable - legal takedowns therefore use &quot;delete file&quot;.
+            </p>
           </Section>
 
           <Section id="links" title="Links">
@@ -831,7 +953,10 @@ export default function DocsPage() {
                 this page so you don&apos;t lose your spot.
               </li>
               <li>
-                <Link href="/security" className="text-primary hover:text-purple-dim">
+                <Link
+                  href="/security"
+                  className="text-primary hover:text-purple-dim underline underline-offset-2 decoration-primary/40 hover:decoration-current"
+                >
                   Report a security issue
                 </Link>{" "}
                 - private vulnerability disclosures, kept off public channels
@@ -941,7 +1066,11 @@ function SourceBadgeSample({ label, tone }: { label: string; tone: string }) {
 
 function Pre({ children }: { children: React.ReactNode }) {
   return (
-    <pre className="rounded-lg bg-surface-2 border border-border p-3 text-[11px] font-mono leading-relaxed text-foreground overflow-x-auto whitespace-pre">
+    // Focusable so the keyboard can scroll it where it overflows (phones).
+    <pre
+      tabIndex={0}
+      className="rounded-lg bg-surface-2 border border-border p-3 text-[11px] font-mono leading-relaxed text-foreground overflow-x-auto whitespace-pre"
+    >
       {children}
     </pre>
   )
@@ -951,7 +1080,7 @@ function A({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
-      className="text-primary hover:text-purple-dim underline-offset-2 hover:underline"
+      className="text-primary hover:text-purple-dim underline underline-offset-2 decoration-primary/40 hover:decoration-current"
     >
       {children}
     </Link>
@@ -996,7 +1125,7 @@ function ChainCard({
       ? "border-amber-500/30 bg-amber-500/5"
       : "border-purple-border/40 bg-primary/5"
   const accentText =
-    tone === "testnet" ? "text-amber-400" : "text-primary"
+    tone === "testnet" ? "text-amber-700 dark:text-amber-400" : "text-primary"
   return (
     <div className={`rounded-xl border ${accent} p-4 space-y-2`}>
       <div className="flex items-center justify-between gap-2">

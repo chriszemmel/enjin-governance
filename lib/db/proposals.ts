@@ -94,12 +94,62 @@ export async function insertProposalDraft(
   return rows[0]
 }
 
+export type UpdateProposalDraftArgs = {
+  id: string
+  /** The row's current json_sha256 - the update only applies if it still matches. */
+  expectedSha256: string
+  title: string
+  summary: string | null
+  bodyMarkdown: string
+  track: string | null
+  beneficiary: string | null
+  amountPlanck: bigint | null
+  jsonUrl: string
+  jsonKey: string
+  jsonSha256: string
+  preimageHash: string | null
+  preimageLen: number | null
+  remarkPayload: string | null
+}
+
+/**
+ * Re-stage an unsigned draft in place (same id, same R2 key). Only applies
+ * while the row is still a draft and nobody else changed it in the meantime;
+ * returns null otherwise.
+ */
+export async function updateProposalDraft(
+  d: UpdateProposalDraftArgs,
+): Promise<ProposalRow | null> {
+  const sql = getSql()
+  const rows = (await sql`
+    UPDATE proposals SET
+      title          = ${d.title},
+      summary        = ${d.summary},
+      body_markdown  = ${d.bodyMarkdown},
+      track          = ${d.track},
+      beneficiary    = ${d.beneficiary},
+      amount_planck  = ${d.amountPlanck?.toString() ?? null},
+      json_url       = ${d.jsonUrl},
+      json_key       = ${d.jsonKey},
+      json_sha256    = ${d.jsonSha256},
+      preimage_hash  = ${d.preimageHash},
+      preimage_len   = ${d.preimageLen},
+      remark_payload = ${d.remarkPayload}
+    WHERE id = ${d.id}
+      AND status = 'draft'
+      AND json_sha256 = ${d.expectedSha256}
+    RETURNING *
+  `) as ProposalRow[]
+  return rows[0] ?? null
+}
+
 export type AttachReferendumArgs = {
   proposalId: string
   referendumIndex: number
-  txHash: string
-  blockHash: string
-  blockNumber: number
+  /** Null when a proposer links an existing referendum by hand. */
+  txHash: string | null
+  blockHash: string | null
+  blockNumber: number | null
 }
 
 /**
@@ -117,7 +167,10 @@ export async function attachReferendumIndex(
       tx_hash          = ${a.txHash},
       block_hash       = ${a.blockHash},
       block_number     = ${a.blockNumber},
-      status           = 'on_chain'
+      status           = 'on_chain',
+      -- A withdrawal flag only means something once published.
+      withdrawn_at     = NULL,
+      withdrawn_reason = NULL
     WHERE id = ${a.proposalId}
     RETURNING *
   `) as ProposalRow[]
@@ -233,24 +286,25 @@ export async function markProposalFailed(
   const sql = getSql()
   await sql`
     UPDATE proposals SET status = 'failed', last_error = ${error}
-    WHERE id = ${proposalId}
+    WHERE id = ${proposalId} AND status <> 'on_chain'
   `
 }
 
+/** Null when the row is gone or reached the chain in the meantime. */
 export async function markProposalCancelled(
   proposalId: string,
   reason: string | null,
-): Promise<ProposalRow> {
+): Promise<ProposalRow | null> {
   const sql = getSql()
   const rows = (await sql`
     UPDATE proposals SET
       status = 'cancelled',
       last_error = ${reason ?? "Marked outdated by proposer"}
     WHERE id = ${proposalId}
+      AND status <> 'on_chain'
     RETURNING *
   `) as ProposalRow[]
-  if (rows.length === 0) throw new Error(`No proposal ${proposalId}`)
-  return rows[0]
+  return rows[0] ?? null
 }
 
 export async function listProposalsByProposer(
@@ -322,9 +376,13 @@ export async function getProposalById(id: string): Promise<ProposalRow | null> {
  * route should call this - it enforces the "must be cancelled/draft/failed
  * before delete" rule (on_chain rows are never deletable).
  */
-export async function deleteProposalById(id: string): Promise<void> {
+/** Never deletes an on-chain row, even if one was confirmed a moment ago. */
+export async function deleteProposalById(id: string): Promise<boolean> {
   const sql = getSql()
-  await sql`DELETE FROM proposals WHERE id = ${id}`
+  const rows = (await sql`
+    DELETE FROM proposals WHERE id = ${id} AND status <> 'on_chain' RETURNING id
+  `) as unknown[]
+  return rows.length > 0
 }
 
 export type AttachmentRow = {

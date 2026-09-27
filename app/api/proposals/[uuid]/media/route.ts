@@ -2,8 +2,9 @@
  * POST /api/proposals/[uuid]/media
  *
  * Multipart upload. Body: a single `file` field. Stores the file under
- * `proposals/{network}/{uuid}/media/{safe-filename}` and returns the URL +
- * sha256.
+ * `proposals/{network}/{uuid}/media/{random}-{safe-filename}` and returns
+ * the URL + sha256. Images are cleaned first (metadata dropped, scaled to
+ * fit 2560 px) and get a WebP thumbnail next to them.
  *
  * Called BEFORE the proposal draft is finalised so the client can
  * include the URLs in proposal.json. The DB row for the proposal might
@@ -11,23 +12,50 @@
  * draft endpoint inserts attachment rows after the proposals row exists.
  *
  * Hard limits:
- *   - 20 MB per file (matches the DB CHECK constraint)
+ *   - 4 MB per file (MAX_UPLOAD_BYTES: Vercel refuses larger request
+ *     bodies; the browser shrinks big photos first). The DB allows 20 MB.
  *   - image/png, image/jpeg, image/webp, image/gif, application/pdf
+ *
+ * DELETE /api/proposals/[uuid]/media?network=…&key=…
+ *
+ * Removes an uploaded file (and its thumbnail). For an unsigned draft it
+ * simply goes away. For a published proposal the proposer may remove their
+ * own file too: the JSON keeps listing it (so its EGOV1 record still
+ * verifies) and the page and public log say it was removed.
  */
 
+import { randomUUID } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
-import { getProposalById } from "@/lib/db/proposals"
-import { isR2Configured } from "@/lib/r2/client"
-import { proposalMediaKey } from "@/lib/r2/paths"
+import { getProposalById, listAttachments } from "@/lib/db/proposals"
+import { cleanAttachmentName } from "@/lib/governance/attachment-check"
+import { anyVersionListsFile, listVersionKeys } from "@/lib/governance/draft-versions"
+import { thumbKeyFor } from "@/lib/governance/proposal-media"
+import {
+  isPublicUrlMisconfigured,
+  isR2Configured,
+  PUBLIC_URL_NOT_CONFIGURED,
+} from "@/lib/r2/client"
+import {
+  ImageProcessingError,
+  processProposalImage,
+  scanCopy,
+} from "@/lib/r2/media-processing"
+import { checkUpload, holdUpload, reportHeldUpload } from "@/lib/moderation/auto-flag"
+import { ownMediaKey, proposalMediaKey, uniqueMediaName } from "@/lib/r2/paths"
 import { sniffMediaMime } from "@/lib/r2/sniff"
-import { putObject, sha256Hex } from "@/lib/r2/upload"
+import { deleteObjects, putObject, sha256Hex } from "@/lib/r2/upload"
+import { closeReports, insertAction, setState } from "@/lib/db/moderation"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/uploads/limits"
 
 export const runtime = "nodejs"
+// Room for the automatic check on large images and PDFs.
+export const maxDuration = 60
 
 const NETWORK_VALUES = [
   "enjin-relay",
@@ -36,7 +64,6 @@ const NETWORK_VALUES = [
   "canary-matrix",
 ] as const
 
-const MAX_BYTES = 20 * 1024 * 1024
 const ALLOWED_MIME = new Set([
   "image/png",
   "image/jpeg",
@@ -58,6 +85,10 @@ export async function POST(
       { status: 503 },
     )
   }
+  // Never build (and pin on chain) file URLs from a localhost base.
+  if (isPublicUrlMisconfigured()) {
+    return NextResponse.json({ ok: false, error: PUBLIC_URL_NOT_CONFIGURED }, { status: 503 })
+  }
 
   const { uuid: rawUuid } = await context.params
   const uuidParse = uuidSchema.safeParse(rawUuid)
@@ -67,7 +98,8 @@ export async function POST(
       { status: 400 },
     )
   }
-  const proposalUuid = uuidParse.data
+  // Keys are always lower-case, whatever case the URL used.
+  const proposalUuid = uuidParse.data.toLowerCase()
 
   const url = new URL(request.url)
   const networkParse = networkSchema.safeParse(url.searchParams.get("network"))
@@ -88,6 +120,9 @@ export async function POST(
       { status: 401 },
     )
   }
+
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.mediaUpload, identity: me.id })
   if (!rl.allowed) {
@@ -134,9 +169,12 @@ export async function POST(
   if (file.size === 0) {
     return NextResponse.json({ ok: false, error: "Empty file" }, { status: 400 })
   }
-  if (file.size > MAX_BYTES) {
+  if (file.name.length > 255) {
+    return NextResponse.json({ ok: false, error: "File name is too long." }, { status: 400 })
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json(
-      { ok: false, error: `File exceeds ${MAX_BYTES} bytes` },
+      { ok: false, error: `Files can be up to ${MAX_UPLOAD_LABEL}.` },
       { status: 413 },
     )
   }
@@ -162,24 +200,88 @@ export async function POST(
     )
   }
 
-  const key = proposalMediaKey(network, proposalUuid, file.name || "file")
+  // Images: drop metadata (GPS etc.), scale down, make a thumbnail. What's
+  // stored - and hashed into the proposal - is the cleaned file.
+  let body: Buffer = buffer
+  let thumbnail: Buffer | null = null
+  let animated = false
+  if (sniffed !== "application/pdf") {
+    try {
+      const processed = await processProposalImage(buffer, sniffed)
+      body = processed.body
+      thumbnail = processed.thumbnail
+      animated = processed.animated
+    } catch (e) {
+      if (!(e instanceof ImageProcessingError)) throw e
+      return NextResponse.json(
+        { ok: false, error: "This image could not be read. Try exporting it again as PNG or JPEG." },
+        { status: 415 },
+      )
+    }
+  }
+
+  // Automatic check (when enabled): clear violations - a readable recovery
+  // phrase, say - are never stored; borderline images are stored blurred
+  // and queued for a moderator.
+  const check = await checkUpload(
+    sniffed === "application/pdf"
+      ? { kind: "pdf", bytes: body }
+      : { kind: "image", jpeg: () => scanCopy(body), animated },
+    file.name || "file",
+  )
+  if (check.action === "reject") {
+    return NextResponse.json({ ok: false, error: check.message }, { status: 422 })
+  }
+
+  const storedName = uniqueMediaName(file.name || "file", randomUUID().slice(0, 8))
+  const key = proposalMediaKey(network, proposalUuid, storedName)
+
+  // A file the check wants a person to see first is held before it is
+  // stored, so it is never served; if the hold can't be saved, refuse it.
+  const heldFor =
+    check.action === "store_blurred"
+      ? { proposalId: (await getProposalById(proposalUuid).catch(() => null))?.id ?? null }
+      : null
+  if (heldFor) {
+    try {
+      await holdUpload(key, heldFor.proposalId)
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Uploads can't be checked right now. Try again in a minute." },
+        { status: 503, headers: { "Retry-After": "60" } },
+      )
+    }
+  }
 
   try {
     const result = await putObject({
       key,
-      body: buffer,
+      body,
       contentType: sniffed,
       cacheControl: "public, max-age=31536000, immutable",
     })
+    if (thumbnail) {
+      // Best-effort: galleries fall back to the full image without it.
+      await putObject({
+        key: thumbKeyFor(key),
+        body: thumbnail,
+        contentType: "image/webp",
+        cacheControl: "public, max-age=31536000, immutable",
+      }).catch(() => null)
+    }
+    if (heldFor && check.action === "store_blurred") {
+      await reportHeldUpload(result.key, heldFor.proposalId, check.outcome).catch(() => null)
+    }
     return NextResponse.json({
       ok: true,
+      moderation: check.action === "store_blurred" ? "blurred" : null,
       bucket_key: result.key,
       url: result.url,
       sha256: result.sha256,
       size_bytes: result.sizeBytes,
       content_type: sniffed,
-      name: file.name || "file",
-      precomputed_sha256_matches: result.sha256 === sha256Hex(buffer),
+      name: cleanAttachmentName(file.name || "file"),
+      precomputed_sha256_matches: result.sha256 === sha256Hex(body),
     })
   } catch (e) {
     return NextResponse.json(
@@ -190,4 +292,140 @@ export async function POST(
       { status: 502 },
     )
   }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ uuid: string }> },
+): Promise<NextResponse> {
+  if (!isR2Configured()) {
+    return NextResponse.json(
+      { ok: false, error: "Storage is not configured" },
+      { status: 503 },
+    )
+  }
+
+  const { uuid: rawUuid } = await context.params
+  const uuidParse = uuidSchema.safeParse(rawUuid)
+  const url = new URL(request.url)
+  const networkParse = networkSchema.safeParse(url.searchParams.get("network"))
+  if (!uuidParse.success || !networkParse.success) {
+    return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 })
+  }
+  // Keys are always lower-case, whatever case the URL used.
+  const proposalUuid = uuidParse.data.toLowerCase()
+  const key = ownMediaKey(url.searchParams.get("key") ?? "", networkParse.data, proposalUuid)
+  if (!key) {
+    return NextResponse.json(
+      { ok: false, error: "That file doesn't belong to this proposal." },
+      { status: 400 },
+    )
+  }
+
+  const me = await getCurrentUser()
+  if (!me) {
+    return NextResponse.json(
+      { ok: false, error: "Sign in to remove files." },
+      { status: 401 },
+    )
+  }
+
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.mediaUpload, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests - please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    )
+  }
+
+  // Same ownership rule as uploads. Once a draft exists, only its proposer
+  // may remove files, and only while nothing has been signed.
+  if (isDbConfigured()) {
+    const existing = await getProposalById(proposalUuid)
+    if (existing) {
+      await initializeWasm()
+      if (!samePublicKey(existing.proposer_address, me.address)) {
+        return NextResponse.json(
+          { ok: false, error: "Only the proposer can remove files from this proposal." },
+          { status: 403 },
+        )
+      }
+      if (existing.status === "submitted") {
+        return NextResponse.json(
+          { ok: false, error: "Wait until the submission is confirmed, then remove the file." },
+          { status: 409 },
+        )
+      }
+      if (existing.status === "on_chain") {
+        // A published proposal's JSON keeps listing the file (so its EGOV1
+        // record still verifies); the file goes, and the page and the
+        // public log say the proposer removed it.
+        try {
+          await deleteObjects([key, thumbKeyFor(key)])
+        } catch {
+          return NextResponse.json(
+            { ok: false, error: "Storage error - the file was not removed." },
+            { status: 502 },
+          )
+        }
+        const reason = "The proposer removed their own file."
+        await setState({
+          targetType: "attachment",
+          targetId: key,
+          proposalId: proposalUuid,
+          state: "removed",
+          reason,
+          source: "proposer",
+        }).catch(() => null)
+        await insertAction({
+          targetType: "attachment",
+          targetId: key,
+          proposalId: proposalUuid,
+          network: existing.network,
+          referendumIndex: existing.referendum_index,
+          action: "delete_file",
+          reason,
+          source: "proposer",
+          actorPublicKey: null,
+          actorLabel: "proposer",
+        }).catch(() => null)
+        return NextResponse.json({ ok: true, deleted: true })
+      }
+      if (existing.status !== "draft") {
+        return NextResponse.json(
+          { ok: false, error: "This proposal was cancelled; its files are cleaned up with it." },
+          { status: 409 },
+        )
+      }
+      // Listed by a saved version of the draft: keep it. The draft can be
+      // switched back to any version that gets signed, so its files stay
+      // until the whole draft is deleted.
+      const saved = await listAttachments(proposalUuid)
+      if (saved.some((a) => a.bucket_key === key)) {
+        return NextResponse.json({ ok: true, deleted: false })
+      }
+      try {
+        if (await anyVersionListsFile(await listVersionKeys(existing), key)) {
+          return NextResponse.json({ ok: true, deleted: false })
+        }
+      } catch {
+        return NextResponse.json(
+          { ok: false, error: "Storage error - the file was not removed." },
+          { status: 503 },
+        )
+      }
+    }
+  }
+
+  try {
+    await deleteObjects([key, thumbKeyFor(key)])
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Storage error - the file was not removed." },
+      { status: 502 },
+    )
+  }
+  // An automatic flag on a file that is gone has nothing left to decide.
+  await closeReports("attachment", key, "resolved").catch(() => null)
+  return NextResponse.json({ ok: true, deleted: true })
 }

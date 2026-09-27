@@ -17,15 +17,17 @@ import {
 import {
   buildRemoveVote,
   buildVote,
+  convictionLockBlocks,
+  getVoteLockingPeriod,
   type VoteCurrency,
 } from "@/lib/governance/conviction-voting"
 import {
-  CONVICTION_LOCK_PERIODS,
   CONVICTION_MULTIPLIER,
   CONVICTIONS,
   type Conviction,
 } from "@/lib/governance/types"
 import { decodeCurrency } from "@/lib/governance/vote-decode"
+import { useApi } from "@/lib/query/hooks/use-api"
 import { useBalance } from "@/lib/query/hooks/use-balance"
 import { useMyVotesOnPoll } from "@/lib/query/hooks/use-my-votes"
 import { useStakedEnjBalances } from "@/lib/query/hooks/use-staked-enj-balances"
@@ -43,7 +45,6 @@ import {
 interface VotingPanelProps {
   referendumIndex: number
   isOngoing: boolean
-  decisionPeriodBlocks: number | null
   trackId: number | null
 }
 
@@ -52,7 +53,6 @@ const DEFAULT_AMOUNT = "1"
 export function VotingPanel({
   referendumIndex,
   isOngoing,
-  decisionPeriodBlocks,
   trackId,
 }: VotingPanelProps) {
   const [walletOpen, setWalletOpen] = useState(false)
@@ -64,6 +64,8 @@ export function VotingPanel({
 
   const chain = useActiveChain()
   const queryClient = useQueryClient()
+  // Conviction locks run in the runtime's voteLockingPeriod on every track.
+  const voteLockingPeriod = getVoteLockingPeriod(useApi().data)
   const { status: walletStatus, activeAddress, session: walletSession } = useWallet()
   const { short: addressShort } = useDisplayAddress()
   const walletMeta = walletDisplayFor(walletSession ?? null)
@@ -174,15 +176,10 @@ export function VotingPanel({
   }, [currency, selectedVote, chain.decimals])
 
   const multiplier = CONVICTION_MULTIPLIER[conviction]
-  const lockPeriods = CONVICTION_LOCK_PERIODS[conviction]
-  const lockBlocks =
-    decisionPeriodBlocks != null ? decisionPeriodBlocks * lockPeriods : 0
   const lockLabel =
     conviction === "None"
       ? "No lock"
-      : decisionPeriodBlocks != null
-        ? formatBlockDuration(lockBlocks)
-        : `${lockPeriods} decision periods`
+      : formatBlockDuration(convictionLockBlocks(conviction, voteLockingPeriod))
 
   let parsedAmount: bigint | null = null
   try {
@@ -418,7 +415,7 @@ export function VotingPanel({
           <CurrentVotesStack
             votes={myVotes}
             chain={chain}
-            decisionPeriodBlocks={decisionPeriodBlocks}
+            voteLockingPeriod={voteLockingPeriod}
             removing={removeTx.isSubmitting}
             removeStatus={removeTx.status.kind}
             canRemove={effectiveTrackId != null && !tx.isSubmitting}
@@ -437,7 +434,13 @@ export function VotingPanel({
               <div>
                 <p className="font-semibold text-foreground">Vote recorded on chain</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <span className={vote === "aye" ? "text-green-400" : "text-red-400"}>
+                  <span
+                    className={
+                      vote === "aye"
+                        ? "text-green-700 dark:text-green-400"
+                        : "text-red-700 dark:text-red-400"
+                    }
+                  >
                     {vote === "aye" ? "Aye" : "Nay"}
                   </span>{" "}
                   at {multiplier}x conviction.
@@ -502,8 +505,8 @@ export function VotingPanel({
                   className={cn(
                     "flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-medium transition-all duration-200 disabled:opacity-50",
                     vote === "aye"
-                      ? "border-green-500/50 bg-green-500/10 text-green-400"
-                      : "border-border text-muted-foreground hover:border-green-500/30 hover:text-green-400 hover:bg-green-500/5",
+                      ? "border-green-500/50 bg-green-500/10 text-green-800 dark:text-green-400"
+                      : "border-border text-muted-foreground hover:border-green-500/30 hover:text-green-800 dark:hover:text-green-400 hover:bg-green-500/5",
                   )}
                 >
                   <CheckCircle2 className="w-4 h-4" />
@@ -515,8 +518,8 @@ export function VotingPanel({
                   className={cn(
                     "flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-medium transition-all duration-200 disabled:opacity-50",
                     vote === "nay"
-                      ? "border-red-500/50 bg-red-500/10 text-red-400"
-                      : "border-border text-muted-foreground hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/5",
+                      ? "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-400"
+                      : "border-border text-muted-foreground hover:border-red-500/30 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-500/5",
                   )}
                 >
                   <XCircle className="w-4 h-4" />
@@ -577,13 +580,10 @@ export function VotingPanel({
                 {showConviction && (
                   <div className="border-t border-border divide-y divide-border">
                     {CONVICTIONS.map((c) => {
-                      const periods = CONVICTION_LOCK_PERIODS[c]
                       const label =
                         c === "None"
                           ? "No lock"
-                          : decisionPeriodBlocks != null
-                            ? formatBlockDuration(decisionPeriodBlocks * periods)
-                            : `${periods} decision periods`
+                          : formatBlockDuration(convictionLockBlocks(c, voteLockingPeriod))
                       return (
                         <button
                           key={c}

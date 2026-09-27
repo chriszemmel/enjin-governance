@@ -22,14 +22,13 @@ export type ChainConfig = {
   shortName: string
   /** Primary WebSocket RPC URL. */
   rpc: string
-  /** Fallback WebSocket RPC URL - used by createApiWithFallback. */
+  /** Fallback WebSocket RPC URL. Not used by the app today (see docs/CHAIN_FLOW.md). */
   fallbackRpc: string | null
   /**
    * Archive RPC URL. Used by readers that need historical state
-   * (e.g. `api.at(oldBlockHash)`). Dwellir's public endpoints serve
-   * archive for Enjin's chains, so we default to those - set to null
-   * to fall back to the primary RPC, which on a full node retains
-   * only ~256 blocks of history.
+   * (e.g. `api.at(oldBlockHash)`). Enjin runs public archive nodes
+   * (`archive.*.enjin.io`); set to null to fall back to the primary
+   * RPC, which on a full node retains only ~256 blocks of history.
    */
   archiveRpc: string | null
   /**
@@ -182,10 +181,7 @@ export function enabledChains(): ChainConfig[] {
   return Object.values(CHAINS).filter((c) => c.enabled)
 }
 
-/**
- * Build a Subscan referenda-v2 URL for the given chain + referendum index.
- * Returns null if the chain doesn't have a Subscan instance.
- */
+/** Build a Subscan referenda-v2 URL for the given chain + referendum index. */
 export function subscanReferendumUrl(chain: ChainConfig, index: number): string {
   return `${chain.subscanBase}/referenda_v2/${index}`
 }

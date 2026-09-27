@@ -12,7 +12,6 @@ export const env = createEnv({
     SUBSCAN_API_KEY: z.string().optional(),
     KV_REST_API_URL: z.string().url().optional(),
     KV_REST_API_TOKEN: z.string().optional(),
-    CRON_SECRET: z.string().min(16).optional(),
     SITE_PASSWORD: z.string().min(1).optional(),
     SITE_PASSWORD_STATUS: z.enum(["ON", "OFF"]).default("OFF"),
 
@@ -21,6 +20,28 @@ export const env = createEnv({
     // team group). Unset = disclosures persist to the DB only.
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     TELEGRAM_CHAT_ID: z.string().optional(),
+    // New moderation reports go to this chat, or to TELEGRAM_CHAT_ID when
+    // unset. OFF turns moderation notices off.
+    TELEGRAM_MODERATION_CHAT_ID: z.string().optional(),
+
+    // Moderation: comma-separated wallets (SS58 on any network, or 0x public
+    // keys) that are always admins. Admins grant moderator / admin roles to
+    // others from /moderation; those grants live in the database.
+    GOVERNANCE_ADMIN_PUBLIC_KEYS: z.string().optional(),
+
+    // Legal pages (Imprint / Privacy / Terms). The operator's details live
+    // in the environment, not in the repository.
+    LEGAL_OPERATOR_NAME: z.string().optional(),
+    LEGAL_OPERATOR_ADDRESS: z.string().optional(),
+    LEGAL_CONTACT_EMAIL: z.string().default("chris@zyric.de"),
+    LEGAL_CONTACT_PHONE: z.string().optional(),
+    LEGAL_VAT_ID: z.string().optional(),
+
+    // Automatic content checks (Claude). Needs the key; admins switch the
+    // checks on and pick the model at /moderation -> Settings. Uploads are
+    // checked before they are stored; text is only flagged for moderators,
+    // never hidden automatically.
+    ANTHROPIC_API_KEY: z.string().optional(),
 
     // Cloudflare R2 - bucket `enjin-governance` holds:
     //   proposals/{network}/{uuid}/proposal.json
@@ -37,6 +58,11 @@ export const env = createEnv({
 
   client: {
     NEXT_PUBLIC_APP_URL: httpOrHttpsUrl.default("http://localhost:3000"),
+
+    // The publisher in search results, and the source link in the footer
+    // (required by the AGPL for people using the running site).
+    NEXT_PUBLIC_SITE_MAINTAINER: z.string().default("Chris Zemmel"),
+    NEXT_PUBLIC_SOURCE_URL: httpOrHttpsUrl.default("https://github.com/chriszemmel/enjin-governance"),
 
     NEXT_PUBLIC_DEFAULT_NETWORK: z
       .enum(["enjin-relay", "canary-relay"])
@@ -70,11 +96,18 @@ export const env = createEnv({
     SUBSCAN_API_KEY: process.env.SUBSCAN_API_KEY,
     KV_REST_API_URL: process.env.KV_REST_API_URL,
     KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
-    CRON_SECRET: process.env.CRON_SECRET,
     SITE_PASSWORD: process.env.SITE_PASSWORD,
     SITE_PASSWORD_STATUS: process.env.SITE_PASSWORD_STATUS,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+    TELEGRAM_MODERATION_CHAT_ID: process.env.TELEGRAM_MODERATION_CHAT_ID,
+    GOVERNANCE_ADMIN_PUBLIC_KEYS: process.env.GOVERNANCE_ADMIN_PUBLIC_KEYS,
+    LEGAL_OPERATOR_NAME: process.env.LEGAL_OPERATOR_NAME,
+    LEGAL_OPERATOR_ADDRESS: process.env.LEGAL_OPERATOR_ADDRESS,
+    LEGAL_CONTACT_EMAIL: process.env.LEGAL_CONTACT_EMAIL,
+    LEGAL_CONTACT_PHONE: process.env.LEGAL_CONTACT_PHONE,
+    LEGAL_VAT_ID: process.env.LEGAL_VAT_ID,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
 
     R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
     R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
@@ -84,6 +117,8 @@ export const env = createEnv({
     R2_PUBLIC_URL: process.env.R2_PUBLIC_URL,
 
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    NEXT_PUBLIC_SITE_MAINTAINER: process.env.NEXT_PUBLIC_SITE_MAINTAINER,
+    NEXT_PUBLIC_SOURCE_URL: process.env.NEXT_PUBLIC_SOURCE_URL,
     NEXT_PUBLIC_DEFAULT_NETWORK: process.env.NEXT_PUBLIC_DEFAULT_NETWORK,
     NEXT_PUBLIC_ENJIN_RELAY_WSS: process.env.NEXT_PUBLIC_ENJIN_RELAY_WSS,
     NEXT_PUBLIC_ENJIN_RELAY_FALLBACK_WSS: process.env.NEXT_PUBLIC_ENJIN_RELAY_FALLBACK_WSS,

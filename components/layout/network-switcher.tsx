@@ -91,7 +91,7 @@ export function NetworkSwitcher({ className }: NetworkSwitcherProps) {
           className={cn(
             "inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-xs font-medium transition-colors",
             active.isTestnet
-              ? "border-amber-500/40 bg-amber-500/10 text-amber-300 hover:border-amber-500/60"
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:border-amber-500/60"
               : "border-border bg-surface-1 text-muted-foreground hover:border-purple-border hover:text-foreground",
           )}
         >
@@ -136,7 +136,7 @@ export function NetworkSwitcher({ className }: NetworkSwitcherProps) {
                     className={cn(
                       "w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5",
                       chain.isTestnet
-                        ? "bg-amber-500/10 text-amber-400"
+                        ? "bg-amber-500/10 text-amber-800 dark:text-amber-400"
                         : "bg-primary/10 text-primary",
                     )}
                   >

@@ -10,6 +10,7 @@ import {
   FileText,
   Landmark,
   Menu,
+  ShieldCheck,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -27,6 +28,7 @@ import { useDisplayAddress, useWallet } from "@/lib/wallet/use-wallet"
 import { getConnectorMeta } from "@/lib/wallet/connector-registry"
 import { usePublicProfile } from "@/lib/query/hooks/use-profile"
 import { PolkadotIdenticon } from "@/components/profile/identicon"
+import { useMyModerationRole } from "@/lib/query/hooks/use-moderation"
 
 // Two top-level destinations. "Create" lives as a per-page CTA on
 // Proposals and Treasury so it doesn't crowd the menu.
@@ -47,6 +49,11 @@ export function Nav() {
   const { status, connectorId, session, activeAddress } = useWallet()
   const { short: addressShort, full: addressFull } = useDisplayAddress()
   const isConnected = status === "connected" && !!addressShort
+  // Moderators and admins get a link to the review queue.
+  const roleQuery = useMyModerationRole(isConnected)
+  const links = roleQuery.data
+    ? [...navLinks, { label: "Moderation", href: "/moderation", icon: ShieldCheck }]
+    : navLinks
 
   const connectorMeta = useMemo(
     () => (connectorId ? getConnectorMeta(connectorId) : null),
@@ -138,7 +145,7 @@ export function Nav() {
         {mobileOpen && (
           <div className="md:hidden bg-background border-b border-border px-4 pb-4">
             <nav className="flex flex-col gap-1 pt-2">
-              {navLinks.map((link) => {
+              {links.map((link) => {
                 const active = pathname === link.href
                 return (
                   <Link
@@ -251,7 +258,7 @@ export function Nav() {
             className="flex flex-col gap-1 px-3 pb-3 border-b border-border"
             aria-label="Main navigation"
           >
-            {navLinks.map((link) => {
+            {links.map((link) => {
               const active =
                 pathname === link.href || pathname.startsWith(link.href + "/")
               return (

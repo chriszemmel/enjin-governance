@@ -32,14 +32,23 @@ import { isDbConfigured } from "@/lib/db/client"
 import {
   deleteProposalById,
   getProposalById,
-  listAttachments,
   replaceAttachments,
   updateProposalContent,
   type ReplaceAttachmentItem,
 } from "@/lib/db/proposals"
-import { isR2Configured } from "@/lib/r2/client"
-import { ownMediaKey, proposalPrefix } from "@/lib/r2/paths"
-import { deleteObjects, putJson } from "@/lib/r2/upload"
+import {
+  isPublicUrlMisconfigured,
+  isR2Configured,
+  PUBLIC_URL_NOT_CONFIGURED,
+  publicAssetBase,
+} from "@/lib/r2/client"
+import { isProposalJsonKey, ownMediaKey, proposalPrefix, publicUrlFor } from "@/lib/r2/paths"
+import { flagText } from "@/lib/moderation/auto-flag"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { deleteObjects, listObjectKeys, putJson, readObjectText } from "@/lib/r2/upload"
+import { checkAttachments, listedAttachments } from "@/lib/governance/attachment-check"
+import { anyVersionOnChain } from "@/lib/governance/draft-versions"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
 import { getApi } from "@/lib/chain/api"
@@ -47,11 +56,14 @@ import { getReferendum } from "@/lib/governance/referenda"
 import {
   PROPOSAL_SCHEMA,
   PROPOSAL_SCHEMA_VERSION,
+  PROPOSAL_SCHEMA_VERSION_WITH_CALL,
   type ProposalAttachmentMeta,
   type ProposalJson,
 } from "@/lib/governance/proposal-metadata"
 
 export const runtime = "nodejs"
+// Leaves time for the background text check after an edit.
+export const maxDuration = 60
 
 const uuidSchema = z.string().uuid()
 
@@ -110,27 +122,57 @@ export async function DELETE(
   }
 
   // Gather the R2 keys BEFORE the row (and its cascade-deleted attachment
-  // rows) are gone, so we can clean the bucket after. A deletable proposal is
-  // never pinned by a finalised on-chain envelope, so removing its objects is
-  // safe.
+  // rows) are gone, so we can clean the bucket after: the whole folder -
+  // every staged JSON version and every upload, listed or not (a held or
+  // hidden file must not outlive its draft). If the folder can't be listed,
+  // nothing is deleted: an older version might be pinned on chain.
+  const ownPrefix = proposalPrefix(existing.network, existing.id)
   let r2Keys: string[] = [existing.json_key]
-  try {
-    const attachments = await listAttachments(existing.id)
-    r2Keys = r2Keys.concat(attachments.map((a) => a.bucket_key))
-  } catch {
-    // attachment lookup is best-effort; the json key alone still gets cleaned
+  if (isR2Configured()) {
+    try {
+      r2Keys = r2Keys.concat(await listObjectKeys(ownPrefix))
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Could not read this draft's files - try again." },
+        { status: 503 },
+      )
+    }
   }
 
-  // Only ever delete objects inside this proposal's own folder. Attachment
-  // keys were supplied by the client when the draft was staged, so a stored
-  // key pointing elsewhere (another proposal's JSON, an avatar) is skipped
-  // rather than trusted.
-  const ownPrefix = proposalPrefix(existing.network, existing.id)
-  r2Keys = r2Keys.filter(
+  // Only ever delete objects inside this proposal's own folder.
+  r2Keys = [...new Set(r2Keys)].filter(
     (k) => k.startsWith(ownPrefix) && !k.split("/").includes(".."),
   )
 
-  await deleteProposalById(parsed.data)
+  // A draft whose batch landed but was never linked is still pinned on
+  // chain, possibly from an older staged version. Its files must stay.
+  // Fails closed: if the chain can't be read, nothing is deleted.
+  try {
+    if (await anyVersionOnChain(existing, r2Keys.filter(isProposalJsonKey))) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This draft already reached the chain. Link it to its referendum from your drafts instead.",
+        },
+        { status: 409 },
+      )
+    }
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Could not reach the chain to check this draft - try again." },
+      { status: 503 },
+    )
+  }
+
+  // The SQL refuses an on-chain row, so a confirm that landed in the
+  // meantime keeps its row - and then its files.
+  if (!(await deleteProposalById(parsed.data))) {
+    return NextResponse.json(
+      { ok: false, error: "Proposal is already on-chain - deleting it isn't possible." },
+      { status: 409 },
+    )
+  }
 
   if (isR2Configured()) {
     try {
@@ -157,9 +199,15 @@ async function referendumConcluded(
 ): Promise<boolean> {
   const chain = CHAINS[network as ChainId]
   if (!chain) return false
+  // Same short budget as the other routes' chain reads: a dead RPC must
+  // not hold the edit for the full connect-and-retry time.
   try {
-    const api = await getApi(chain.rpc)
-    const ref = await getReferendum(api, index)
+    const ref = await Promise.race([
+      getApi(chain.rpc, 0).then((api) => getReferendum(api, index)),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("chain read timed out")), 8_000).unref?.(),
+      ),
+    ])
     return ref != null && ref.status.type !== "Ongoing"
   } catch {
     return false
@@ -198,6 +246,10 @@ export async function PATCH(
       { status: 503 },
     )
   }
+  // Never build (and pin on chain) file URLs from a localhost base.
+  if (isPublicUrlMisconfigured()) {
+    return NextResponse.json({ ok: false, error: PUBLIC_URL_NOT_CONFIGURED }, { status: 503 })
+  }
 
   const { uuid: raw } = await context.params
   const idParse = uuidSchema.safeParse(raw)
@@ -213,6 +265,15 @@ export async function PATCH(
     return NextResponse.json(
       { ok: false, error: "Sign in to edit a proposal." },
       { status: 401 },
+    )
+  }
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalDraft, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many edits - please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
     )
   }
 
@@ -231,6 +292,14 @@ export async function PATCH(
     return NextResponse.json(
       { ok: false, error: "Only the proposer can edit this proposal." },
       { status: 403 },
+    )
+  }
+  // Drafts change by being staged again (which keeps every signed version);
+  // this route only edits proposals whose referendum exists.
+  if (existing.status !== "on_chain") {
+    return NextResponse.json(
+      { ok: false, error: "Only proposals that reached the chain can be edited here." },
+      { status: 409 },
     )
   }
 
@@ -261,8 +330,11 @@ export async function PATCH(
   }
 
   // Same rule as the draft route: every attachment key must sit in this
-  // proposal's own media folder. Checked before anything is written.
+  // proposal's own media folder, and the URL written into the JSON is built
+  // from that key rather than taken from the browser. Checked before
+  // anything is written.
   const attachmentKeys: string[] = []
+  const attachmentUrls: string[] = []
   for (const att of parsed.attachments) {
     const ownKey = ownMediaKey(att.bucket_key, existing.network, existing.id)
     if (!ownKey) {
@@ -272,13 +344,55 @@ export async function PATCH(
       )
     }
     attachmentKeys.push(ownKey)
+    attachmentUrls.push(publicUrlFor(publicAssetBase(), ownKey))
   }
 
   const editedAt = new Date().toISOString()
 
+  // The JSON is rebuilt from the DB row plus the edited text. The 1.2.0
+  // call / enactment sections only live in the JSON, so carry them over
+  // from the current version (only this server writes that object). If it
+  // can't be read, don't save: the edit would drop those sections.
+  let current: string | null
+  try {
+    current = await readObjectText(existing.json_key)
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Could not read the current proposal - try again." },
+      { status: 503 },
+    )
+  }
+  let carried: Pick<ProposalJson, "call" | "enactment"> | null = null
+  try {
+    const prev = current ? (JSON.parse(current) as Partial<ProposalJson>) : null
+    if (prev && (prev.call != null || prev.enactment != null)) {
+      carried = { call: prev.call ?? null, enactment: prev.enactment ?? null }
+    }
+  } catch {
+    // Not JSON: nothing to carry over.
+  }
+
+  // Same check as the draft route: size, type and hash must be the stored
+  // file's own. A file removed since (by its proposer or a moderator) stays
+  // listed with the details the current version saved.
+  const checked = await checkAttachments(
+    parsed.attachments.map((a, i) => ({
+      key: attachmentKeys[i]!,
+      name: a.name,
+      sha256: a.sha256,
+      content_type: a.content_type,
+      size_bytes: a.size_bytes,
+    })),
+    listedAttachments(current),
+  )
+  if (!checked.ok) {
+    return NextResponse.json({ ok: false, error: checked.error }, { status: checked.status })
+  }
+  const names = checked.attachments.map((a) => a.name)
+
   const proposalJson: ProposalJson = {
     schema: PROPOSAL_SCHEMA,
-    version: PROPOSAL_SCHEMA_VERSION,
+    version: carried ? PROPOSAL_SCHEMA_VERSION_WITH_CALL : PROPOSAL_SCHEMA_VERSION,
     network: existing.network as ProposalJson["network"],
     proposer: existing.proposer_address,
     title: parsed.title,
@@ -293,14 +407,15 @@ export async function PATCH(
           }
         : null,
     attachments: parsed.attachments.map(
-      (a): ProposalAttachmentMeta => ({
-        name: a.name,
-        url: a.url,
+      (a, i): ProposalAttachmentMeta => ({
+        name: names[i]!,
+        url: attachmentUrls[i]!,
         sha256: a.sha256,
         content_type: a.content_type,
         size_bytes: a.size_bytes,
       }),
     ),
+    ...(carried ?? {}),
     preimage_hash: existing.preimage_hash,
     preimage_len: existing.preimage_len,
     created_at: existing.created_at.toISOString(),
@@ -345,8 +460,8 @@ export async function PATCH(
   const replacementItems: ReplaceAttachmentItem[] = parsed.attachments.map(
     (a, i) => ({
       bucketKey: attachmentKeys[i]!,
-      url: a.url,
-      filename: a.name,
+      url: attachmentUrls[i]!,
+      filename: names[i]!,
       contentType: a.content_type,
       sizeBytes: a.size_bytes,
       sha256: a.sha256,
@@ -357,6 +472,20 @@ export async function PATCH(
     await replaceAttachments(existing.id, replacementItems)
   } catch {
     // Best-effort - the JSON already carries the authoritative list.
+  }
+
+  // Only changed text is checked again.
+  if (
+    parsed.title !== existing.title ||
+    (parsed.summary ?? null) !== (existing.summary ?? null) ||
+    parsed.body_markdown !== existing.body_markdown
+  ) {
+    flagText({
+      targetType: "proposal",
+      targetId: existing.id,
+      proposalId: existing.id,
+      text: [parsed.title, parsed.summary ?? "", parsed.body_markdown].join("\n\n"),
+    })
   }
 
   return NextResponse.json({

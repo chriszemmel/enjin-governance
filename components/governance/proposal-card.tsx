@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { Ban, Hash } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useActiveChain } from "@/lib/chain/use-chain"
 import type { Referendum, Track } from "@/lib/governance/types"
 import { StatusChip } from "./status-chip"
 import {
@@ -39,6 +40,7 @@ export function ProposalCard({
   metadata,
   metadataPending,
 }: ProposalCardProps) {
+  const chain = useActiveChain()
   const { index, status, tally, trackId } = referendum
   const metadataQuery = useProposalMetadata(metadata === undefined ? index : null)
   const data = metadata === undefined ? metadataQuery.data : metadata
@@ -59,7 +61,7 @@ export function ProposalCard({
 
   return (
     <Link
-      href={`/proposals/${index}`}
+      href={`/proposals/${index}?network=${chain.id}`}
       className={cn(
         "block rounded-2xl border border-border bg-card p-5 transition-colors duration-200",
         "hover:border-muted-foreground/40",
@@ -88,7 +90,7 @@ export function ProposalCard({
 
       <h3
         className={cn(
-          "text-base font-semibold leading-snug mb-3 line-clamp-2",
+          "text-base font-semibold leading-snug mb-3 line-clamp-2 [overflow-wrap:anywhere]",
           isWithdrawn
             ? "text-muted-foreground line-through decoration-destructive/60 decoration-1"
             : "text-foreground",

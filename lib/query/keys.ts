@@ -1,6 +1,7 @@
 /**
- * Query key factory. Every key in the app comes from here so we can
- * invalidate by prefix without typos.
+ * Query key factory for the shared chain queries, so they can be
+ * invalidated by prefix without typos. Some feature hooks keep their own
+ * inline keys.
  *
  *   queryClient.invalidateQueries({ queryKey: queryKeys.referenda.all('enjin-relay') })
  */

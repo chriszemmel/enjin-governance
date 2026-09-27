@@ -9,6 +9,11 @@ import {
   FileJson,
 } from "lucide-react"
 import { CallCard } from "@/components/create/call-card"
+import { VoterPreview } from "@/components/create/voter-preview"
+import {
+  PROPOSAL_SCHEMA,
+  PROPOSAL_SCHEMA_VERSION,
+} from "@/lib/governance/proposal-metadata"
 import type { UploadedAttachment } from "@/components/create/attachment-dropzone"
 import {
   ArtefactRow,
@@ -30,6 +35,7 @@ type StageProps = {
   track: string
   trackRaw: string
   chainName: string
+  network: string
   attachments: UploadedAttachment[]
   callHex: string
   preimageHash: string
@@ -37,6 +43,8 @@ type StageProps = {
   preimageAlreadyNoted: boolean
   metadataHash: string | null
   decisionDeposit: bigint | null
+  /** Human label for the chosen enactment, e.g. "After 100 blocks". */
+  enactmentText: string
   chainTicker: string
   chainDecimals: number
 }
@@ -106,7 +114,7 @@ export function Stage(p: StageProps) {
               label="JSON schema"
             >
               <p className="text-[11px] font-mono text-muted-foreground">
-                EGOV1 · enjin-governance-proposal v1.0.0
+                EGOV1 · {PROPOSAL_SCHEMA} v{PROPOSAL_SCHEMA_VERSION}
               </p>
               <p className="text-[11px] text-muted-foreground mt-1">
                 Open the URL above to inspect the stored proposal. The
@@ -117,6 +125,15 @@ export function Stage(p: StageProps) {
           </div>
         </details>
       </div>
+
+      <VoterPreview
+        title={p.title}
+        summary={p.summary}
+        body={p.body}
+        attachments={p.attachments}
+        network={p.network}
+        proposalId={p.draft.id}
+      />
 
       <div className="rounded-2xl bg-card border border-border p-5 space-y-4">
         <h2 className="text-sm font-semibold text-foreground">
@@ -151,12 +168,12 @@ export function Stage(p: StageProps) {
           title={`File the referendum on ${p.track}`}
           pallet="referenda"
           method="submit"
-          summary={`Opens voting on the ${p.track} track. Enacts the moment it's approved.`}
+          summary={`Opens voting on the ${p.track} track. Enactment: ${p.enactmentText}.`}
           details={[
             { label: "Origin", value: `Origins.${p.trackRaw}` },
             { label: "Lookup hash", value: p.preimageHash },
             { label: "Lookup len", value: String(p.preimageLen) },
-            { label: "Enactment", value: "After 0 blocks" },
+            { label: "Enactment", value: p.enactmentText },
           ]}
         />
         <CallCard

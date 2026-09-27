@@ -7,8 +7,8 @@
  * the chain via `referenda.metadataOf` or, for older referenda, by
  * decoding `system.remark` call args for the EGOV1 prefix).
  *
- * Cached on the CDN for 60s; ongoing referenda may have edits to the
- * metadata row (status flips, redirect file write).
+ * Not cached (`private, no-cache`): edits, withdrawals and moderation
+ * should show on the next refetch.
  */
 
 import { NextResponse, type NextRequest } from "next/server"

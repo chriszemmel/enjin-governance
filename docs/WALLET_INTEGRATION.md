@@ -1,139 +1,210 @@
 # Wallet integration
 
-Two signing paths, behind one `Connector` interface:
+The app supports six wallets over two transports, behind one `Connector`
+interface:
 
-- **WalletConnect v2** - Enjin Wallet (mobile-first) and any WC-compatible
-  Polkadot wallet (Nova, Talisman mobile, …). Desktop = QR, mobile = deep link.
-- **Browser extension** - Polkadot.js, Talisman, SubWallet, PolkaGate. All four
-  inject through the same `@polkadot/extension-dapp` interface, so one
-  connector handles all of them - only the detection logic and install URLs
-  differ per extension.
+- **WalletConnect v2** - Enjin Wallet and any WalletConnect-compatible
+  Polkadot wallet (Nova, Talisman Mobile, SubWallet Mobile, ...). The user
+  scans a QR code; on a phone, Enjin Wallet can also be opened with a deep
+  link.
+- **Browser extensions** - Polkadot.js, Talisman, SubWallet and PolkaGate.
+  All four inject through `@polkadot/extension-dapp`, so one connector
+  factory drives them. Only the injection key and install link differ.
 
-A single modal lists all supported wallets and shows
-install / not-installed / connected state per row, so the user can see
-what's available and what they'd need to install.
+The connect modal lists every wallet. A wallet that isn't available is
+greyed out and, when it has one, links to its install page.
+
+## Where the code lives
+
+| File | Role |
+|---|---|
+| `lib/wallet/connectors/types.ts` | `Connector` interface and session types |
+| `lib/wallet/connectors/walletconnect.ts` | The two WalletConnect connectors and their signer |
+| `lib/wallet/connectors/extension.ts` | The four extension connectors |
+| `lib/wallet/connector-registry.ts` | `CONNECTOR_REGISTRY` (order, names, icons, install links) and `walletDisplayFor` |
+| `lib/wallet/store.ts` | Zustand store for the session and active address, and `restoreWallet` |
+| `lib/wallet/use-wallet.ts` | `useWallet`, `useWalletActions`, `useDisplayAddress` |
+| `lib/wallet/restore-mounter.tsx` | Restores the session when the app loads |
+| `lib/wallet/deep-link.ts` | Enjin Wallet deep links and mobile detection |
+| `lib/wallet/use-sign-flow.ts` | State and deep link for the sign-request modal |
+| `lib/wallet/use-ensure-signed-in.ts` | Signs in before a write that needs a session |
+| `components/wallet/wallet-modal.tsx` | Loads the connect dialog when the page is idle or on first open |
+| `components/wallet/wallet-dialog.tsx` | Connect dialog, QR view, account picker and switcher |
+| `components/wallet/sign-request-modal.tsx` | Status modal for WalletConnect signatures |
+| `components/wallet/branded-qr.tsx` | QR code with the wallet's logo in the middle |
 
 ## Connector interface
 
 ```ts
-// lib/wallet/connectors/types.ts
+// lib/wallet/connectors/types.ts (condensed)
 export interface Connector {
-  id: ConnectorId                                    // "walletconnect" | "polkadot-js" | ...
-  name: string                                       // "Enjin Wallet" | "Polkadot.js" | ...
-  icon: string                                       // path under public/brand/wallets/
-  installUrl: string                                 // store / extension URL
-  detect: () => Promise<"installed" | "not-installed" | "n/a">
-  connect: () => Promise<ConnectedSession>
-  disconnect: (session: ConnectedSession) => Promise<void>
-  getSigner: (session: ConnectedSession, address: string) => Promise<Signer>
+  id: ConnectorId
+  detect(): Promise<"installed" | "not-installed" | "n/a">
+  connect(options?: { onUri?: (uri: string) => void }): Promise<ConnectedSession>
+  disconnect(session: ConnectedSession): Promise<void>
+  getSigner(session: ConnectedSession, address: string): Promise<Signer>
+  restore(): Promise<ConnectedSession | null>
+}
+
+export type ConnectedSession = {
+  connectorId: ConnectorId
+  accounts: { address: string; name?: string; source: ConnectorId }[]
+  meta: Record<string, unknown> // WalletConnect: topic, chainId, approvedChains, peer*; extension: source
 }
 ```
 
-The wallet modal renders the registry and routes the user's choice to
-`connector.connect()`. The `useExtrinsic` hook is connector-agnostic - it
-calls `activeConnector.getSigner(session, address)` and passes the result to
-`tx.signAndSend(address, { signer }, cb)`.
+`ConnectorId` is one of `enjin-wallet`, `walletconnect`, `polkadot-js`,
+`talisman`, `subwallet-js` or `polkagate`. Display data (name, icon,
+install link, description) lives in the registry, not on the connector.
+Nothing opens the wallet app on its own: the sign-request modal's link,
+tapped by the user, does that.
 
-## Registry (`lib/wallet/connector-registry.ts`)
+Components connect and disconnect through `useWalletActions()`, which
+also updates the store. `useExtrinsic` and `useSignIn` ask the active
+session's connector for a `Signer`. The connect modal calls each
+connector's `detect()` to show which wallets are available.
 
-| Connector | Channel | Detection | Install URL |
-|---|---|---|---|
-| `walletconnect` | WC v2 | always installed (just opens QR / deep link) | - |
-| `polkadot-js` | `window.injectedWeb3["polkadot-js"]` | check global | https://polkadot.js.org/extension/ |
-| `talisman` | `window.injectedWeb3["talisman"]` | check global | https://talisman.xyz/download |
-| `subwallet-js` | `window.injectedWeb3["subwallet-js"]` | check global | https://subwallet.app/download.html |
-| `polkagate` | `window.injectedWeb3["polkagate"]` | check global | https://polkagate.xyz/ |
+## Registry
 
-WalletConnect is always present; the modal labels it as "WalletConnect" with
-a sub-label for Enjin Wallet specifically (the default partner) and includes
-a separate "Enjin Wallet" pseudo-entry that opens the same WC flow but with
-metadata pre-targeting Enjin's app.
+`CONNECTOR_REGISTRY` in `lib/wallet/connector-registry.ts`, in the order
+the modal shows them:
 
-## Browser extension flow
+| Id | Name | Transport | Shown as installed when | Install link |
+|---|---|---|---|---|
+| `enjin-wallet` | Enjin Wallet | WalletConnect | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set | <https://enjin.io/products/wallet> |
+| `walletconnect` | WalletConnect | WalletConnect | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set | - |
+| `polkadot-js` | Polkadot.js | `window.injectedWeb3["polkadot-js"]` | the extension has injected | <https://polkadot.js.org/extension/> |
+| `talisman` | Talisman | `window.injectedWeb3["talisman"]` | the extension has injected | <https://talisman.xyz/download> |
+| `subwallet-js` | SubWallet | `window.injectedWeb3["subwallet-js"]` | the extension has injected | <https://subwallet.app/download.html> |
+| `polkagate` | PolkaGate | `window.injectedWeb3["polkagate"]` | the extension has injected | <https://polkagate.xyz/> |
 
-```
-1. User clicks "Polkadot.js" → modal calls connector.connect()
-2. lib/wallet/connectors/extension.ts:
-     const { web3Enable, web3Accounts, web3FromSource } =
-       await import("@polkadot/extension-dapp")
-     const extensions = await web3Enable("Enjin Governance")
-     if (extensions.length === 0) throw new Error("no extension authorised the connection")
-     const accounts = await web3Accounts()
-     // Filter to the chosen extension by source: accounts.filter(a => a.meta.source === "polkadot-js")
-3. Modal shows account picker if more than one
-4. On vote/submit:
-     const { signer } = await web3FromSource("polkadot-js")
-     tx.signAndSend(address, { signer }, cb)
-```
+The two WalletConnect entries are "featured" and appear above the
+extensions. They share one `SignClient` and the same flow. They differ in:
 
-`@polkadot/extension-dapp` is a thin wrapper around `window.injectedWeb3`.
-The same code works for Talisman (`web3FromSource("talisman")`),
-SubWallet (`"subwallet-js"`), and PolkaGate (`"polkagate"`).
+- **QR logo** - the Enjin mark for Enjin Wallet, the WalletConnect logo for
+  the generic entry.
+- **Mobile button** - only Enjin Wallet offers "Open in Enjin Wallet" next
+  to the QR. The generic entry offers "Download QR" instead.
+- **Name in the sign-request modal** - see
+  [Wallet name and icon](#wallet-name-and-icon).
 
-## WalletConnect flow: desktop QR
+## Connecting
 
-```
-1. User clicks "Enjin Wallet" or "WalletConnect" → wallet-modal.tsx opens
-2. lib/wallet/connectors/walletconnect.ts calls signClient.connect({
-     optionalNamespaces: {
-       polkadot: { methods: ["polkadot_signTransaction", "polkadot_signMessage"],
-                   chains:  [<enjin-relay CAIP-2>],
-                   events:  ["chainChanged", "accountsChanged"] }
-     }
-   })
-3. WC returns { uri, approval }
-4. We render the URI as a QR code
-5. User scans with Enjin Wallet → approves
-6. await approval() resolves with the session
-7. We extract accounts from session.namespaces.polkadot.accounts
-   (each is "polkadot:<chain>:<ss58>")
-8. Session topic + accounts saved to lib/wallet/store.ts + localStorage
+### Browser extensions
+
+```text
+1. The modal runs detect(): it polls window.injectedWeb3[source] up to
+   4 times, 150 ms apart, because some extensions inject late.
+2. The user picks the extension. connect() (lib/wallet/connectors/extension.ts):
+     const { web3Enable, web3Accounts } = await import("@polkadot/extension-dapp")
+     const enabled = await web3Enable("Enjin Governance")   // the extension may prompt
+     if (enabled.length === 0) throw new Error("No extension authorised the connection. …")
+     const accounts = await web3Accounts({ extensions: [source] })
+     if (accounts.length === 0) throw new Error("No accounts found in <id>. …")
+3. With more than one account, the modal shows the account picker.
 ```
 
-## WalletConnect flow: mobile deep link
+`disconnect()` only drops the local session. Extensions have no "forget
+this site" API; the user revokes access in the extension.
 
-Same as desktop, except step 4 is:
+### WalletConnect
 
+```text
+1. getSignClient() initialises the SignClient once per page with the
+   project id, the relay URL and the app metadata (APP_NAME, APP_DESCRIPTION,
+   NEXT_PUBLIC_APP_URL and its /favicon.svg).
+2. connect() (lib/wallet/connectors/walletconnect.ts):
+     signClient.connect({
+       optionalNamespaces: {
+         polkadot: {
+           methods: ["polkadot_signTransaction", "polkadot_signMessage"],
+           chains:  [<active chain's CAIP-2>],
+           events:  ["chainChanged", "accountsChanged"],
+         },
+       },
+     })
+3. The pairing URI goes to the modal through onUri, which renders it as a
+   QR code. On a phone, the Enjin Wallet entry also shows a button that
+   opens enjinwallet://wc?uri=<encoded uri> (buildEnjinWalletDeepLink).
+4. The user approves in the wallet. await approval() resolves with the session.
+5. Accounts come from session.namespaces.polkadot.accounts
+   ("polkadot:<genesis>:<address>"). Names come from sessionProperties,
+   peer metadata or an extra segment of the account string, when the
+   wallet provides one.
+6. session.meta keeps the topic, the chain, the approved chains, and the
+   peer's redirect link, name and icon.
+7. With more than one account, the modal shows the account picker.
 ```
-4. We detect mobile (User-Agent match) and instead of QR, render a button
-   that opens enjinwallet://wc?uri=<encoded uri>
-   The user is dropped into Enjin Wallet, approves, and is returned to
-   the browser by the OS scheme handler.
-```
 
-## Setup
+Details that matter:
 
-1. Create a project at <https://cloud.reown.com> (formerly WalletConnect Cloud - free).
-2. Add the project ID to `.env.local`:
-   ```env
-   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID="32-char-hex"
-   ```
-3. (Production only) Whitelist your domain in the Reown dashboard so the
-   project metadata loads.
+- `optionalNamespaces` is used instead of `requiredNamespaces`, so a wallet
+  doesn't refuse a session that doesn't match exactly.
+- SDK init and `signClient.connect` each have a 15 s limit. On failure the
+  connector deletes the SDK's `wc@2:*` keys from localStorage and drops the
+  cached client, so the retry starts clean. This recovers from a stale
+  store, which has been seen to stop iOS Safari from ever producing a URI.
+  `approval()` has no limit: the user takes as long as they need.
+- When the tab becomes visible again, the client pings every session. iOS
+  Safari suspends the relay socket while the user is in the wallet, and the
+  ping brings it back at once, so a finished signature arrives without a
+  delay.
+
+### Picking and switching accounts
+
+When a wallet shares more than one account, the modal always asks which
+one to use. It never picks the first one silently. The connected-wallet
+view also lets the user switch accounts later.
+
+A sign-in session belongs to one public key. When the user picks or
+switches to an account with a different key, or disconnects, the app
+signs out (`POST /api/auth/logout`). Otherwise `me` and the active address
+would disagree.
 
 ## Session restore
 
-On every page load:
+- The store persists only `connectorId` and `activeAddress`, in
+  localStorage under `enjin-governance:wallet`. The live session comes from
+  the connector.
+- `WalletRestoreMounter` initialises the crypto WASM and calls
+  `restoreWallet()` once per page load. That calls the persisted
+  connector's `restore()`.
+- **WalletConnect** - the SDK keeps its sessions in its own `wc@2:` keys.
+  `restore()` takes the most recent session from
+  `signClient.session.getAll()`. It doesn't check the chain; `getSigner`
+  does that before each signature.
+- **Extension** - `restore()` checks the extension is present and calls
+  `web3Enable` again. Extensions remember their approval per origin, so
+  there is no prompt.
+- When `restore()` returns `null` or throws, the store resets to
+  disconnected. Otherwise the persisted active address is kept while the
+  session still holds it (matched by public key), and the session's first
+  account is used when none was saved or the saved one is gone
+  (`pickActiveAddress` in `lib/wallet/store.ts`). If that fallback is a
+  different account from the signed-in one, `WalletRestoreMounter` signs
+  out, as an account switch in the modal would.
 
-- **WalletConnect**: `lib/wallet/connectors/walletconnect.ts` checks
-  `signClient.session.getAll()`. If a session exists with a matching chain,
-  we hydrate the store. `session_update` refreshes accounts;
-  `session_delete` clears it.
-- **Extension**: `lib/wallet/connectors/extension.ts` re-calls `web3Enable`
-  on load. Extensions remember authorizations per-origin, so this resolves
-  without a prompt if the user previously approved.
-- The active connector ID is persisted to `localStorage` so we know which
-  connector to restore from.
+The user sees the connect modal again only after disconnecting, or when
+the wallet no longer has the session.
 
-A user only sees the connect modal on first visit.
+## Signing transactions
 
-## Signer adapters
+`useExtrinsic` (`lib/query/hooks/use-tx.ts`) re-encodes the active address
+for the active chain, asks the connector for a `Signer`, and signs with:
 
-`@polkadot/api`'s `signAndSend(address, { signer }, cb)` expects a `Signer`
-object implementing `signPayload(payload: SignerPayloadJSON)`. Each
-connector exposes a `getSigner(session, address)` that returns one.
+```ts
+const signed = await tx.signAsync(signingAddress, { signer, era: MORTAL_ERA_BLOCKS }) // 256
+```
 
-**Extension** wallets ship a ready-made signer via `web3FromSource`:
+It then broadcasts with `signed.send()`. The mortal era of 256 blocks
+(about 25 minutes) matters for WalletConnect: Enjin Wallet refuses to sign
+an immortal payload, and the default era can run out during a slow phone
+round trip. The whole pipeline is described in
+[`GOVERNANCE_FLOW.md`](GOVERNANCE_FLOW.md#writing-to-the-chain-useextrinsic).
+
+### Extension signer
+
+Extensions provide a ready-made `Signer`:
 
 ```ts
 // lib/wallet/connectors/extension.ts
@@ -144,105 +215,203 @@ async getSigner(_session, address) {
 }
 ```
 
-**WalletConnect** has no native signer object - we wrap `signClient.request`
-in our own adapter:
+### WalletConnect signer
+
+WalletConnect has no signer object. `buildSigner(signClient, topic,
+caipChainId)` wraps `signClient.request` in one:
 
 ```ts
 // lib/wallet/connectors/walletconnect.ts
-function buildSigner(signClient, topic, caipChainId): Signer {
-  let id = 0
-  return {
-    signPayload: async (payload) => {
-      const result = await signClient.request<{ signature: HexString }>({
-        topic,
-        chainId,
-        request: {
-          method: "polkadot_signTransaction",
-          params: { address: payload.address, transactionPayload: payload },
-        },
-      })
-      return { id: ++id, signature: result.signature }
+signPayload: async (payload) => {
+  suppressInternalRedirect()
+  const result = await signClient.request<{ signature: `0x${string}` }>({
+    topic,
+    chainId: caipChainId,
+    request: {
+      method: "polkadot_signTransaction",
+      params: { address: payload.address, transactionPayload: toRequestPayload(payload) },
     },
-  }
-}
+  })
+  return { id: ++id, signature: result.signature }
+},
 ```
 
-`id` is a client-side counter, used by `@polkadot/api` to match the response
-to the request when there are multiple in flight.
+- **`toRequestPayload`** removes fields that `polkadot_signTransaction`
+  doesn't define: `assetId` and `metadataHash` when they are `null`, and
+  the api-internal `withSignedTransaction` flag. Enjin Wallet rejects the
+  whole request as "Transaction invalid" when they are present. The signed
+  bytes don't change, because the app signs with `mode` 0 and no fee asset.
+- **`signRaw`** sends `polkadot_signMessage` with `{ address, message }`.
+  polkadot-js passes the data as hex; the signer decodes it to the UTF-8
+  string first. Otherwise the wallet signs the hex characters and sign-in
+  fails with "Signature did not match the address".
+- **Deep links** - both methods first remove `WALLETCONNECT_DEEPLINK_CHOICE`
+  from localStorage, which turns off the SDK's own redirect to the wallet.
+  That redirect runs too late for iOS Safari and was silently ignored. The
+  sign-request modal's button is the only deep link.
+- **`id`** is a client-side counter that `@polkadot/api` uses to match
+  responses to requests.
 
-## Chain ID format (CAIP-2)
+Before building the signer, `getSigner` checks that the session approved
+the active chain. If it didn't, it throws "Your wallet hasn't approved
+<chain> in this session …" instead of sending a request the wallet would
+ignore.
 
-WalletConnect identifies Polkadot-SDK chains by
-`polkadot:<first-32-hex-chars-of-genesis-hash>`. For Enjin Relay:
+## Sign-request modal
 
-```
-genesis hash: 0xd8761d3c88f26dc12875c00d3165f7d6...
-CAIP-2:       polkadot:d8761d3c88f26dc12875c00d3165f7d6
-```
+`SignRequestModal` (`components/wallet/sign-request-modal.tsx`) is the one
+status surface for every WalletConnect signature: votes and vote removals,
+deposits and refunds, unlocks, delegation, treasury top-ups, proposal
+batches and sign-in. The user is on their phone, so the browser tab shows
+where things stand.
 
-Constants live in `lib/chain/chains.ts`.
+- `useSignFlow()` holds its open state and deep link. `open()` does nothing
+  for extension sessions: the extension shows its own popup, and callers
+  report progress with toasts.
+- The title reads "Sign with <wallet>", using `walletDisplayFor`.
+- It follows `useExtrinsic`'s status. While waiting for the signature it
+  shows a spinner and, on a phone, an "Open in <wallet>" button. It then
+  shows broadcast and in-block progress, and ends with a check mark and a
+  "View on Subscan" link, or with the error and a Retry button.
+- `successAt` sets when the check mark appears. The default, `finalized`,
+  suits proposal submission, which waits for finality. Quick actions such
+  as votes pass `in-block` and show a "Finalising on chain…" note until
+  finality. An `in-block` modal closes itself after 2 s unless
+  `autoDismiss` is false.
+- The "Open in <wallet>" button is a plain link the user taps, because iOS
+  Safari only follows a deep link from a live tap. Its URL comes from
+  `buildSignRequestDeepLink`: the wallet's own redirect link from
+  `peer.metadata.redirect.native` (or `enjinwallet://`), plus
+  `/wc?sessionTopic=<topic>`. The request itself arrives over the relay.
 
-## What we DO use
+## Signing in
 
-- `optionalNamespaces` over `requiredNamespaces` - wallet won't refuse a
-  connection if it doesn't perfectly match.
-- `polkadot_signTransaction` for extrinsics.
-- `polkadot_signMessage` reserved for off-chain signing (e.g. proving
-  ownership of an address to the metadata API). Currently unused.
+Sign-in proves control of an address with a signed message. There is no
+transaction and no fee. It runs through the same signer:
 
-## What we do NOT use
+1. **Nonce.** Once a wallet is connected, `useNoncePrefetch`
+   (`lib/query/hooks/use-session.ts`) requests a nonce with
+   `POST /api/auth/nonce { address }`, using the address encoded for the
+   active chain. It refreshes every 5 minutes and when the tab regains
+   focus. The server stores the nonce and the exact message in
+   `auth_nonces` for 30 minutes. Fetching it in advance keeps network
+   waits out of the path from the tap to the signature.
+2. **Signature.** `useSignIn` calls
+   `signer.signRaw({ address, data: stringToHex(message), type: "bytes" })`.
+   The message says it does not authorise any on-chain transaction.
+3. **Verify.** `POST /api/auth/verify { address, nonce, signature }`. The
+   server consumes the nonce in one step, checks the signature against the
+   stored message (`verifySignature` in `lib/auth/siwe.ts` accepts the
+   `<Bytes>`-wrapped, plain and hex forms), and sets the httpOnly cookie
+   `enjin-governance:session` for 30 days.
 
-- `polkadot_signSpecVersion` - not standardized; Enjin Wallet handles this internally.
-- Multi-chain sessions across chains we don't currently support. The
-  connect call only advertises Enjin Relay (and Canary Relay if the user's
-  on a Canary build).
+Writes that need a session (staging a draft, uploading media, linking a
+proposal, draft actions) call `ensureSignedIn()` from `useEnsureSignedIn`
+first. It re-checks `/api/auth/me` before asking for a signature, opens
+the sign-request modal for WalletConnect wallets, and returns `false` when
+the user declines. After a 401 from the server, callers pass
+`{ fresh: true }` to skip the cached answer. The server side is described
+in [`ARCHITECTURE.md`](ARCHITECTURE.md#data-flow-signing-in-siwe-style).
+
+## Networks and addresses
+
+### One network per session
+
+The WalletConnect connector requests only the active chain's CAIP-2 at
+connect time. Switching networks with a wallet connected goes through the
+network switcher's confirm dialog, which signs out and disconnects, so the
+user pairs again on the new chain. This keeps the account list free of
+duplicate `en…` and `cn…` entries for the same key, and keeps each
+network's handles separate.
+
+A proposal link with `?network=` switches the chain without that dialog.
+For a WalletConnect session, `getSigner`'s approved-chain check then
+refuses to sign until the wallet is paired on that chain.
+
+### CAIP-2 chain ids
+
+WalletConnect identifies Polkadot SDK chains as
+`polkadot:<first 32 hex characters of the genesis hash>`. The values are
+the `caip2` field in `lib/chain/chains.ts`:
+
+| Network | CAIP-2 |
+|---|---|
+| Enjin Relaychain | `polkadot:d8761d3c88f26dc12875c00d3165f7d6` |
+| Canary Relaychain | `polkadot:735d8773c63e74ff8490fee5751ac07e` |
+
+### Address encoding
+
+Wallets can return an address in any SS58 format. The app re-encodes it
+for the active chain with `encodeForChain(address, chainId)`
+(`lib/chain/ss58.ts`): for display (`useDisplayAddress`), for signing and
+for sign-in. Addresses are compared by public key with `samePublicKey`,
+never as strings. Don't display raw `session.namespaces.polkadot.accounts`
+entries.
+
+### Wallet name and icon
+
+`walletDisplayFor(session)` returns the wallet name and icon for the
+sign-request modal. Dedicated connectors (Enjin Wallet, Polkadot.js, ...)
+use the bundled brand. Only the generic `walletconnect` connector uses the
+paired wallet's `peer.metadata.name` and first icon, so a Nova pairing
+reads "Sign with Nova Wallet". An Enjin Wallet pairing stays Enjin-branded
+whatever its peer metadata says; it has advertised an Ethereum icon.
+
+## Setup
+
+1. Create a project at <https://cloud.reown.com> (formerly WalletConnect
+   Cloud). It is free.
+2. Add the project id to `.env.local`:
+   ```env
+   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID="32-char-hex"
+   ```
+   `NEXT_PUBLIC_WALLETCONNECT_RELAY_URL` is optional and defaults to
+   `wss://relay.walletconnect.com`. `NEXT_PUBLIC_APP_URL` is sent to the
+   wallet as the app's URL and icon location.
+3. In production, add your domain under **Allowed Domains** in the Reown
+   dashboard.
+
+Without a project id, extension wallets still work, and both WalletConnect
+entries show as not installed. See [`ENVIRONMENT.md`](ENVIRONMENT.md) and
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Troubleshooting
 
-- **"Project not found"** (WalletConnect) - your
-  `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is missing or wrong. Check
-  `.env.local`. The browser console will show a more specific error.
-- **QR scans but wallet shows "unsupported method"** - your wallet doesn't
-  support `polkadot_signTransaction`. Use Enjin Wallet (or any WC-Polkadot
-  wallet).
-- **Connection succeeds but signing pop-up never appears** - usually a
-  stale session topic. Open the wallet, manually disconnect Enjin Governance,
-  retry from the browser.
-- **Extension click does nothing** - the extension is installed but didn't
-  inject into `window.injectedWeb3` before we checked. `lib/wallet/connectors/extension.ts`
-  retries detection on a short interval before giving up; if it still fails,
-  reload the page (some extensions only inject on full page load).
-- **"No accounts" after extension connect** - the user hasn't created or
-  imported any Polkadot-format account in their extension yet. Tell them to
-  do that and reconnect.
-- **Address mismatch (chain prefix wrong)** - `lib/chain/ss58.ts`
-  `encodeForChain(address, chainId)` re-encodes. Don't display raw
-  `session.namespaces.polkadot.accounts` entries directly.
-
-## One network per session
-
-The WC connector requests only the active chain's CAIP-2 at connect
-time - not the full enabled-chains list. Switching networks goes
-through the network switcher's confirm modal which disconnects the
-wallet + signs out, so the user re-pairs against the new chain. This
-keeps the accounts list clean (no doubled-up en…/cn… entries for the
-same key) and keeps the per-network handle namespace honest.
-
-`walletDisplayFor(session)` (in `connector-registry.ts`) resolves the
-user-facing wallet name + icon for the sign-request modal. Dedicated
-connectors (Enjin Wallet, Polkadot.js, …) trust the bundled brand;
-only the generic `walletconnect` connector falls back to
-`peer.metadata.name` / `.icons[0]` from the paired wallet, so a Nova
-pairing reads as "Sign with Nova Wallet" with Nova's icon while an
-Enjin Wallet pairing stays Enjin-branded regardless of what peer
-metadata the wallet advertises (it sometimes ships an Ethereum
-diamond by default).
-
-Switching the active address calls `signOut` first: the SIWE session
-is bound to a specific address, so a silent switch would desync `me`
-from `wallet.activeAddress`. Disconnect does the same.
+- **"WalletConnect is not configured"** - `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
+  is not set. Set it and restart or redeploy.
+- **"Couldn't reach WalletConnect" or "Couldn't start the WalletConnect
+  session"** - the relay didn't answer within 15 s, or the stored WC state
+  was stale. The app has already cleared that state, so retrying starts
+  fresh. If it keeps failing, check the project id and the Allowed Domains
+  list; the browser console shows the relay's error.
+- **The QR scans but the wallet reports an unsupported method** - the
+  wallet doesn't support `polkadot_signTransaction` or
+  `polkadot_signMessage`. Use Enjin Wallet or another WalletConnect
+  Polkadot wallet.
+- **"Your wallet hasn't approved <chain> in this session"** - the session
+  was paired on another network. Disconnect and connect again.
+- **The sign prompt never appears on the phone** - tap "Open in <wallet>"
+  in the sign-request modal. If nothing arrives, the session topic is
+  probably stale: disconnect Enjin Governance in the wallet and in the
+  app, then connect again.
+- **"Signature did not match the address" at sign-in** - the wallet signed
+  different bytes than the server issued. The server logs a
+  `[auth/verify]` warning with the message hash and lengths to compare.
+- **"Nonce is unknown or expired"** - the nonce is single-use and valid for
+  30 minutes. Sign in again.
+- **An extension shows as not installed, or clicking it does nothing** -
+  it injected after detection gave up (4 tries, 150 ms apart). Reload the
+  page; some extensions only inject on a full load.
+- **"No extension authorised the connection"** - the extension's approval
+  prompt was dismissed or didn't show. Reload and approve.
+- **"No accounts found in <wallet>"** - the extension has no Polkadot
+  account yet. Create or import one and connect again.
+- **"Lost contact with the chain after broadcasting your transaction"** -
+  no block notification arrived within 90 s. The transaction may have
+  gone through; check the explorer before retrying.
 
 ## See also
 
-- [`GOVERNANCE_FLOW.md`](GOVERNANCE_FLOW.md) - what we sign
-- [`CHAIN_FLOW.md`](CHAIN_FLOW.md) - chain ID and CAIP-2
+- [`GOVERNANCE_FLOW.md`](GOVERNANCE_FLOW.md) - what the app signs
+- [`CHAIN_FLOW.md`](CHAIN_FLOW.md) - RPC connection and chain config
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) - layers and the sign-in data flow

@@ -262,6 +262,8 @@ export default function ProposalsPage() {
                 </div>
               ) : (
                 <>
+                  {/* The cards' titles are h3s; this names the list above them. */}
+                  <h2 className="sr-only">Referenda</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {pageItems.map((ref) => (
                       <ProposalCard
