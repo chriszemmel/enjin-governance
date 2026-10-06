@@ -48,7 +48,7 @@ import { useReferendumVotes } from "@/lib/query/hooks/use-referendum-votes"
 import { useMe } from "@/lib/query/hooks/use-session"
 import { useSubscanReferendum } from "@/lib/query/hooks/use-subscan-referendum"
 import { useSubscanPreimage } from "@/lib/query/hooks/use-subscan-preimage"
-import { usePreimage } from "@/lib/query/hooks/use-preimage"
+import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { encodeForChain } from "@/lib/chain/ss58"
 import { StatusChip } from "@/components/governance/status-chip"
@@ -163,6 +163,21 @@ function ProposalDetailPageInner() {
     return null
   })()
   const preimageQuery = usePreimage(earlyProposalRef ?? undefined)
+  // Small calls (≤128 bytes) ride inline in the referendum instead of as a
+  // preimage - e.g. system.authorizeUpgrade, referenda.cancel. Decode those
+  // straight from the referendum info.
+  const inlineBytes: Uint8Array | null = (() => {
+    const proposal =
+      current?.status.type === "Ongoing"
+        ? current.status.proposal
+        : historyQuery.data?.status.type === "Ongoing"
+          ? historyQuery.data.status.proposal
+          : null
+    return proposal && "type" in proposal && proposal.type === "Inline"
+      ? proposal.bytes
+      : null
+  })()
+  const inlineCallQuery = useInlineCall(inlineBytes)
   // Subscan keeps the decoded preimage long after the chain prunes the
   // bytes from `preimage.preimageFor`. Run this in parallel with the
   // chain query so we have a fallback for old referenda.
@@ -288,7 +303,9 @@ function ProposalDetailPageInner() {
   const onChainIntent: ProposalIntent =
     preimageQuery.data?.section
       ? intentFromPreimage(preimageQuery.data, chain)
-      : null
+      : inlineCallQuery.data?.section
+        ? intentFromPreimage(inlineCallQuery.data, chain)
+        : null
   const subscanIntent: ProposalIntent = intentFromSubscanCall(decodedCall, chain)
   const intent: ProposalIntent = onChainIntent ?? subscanIntent
 
@@ -558,9 +575,11 @@ function ProposalDetailPageInner() {
               </div>
             </div>
 
-            {(decodedCall || proposalRef) && (
+            {(inlineBytes || decodedCall || proposalRef) && (
               <div className="pt-5 border-t border-border">
-                {decodedCall ? (
+                {inlineBytes ? (
+                  <PreimageDisplay inlineBytes={inlineBytes} />
+                ) : decodedCall ? (
                   <SubscanCallDisplay
                     call={decodedCall}
                     hash={
@@ -587,7 +606,7 @@ function ProposalDetailPageInner() {
             )}
           </div>
 
-          {!decodedCall && !proposalRef && !isOngoing && (
+          {!inlineBytes && !decodedCall && !proposalRef && !isOngoing && (
             <div className="rounded-2xl bg-card border border-border p-6 space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Preimage</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">

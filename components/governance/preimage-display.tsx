@@ -3,26 +3,33 @@
 import { ChevronDown, ChevronRight, ExternalLink, FileCode } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { usePreimage } from "@/lib/query/hooks/use-preimage"
+import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { PreimageInlineSkeleton } from "./skeletons"
 import { subscanPreimageUrl } from "@/lib/chain/chains"
 import type { PreimageRef } from "@/lib/governance/types"
 
-interface PreimageDisplayProps {
-  preimageRef: PreimageRef
+type PreimageDisplayProps = {
   className?: string
-}
+} & (
+  | { preimageRef: PreimageRef; inlineBytes?: never }
+  /** A call that rides inline in its referendum - decoded, never fetched. */
+  | { inlineBytes: Uint8Array; preimageRef?: never }
+)
 
 /**
  * Renders the decoded call inside a preimage: section.method + args.
  * Falls back to a Subscan deep link when the preimage has been unnoted
  * from chain state (typical for finalised referenda older than the
  * chain's preimage TTL, where the depositor has reclaimed the deposit).
+ * Inline proposals carry their call bytes in the referendum itself, so
+ * they always decode and never go missing.
  */
-export function PreimageDisplay({ preimageRef, className }: PreimageDisplayProps) {
+export function PreimageDisplay({ preimageRef, inlineBytes, className }: PreimageDisplayProps) {
   const chain = useActiveChain()
-  const preimageQuery = usePreimage(preimageRef)
+  const lookupQuery = usePreimage(preimageRef)
+  const inlineQuery = useInlineCall(inlineBytes)
+  const preimageQuery = inlineBytes ? inlineQuery : lookupQuery
   // Default to collapsed - the preimage block is rarely useful at a
   // glance, and the proposal narrative + tally are the headline.
   const [expanded, setExpanded] = useState(false)
@@ -30,7 +37,9 @@ export function PreimageDisplay({ preimageRef, className }: PreimageDisplayProps
   const data = preimageQuery.data
   const isMissing = preimageQuery.isSuccess && data?.bytes == null
   const hasCall = data && data.bytes != null && data.section && data.method
-  const preimageLink = subscanPreimageUrl(chain, preimageRef.hash)
+  const preimageLink = preimageRef ? subscanPreimageUrl(chain, preimageRef.hash) : null
+  const hash = data?.hash ?? preimageRef?.hash
+  const len = data?.len ?? preimageRef?.len ?? 0
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -42,7 +51,7 @@ export function PreimageDisplay({ preimageRef, className }: PreimageDisplayProps
       >
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <FileCode className="w-4 h-4 text-primary" />
-          Preimage
+          {inlineBytes ? "Call (inline)" : "Preimage"}
           {hasCall && (
             <span className="font-mono text-xs text-muted-foreground font-normal ml-1">
               {data.section}.{data.method}
@@ -95,21 +104,21 @@ export function PreimageDisplay({ preimageRef, className }: PreimageDisplayProps
               <span className="not-italic text-muted-foreground/70 mr-1.5 font-sans">
                 Hash
               </span>
-              {preimageRef.hash}
+              {hash}
             </p>
-            {preimageRef.len > 0 && (
+            {len > 0 && (
               <p>
                 <span className="not-italic text-muted-foreground/70 mr-1.5 font-sans">
                   Length
                 </span>
-                {preimageRef.len} bytes
+                {len} bytes
               </p>
             )}
           </div>
         </>
       )}
 
-      {expanded && isMissing && (
+      {expanded && isMissing && preimageLink && (
         <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-3 space-y-2.5">
           <p className="text-xs text-muted-foreground leading-relaxed">
             Call bytes are no longer on chain - the proposer reclaimed
