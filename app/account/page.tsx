@@ -496,7 +496,10 @@ function DraftListItem({
   const isOnChain = draft.status === "on_chain" && draft.referendum_index != null
   const isCancelled = draft.status === "cancelled"
   const isDraft = draft.status === "draft" || draft.status === "submitted"
-  const subtitle = `${draftStatusLabel(draft)} · ${new Date(draft.created_at).toLocaleDateString()}`
+  // Advanced-composer drafts don't store their call, so the treasury wizard
+  // can't resume them - they can only be deleted and re-filed.
+  const isResumable = isDraft && draft.has_spend
+  const subtitle = `${draftStatusLabel(draft)}${isDraft && !draft.has_spend ? " · advanced proposal" : ""} · ${new Date(draft.created_at).toLocaleDateString()}`
   return (
     <li className="flex items-center gap-3 p-3 rounded-lg bg-surface-1 border border-border">
       <div className="flex-1 min-w-0">
@@ -504,7 +507,7 @@ function DraftListItem({
         <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>
       </div>
 
-      {isDraft && (
+      {isResumable && (
         <>
           <Link
             href={`/create?from=${draft.id}`}

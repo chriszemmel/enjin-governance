@@ -4,8 +4,9 @@
  * A referendum enacts a single Call. Today the create wizard only ever builds
  * a treasury `spend_local`; this module builds the inner Call for the full set
  * of proposal types a DAO needs - treasury spends, referendum admin
- * (cancel/kill), call whitelisting, runtime upgrades, on-chain remarks - plus
- * a raw escape hatch for pasting any SCALE-encoded call.
+ * (cancel/kill), call whitelisting, runtime upgrades (authorized by hash, or
+ * set directly), on-chain remarks - plus a raw escape hatch for pasting any
+ * SCALE-encoded call.
  *
  * Each builder returns a `Call` (decoded `.method`), NOT a signed extrinsic.
  * The caller wraps it via preimage/inline + `referenda.submit` under the
@@ -29,6 +30,7 @@ export type ProposalCallSpec =
   | { kind: "cancelReferendum"; index: number }
   | { kind: "killReferendum"; index: number }
   | { kind: "whitelistCall"; callHash: `0x${string}` }
+  | { kind: "authorizeUpgrade"; codeHash: `0x${string}` }
   | { kind: "runtimeUpgrade"; codeHex: `0x${string}` }
   | { kind: "remark"; text: string }
   | { kind: "rawCall"; callHex: `0x${string}` }
@@ -72,6 +74,8 @@ export function buildProposalCall(api: ApiPromise, spec: ProposalCallSpec): Call
       return buildKillReferendumCall(api, spec.index)
     case "whitelistCall":
       return buildWhitelistCall(api, spec.callHash)
+    case "authorizeUpgrade":
+      return api.tx.system.authorizeUpgrade(spec.codeHash).method as Call
     case "runtimeUpgrade":
       return api.tx.system.setCode(spec.codeHex).method as Call
     case "remark":
@@ -114,9 +118,16 @@ export const PROPOSAL_KIND_META: Record<
     description: "Mark a call hash as whitelisted for the WhitelistedCaller track.",
     suggestedOrigin: null,
   },
+  authorizeUpgrade: {
+    label: "Authorize runtime upgrade",
+    description:
+      "Authorize new runtime code by its blake2-256 hash (system.authorizeUpgrade). Root track. Once enacted, anyone applies the matching wasm with system.applyAuthorizedUpgrade.",
+    suggestedOrigin: { System: "Root" },
+  },
   runtimeUpgrade: {
-    label: "Runtime upgrade",
-    description: "Set new runtime code (system.setCode). Root track.",
+    label: "Runtime upgrade (setCode)",
+    description:
+      "Set new runtime code directly (system.setCode). Root track. The whole wasm is noted as a preimage in the submission.",
     suggestedOrigin: { System: "Root" },
   },
   remark: {

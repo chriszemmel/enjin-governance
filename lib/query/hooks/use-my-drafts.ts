@@ -19,6 +19,8 @@ export type MyDraft = {
   tx_hash: string | null
   json_url: string
   created_at: string
+  /** False for advanced-composer drafts, which /create can't resume. */
+  has_spend: boolean
 }
 
 /**

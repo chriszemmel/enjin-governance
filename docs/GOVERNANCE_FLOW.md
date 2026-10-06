@@ -223,6 +223,41 @@ The DB tracks `edited_at` + `edit_count`. The detail page shows
 (warning tone). Spend amount, beneficiary, preimage, and proposer
 address are **not** editable - those are baked into the referendum.
 
+## Write flow: advanced proposals
+
+`/create/advanced` files any curated call (`lib/governance/proposal-calls.ts`)
+under an origin picked from a dropdown. `lib/governance/submit-proposal.ts`
+builds the batch:
+
+```
+utility.batchAll([
+  preimage.notePreimage(bytes),            // only if bytes > 128 (Lookup)
+  referenda.submit(origin, Inline(bytes) | Lookup{hash, len}, enactment),
+  preimage.notePreimage(envelope),         // only with details attached
+  referenda.setMetadata(index, blake2_256(envelope)),
+])
+```
+
+A lone `referenda.submit` (small call, no details) is sent unbatched. With
+details attached, the page signs in, stages the draft (`POST
+/api/proposals/draft`, no spend fields unless the call is a treasury spend),
+and confirms after finality - the same draft → `setMetadata` → confirm path
+as the treasury wizard, so the detail page shows the narrative. Drafts
+without a spend don't store their call, so the `/create` wizard can't
+resume them; the drafts lists only offer cancel / delete for them.
+
+**Runtime upgrades** use `system.authorizeUpgrade(code_hash)` (Root): a
+34-byte inline call, so no multi-MB preimage, deposit, or block-size limit
+on the referendum. The page hashes the `.wasm` locally (blake2-256 - hash
+the exact file you will apply, normally srtool's `compact.compressed.wasm`).
+Once enacted, anyone submits `system.applyAuthorizedUpgrade(code)`, which
+checks the hash and that the spec name is unchanged and the spec version
+increases, and is free when valid. `system.setCode` remains available.
+
+The detail page decodes inline proposals straight from `ReferendumInfoFor`
+(`useInlineCall`), so voters see e.g. `system.authorizeUpgrade(code_hash)`
+without a preimage lookup.
+
 ## Origin selection (`lib/governance/treasury.ts`)
 
 Tracks have a `maxDeciding` and an implicit "max amount" derived from their
