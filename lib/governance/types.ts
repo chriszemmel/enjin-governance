@@ -174,8 +174,8 @@ export type Preimage = {
 
 /**
  * A treasury-spending track with its maximum spend amount.
- * maxAmount=null marks an unbounded tier; the Enjin table is fully bounded
- * (BigSpender is capped, no Treasurer), so a null is not expected there.
+ * maxAmount=null marks an unbounded tier; the Enjin tables are fully bounded
+ * (the top tier, TreasuryAdmin, is capped), so a null is not expected there.
  */
 export type TreasuryTier = {
   origin: string

@@ -6,7 +6,7 @@ import {
   buildTreasuryProposal,
   previewPreimage,
 } from "@/lib/governance/submit-treasury-proposal"
-import { ENJIN_TREASURY_TIERS } from "@/lib/governance/treasury"
+import { ENJIN_SPEND_LIMITS } from "@/lib/governance/treasury"
 
 /**
  * buildTreasuryProposal composes [notePreimage, submit, notePreimage,
@@ -44,7 +44,7 @@ function fakeApi(sink: Recorded[]): ApiPromise {
   } as unknown as ApiPromise
 }
 
-const tier = ENJIN_TREASURY_TIERS[0]
+const tier = ENJIN_SPEND_LIMITS[0].tiers[0]
 
 const ENVELOPE = 'EGOV1:{"u":"https://x/p.json","h":"deadbeef"}'
 const ENVELOPE_BYTES = stringToU8a(ENVELOPE)

@@ -35,6 +35,7 @@ import {
 import { pickOriginForAmount } from "@/lib/governance/treasury"
 import { useApi } from "@/lib/query/hooks/use-api"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
+import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
 import { useExtrinsic } from "@/lib/query/hooks/use-tx"
 import { useWallet } from "@/lib/wallet/use-wallet"
 import { useSignFlow } from "@/lib/wallet/use-sign-flow"
@@ -93,6 +94,7 @@ const isHex = (s: string, exactBytes?: number) => {
 export default function AdvancedCreatePage() {
   const chain = useActiveChain()
   const apiQuery = useApi()
+  const treasuryTiers = useTreasuryTiers()
   const currentBlockQuery = useCurrentBlock()
   const { status: walletStatus, session } = useWallet()
   const isConnected = walletStatus === "connected"
@@ -165,18 +167,20 @@ export default function AdvancedCreatePage() {
   }, [kind, fields, chain])
 
   // Resolve the submission origin: treasury spends derive their tier from the
-  // amount; everything else uses the selected origin (defaulting to the kind's
-  // suggestion via the dropdown's initial index).
+  // amount and the connected runtime's spend limits; everything else uses the
+  // selected origin (defaulting to the kind's suggestion via the dropdown's
+  // initial index).
+  const tierTable = treasuryTiers.table
   const resolvedOrigin = useMemo<{ origin: unknown; label: string } | null>(() => {
     if (kind === "treasurySpend") {
-      if (spec?.kind !== "treasurySpend") return null
-      const tier = pickOriginForAmount(spec.amount)
+      if (spec?.kind !== "treasurySpend" || !tierTable) return null
+      const tier = pickOriginForAmount(spec.amount, tierTable.tiers)
       if (!tier) return null
       return { origin: { Origins: tier.origin }, label: tier.origin }
     }
     const picked = SUBMIT_ORIGINS[originIdx] ?? SUBMIT_ORIGINS[0]
     return { origin: picked.origin, label: picked.label }
-  }, [kind, spec, originIdx])
+  }, [kind, spec, originIdx, tierTable])
 
   const enactmentError = validateEnactment(enactment, {
     currentBlock: currentBlockQuery.data ?? null,
@@ -405,12 +409,19 @@ export default function AdvancedCreatePage() {
           {/* Origin */}
           <Section title="Submission origin (track)">
             {kind === "treasurySpend" ? (
-              <p className="text-xs text-muted-foreground">
-                Derived from the amount:{" "}
-                <span className="text-primary font-mono">
-                  {resolvedOrigin?.label ?? "-"}
-                </span>
-              </p>
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Derived from the amount:{" "}
+                  <span className="text-primary font-mono">
+                    {resolvedOrigin?.label ?? "-"}
+                  </span>
+                </p>
+                {treasuryTiers.notice && (
+                  <p className="text-[11px] text-amber-300 leading-relaxed mt-1">
+                    {treasuryTiers.notice}
+                  </p>
+                )}
+              </>
             ) : (
               <>
                 <select

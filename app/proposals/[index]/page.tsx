@@ -50,6 +50,7 @@ import { useSubscanReferendum } from "@/lib/query/hooks/use-subscan-referendum"
 import { useSubscanPreimage } from "@/lib/query/hooks/use-subscan-preimage"
 import { usePreimage } from "@/lib/query/hooks/use-preimage"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
+import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
 import { encodeForChain } from "@/lib/chain/ss58"
 import { StatusChip } from "@/components/governance/status-chip"
 import {
@@ -66,7 +67,9 @@ import {
   intentFromSubscanCall,
   type ProposalIntent,
 } from "@/lib/governance/call-extract"
-import type { Deposit, PreimageRef, Tally } from "@/lib/governance/types"
+import { formatTrackName } from "@/lib/governance/display"
+import { canonicalTrackName } from "@/lib/governance/tracks"
+import type { Deposit, PreimageRef, Tally, TreasuryTier } from "@/lib/governance/types"
 import { normaliseSubscanCall, type SubscanCallParam } from "@/lib/subscan/client"
 
 export default function ProposalDetailPage() {
@@ -101,6 +104,7 @@ function ProposalDetailPageInner() {
   const chain = useActiveChain()
   const referendumQuery = useReferendum(Number.isFinite(index) ? index : -1)
   const tracksQuery = useTracks()
+  const treasuryTiers = useTreasuryTiers()
   const metadataQuery = useProposalMetadata(
     Number.isFinite(index) ? index : null,
   )
@@ -292,6 +296,17 @@ function ProposalDetailPageInner() {
   const subscanIntent: ProposalIntent = intentFromSubscanCall(decodedCall, chain)
   const intent: ProposalIntent = onChainIntent ?? subscanIntent
 
+  // The spend tier this referendum's track authorizes on the connected
+  // runtime, so an amount above its limit (e.g. filed before the tiers were
+  // corrected) is flagged before it fails at enactment. `treasury.spend`
+  // converts its asset amount before the check, so only spend_local is compared.
+  const spendLimitTier =
+    isOngoing && track && intent?.kind === "treasury-spend" && intent.method !== "spend"
+      ? (treasuryTiers.table?.tiers.find(
+          (t) => canonicalTrackName(t.origin) === canonicalTrackName(track.name),
+        ) ?? null)
+      : null
+
   return (
     <Shell>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -402,7 +417,7 @@ function ProposalDetailPageInner() {
           <LifecycleProgress referendum={ref} track={track ?? null} />
 
           {intent?.kind === "treasury-spend" && (
-            <TreasuryRequestSummary intent={intent} chain={chain} />
+            <TreasuryRequestSummary intent={intent} chain={chain} limitTier={spendLimitTier} />
           )}
 
           <TallyVotesSwiper
@@ -957,10 +972,14 @@ function DepositRow({
 function TreasuryRequestSummary({
   intent,
   chain,
+  limitTier,
 }: {
   intent: Extract<ProposalIntent, { kind: "treasury-spend" }>
   chain: ChainConfig
+  /** The spend tier the referendum's track authorizes, when known. */
+  limitTier: TreasuryTier | null
 }) {
+  const limit = limitTier?.maxAmount ?? null
   return (
     <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-card to-card border border-purple-border p-6">
       <div className="flex items-start gap-4">
@@ -986,6 +1005,14 @@ function TreasuryRequestSummary({
             <code className="font-mono text-foreground">treasury.{intent.method}</code>{" "}
             and pays the beneficiary from the {chain.shortName} treasury.
           </p>
+          {limitTier && limit != null && intent.amount > limit && (
+            <p className="text-[11px] text-amber-300 mt-2 leading-relaxed">
+              The amount is above {formatTrackName(limitTier.origin)}&apos;s spend limit on this
+              runtime ({formatTokenAmount(limit, chain)}). Unless an upgrade raises
+              that limit before enactment, the spend fails with InsufficientPermission and nothing
+              is paid.
+            </p>
+          )}
         </div>
       </div>
     </div>

@@ -149,7 +149,7 @@ The wizard's full pipeline. The signed extrinsic is one
 ┌──────────────────────────────────────────────────────────────────────┐
 │ 3. Build the batchAll                                                │
 │                                                                      │
-│   const tier = pickOriginForAmount(amountPlanck)                     │
+│   const tier = pickOriginForAmount(amountPlanck, tiers)              │
 │                  // -> { origin: "BigSpender", maxAmount } | null    │
 │   const index = referenda.referendumCount()  // read at build time   │
 │   const envelope = stringToU8a(remark_payload)                       │
@@ -225,25 +225,34 @@ address are **not** editable - those are baked into the referendum.
 
 ## Origin selection (`lib/governance/treasury.ts`)
 
-Tracks have a `maxDeciding` and an implicit "max amount" derived from their
-origin's spending limit. We map amount → track:
+Each treasury origin can authorize a spend up to a fixed limit, set by the
+runtime's `Spender` EnsureOrigin (relaychain
+`runtime/common/src/governance/origins.rs`, the treasury's `SpendOrigin`). If
+the amount exceeds the origin's limit, `spend_local` fails with
+`InsufficientPermission` at enactment, after the full vote. The limits are not
+in metadata or `api.consts`, so `ENJIN_SPEND_LIMITS` copies them from the
+runtime source, one table per runtime spec version. We map amount → origin:
 
 ```ts
-pickOriginForAmount(tracks, amount) →
-  amount ≤ tracks.SmallTipper.maxAmount      ? SmallTipperOrigin
-  amount ≤ tracks.BigTipper.maxAmount        ? BigTipperOrigin
-  amount ≤ tracks.SmallSpender.maxAmount     ? SmallSpenderOrigin
-  amount ≤ tracks.MediumSpender.maxAmount    ? MediumSpenderOrigin
-  amount ≤ tracks.BigSpender.maxAmount       ? BigSpenderOrigin
-  : null   // above the cap - rejected at compose time
+tiers = treasuryTiersForSpec(api.runtimeVersion.specVersion).tiers
+pickOriginForAmount(amount, tiers) →
+  the first tier (smallest first) with amount ≤ tier.maxAmount
+  : null   // above the top tier's limit - rejected at compose time
 ```
 
-Enjin has no `Treasurer` track, so `BigSpender` is the top tier and the table
-is capped at 1,000,000 ENJ; a larger amount returns null and the wizard blocks
-it rather than filing under an origin that can't authorize the spend. The
-deposit thresholds come from chain config (read at runtime). The treasury
-wizard auto-picks the tier; the `/create/advanced` composer lets you choose any
-track origin explicitly.
+`treasuryTiersForSpec` holds each origin to the lowest limit across the
+connected spec and every later listed spec, so a referendum filed before a
+listed upgrade still enacts after it. A runtime newer than every listed spec
+gets the newest table, flagged unverified (the wizard warns); an older one gets
+null (the wizard won't file). When a runtime upgrade changes `Spender`, add its
+spec version to `ENJIN_SPEND_LIMITS` before the upgrade is applied.
+`TreasuryAdmin` is Enjin's counterpart to Polkadot's `Treasurer` (there is no
+origin by that name) and the top tier; a larger amount returns null and the
+wizard blocks it rather than filing under an origin that can't authorize the
+spend. Decision deposits come from chain config (read at runtime);
+TreasuryAdmin's is much larger than the other tiers'. The treasury wizard and
+the `/create/advanced` treasury-spend kind both auto-pick the tier; the
+composer's other kinds let you choose the origin explicitly.
 
 ## Voting lock periods
 
