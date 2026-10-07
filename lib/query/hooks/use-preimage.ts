@@ -1,13 +1,14 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import type { ApiPromise } from "@polkadot/api"
+import type { Registry } from "@polkadot/types/types"
 import { u8aToHex } from "@polkadot/util"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { getPreimage, getPreimageStatus, hashCall } from "@/lib/governance/preimage"
 import type { PreimageRef, PreimageStatus } from "@/lib/governance/types"
 import { useApi } from "./use-api"
+import { useArchiveApi } from "./use-archive-api"
 
 type DecodedPreimage = {
   hash: `0x${string}`
@@ -40,7 +41,7 @@ export function usePreimage(ref: PreimageRef | null | undefined, chain?: ChainCo
       return {
         hash: ref.hash,
         len: ref.len,
-        ...decodeCall(api, preimage.bytes),
+        ...decodeCall(api.registry, preimage.bytes),
         bytes: preimage.bytes,
       }
     },
@@ -55,19 +56,36 @@ export function usePreimage(ref: PreimageRef | null | undefined, chain?: ChainCo
  * There's no preimage to fetch - the bytes live in the referendum info - so
  * this only decodes. Same shape as `usePreimage` so both render alike; the
  * hash is the call's blake2-256, as the chain would key a noted preimage.
+ *
+ * `atBlock` is the block the bytes were read at when they come from a decided
+ * referendum's history. They're decoded with that block's runtime: a later
+ * upgrade can re-index or reshape calls, so today's metadata could misread
+ * them as a different call. Omit it for a live referendum.
  */
-export function useInlineCall(bytes: Uint8Array | null | undefined, chain?: ChainConfig) {
+export function useInlineCall(
+  bytes: Uint8Array | null | undefined,
+  atBlock?: number | null,
+  chain?: ChainConfig,
+) {
   const active = useActiveChain()
   const target = chain ?? active
-  const apiQuery = useApi(target)
+  const liveApi = useApi(target)
+  // History comes from the archive endpoint, so its old runtimes do too.
+  const archiveApi = useArchiveApi(target)
+  const apiQuery = atBlock != null ? archiveApi : liveApi
   return useQuery<DecodedPreimage | null>({
-    queryKey: ["inline-call", target.id, bytes ? u8aToHex(bytes) : null],
-    queryFn: () => {
-      if (!apiQuery.data || !bytes) return null
+    queryKey: ["inline-call", target.id, atBlock ?? null, bytes ? u8aToHex(bytes) : null],
+    queryFn: async () => {
+      const api = apiQuery.data
+      if (!api || !bytes) return null
+      const registry =
+        atBlock != null
+          ? (await api.at(await api.rpc.chain.getBlockHash(atBlock))).registry
+          : api.registry
       return {
         hash: hashCall(bytes),
         len: bytes.length,
-        ...decodeCall(apiQuery.data, bytes),
+        ...decodeCall(registry, bytes),
         bytes,
       }
     },
@@ -77,10 +95,10 @@ export function useInlineCall(bytes: Uint8Array | null | undefined, chain?: Chai
 }
 
 function decodeCall(
-  api: ApiPromise,
+  registry: Registry,
   bytes: Uint8Array,
 ): Pick<DecodedPreimage, "section" | "method" | "args"> {
-  const call = api.createType("Call", bytes)
+  const call = registry.createType("Call", bytes)
   const json = call.toHuman() as { section?: string; method?: string; args?: unknown }
   return {
     section: (call as unknown as { section: string }).section ?? json.section ?? "",

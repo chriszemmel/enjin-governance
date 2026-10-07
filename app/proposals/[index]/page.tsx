@@ -165,19 +165,23 @@ function ProposalDetailPageInner() {
   const preimageQuery = usePreimage(earlyProposalRef ?? undefined)
   // Small calls (≤128 bytes) ride inline in the referendum instead of as a
   // preimage - e.g. system.authorizeUpgrade, referenda.cancel. Decode those
-  // straight from the referendum info.
-  const inlineBytes: Uint8Array | null = (() => {
+  // straight from the referendum info: a live one with today's runtime, a
+  // decided one with the runtime of the block its history was read at
+  // (finalisedAt - 1, see getReferendumHistory).
+  const inlineCall: { bytes: Uint8Array; at: number | null } | null = (() => {
+    if (current?.status.type === "Ongoing") {
+      const proposal = current.status.proposal
+      return "type" in proposal && proposal.type === "Inline"
+        ? { bytes: proposal.bytes, at: null }
+        : null
+    }
     const proposal =
-      current?.status.type === "Ongoing"
-        ? current.status.proposal
-        : historyQuery.data?.status.type === "Ongoing"
-          ? historyQuery.data.status.proposal
-          : null
-    return proposal && "type" in proposal && proposal.type === "Inline"
-      ? proposal.bytes
+      historyQuery.data?.status.type === "Ongoing" ? historyQuery.data.status.proposal : null
+    return proposal && "type" in proposal && proposal.type === "Inline" && finalisedAt != null
+      ? { bytes: proposal.bytes, at: finalisedAt - 1 }
       : null
   })()
-  const inlineCallQuery = useInlineCall(inlineBytes)
+  const inlineCallQuery = useInlineCall(inlineCall?.bytes, inlineCall?.at)
   // Subscan keeps the decoded preimage long after the chain prunes the
   // bytes from `preimage.preimageFor`. Run this in parallel with the
   // chain query so we have a fallback for old referenda.
@@ -575,10 +579,12 @@ function ProposalDetailPageInner() {
               </div>
             </div>
 
-            {(inlineBytes || decodedCall || proposalRef) && (
+            {(inlineCall || decodedCall || proposalRef) && (
               <div className="pt-5 border-t border-border">
-                {inlineBytes ? (
-                  <PreimageDisplay inlineBytes={inlineBytes} />
+                {/* An inline call that won't decode yields to Subscan's
+                    decode when there is one; otherwise it shows raw. */}
+                {inlineCall && !(inlineCallQuery.isError && decodedCall) ? (
+                  <PreimageDisplay inlineBytes={inlineCall.bytes} inlineAt={inlineCall.at} />
                 ) : decodedCall ? (
                   <SubscanCallDisplay
                     call={decodedCall}
@@ -606,7 +612,7 @@ function ProposalDetailPageInner() {
             )}
           </div>
 
-          {!inlineBytes && !decodedCall && !proposalRef && !isOngoing && (
+          {!inlineCall && !decodedCall && !proposalRef && !isOngoing && (
             <div className="rounded-2xl bg-card border border-border p-6 space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Preimage</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">

@@ -2,6 +2,7 @@
 
 import { ChevronDown, ChevronRight, ExternalLink, FileCode } from "lucide-react"
 import { useState } from "react"
+import { u8aToHex } from "@polkadot/util"
 import { cn } from "@/lib/utils"
 import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 import { useActiveChain } from "@/lib/chain/use-chain"
@@ -12,9 +13,13 @@ import type { PreimageRef } from "@/lib/governance/types"
 type PreimageDisplayProps = {
   className?: string
 } & (
-  | { preimageRef: PreimageRef; inlineBytes?: never }
-  /** A call that rides inline in its referendum - decoded, never fetched. */
-  | { inlineBytes: Uint8Array; preimageRef?: never }
+  | { preimageRef: PreimageRef; inlineBytes?: never; inlineAt?: never }
+  /**
+   * A call that rides inline in its referendum - decoded, never fetched.
+   * `inlineAt` is the block the bytes were read at, for a decided
+   * referendum (see useInlineCall).
+   */
+  | { inlineBytes: Uint8Array; inlineAt?: number | null; preimageRef?: never }
 )
 
 /**
@@ -23,12 +28,17 @@ type PreimageDisplayProps = {
  * from chain state (typical for finalised referenda older than the
  * chain's preimage TTL, where the depositor has reclaimed the deposit).
  * Inline proposals carry their call bytes in the referendum itself, so
- * they always decode and never go missing.
+ * they never go missing - when they don't decode, the raw call is shown.
  */
-export function PreimageDisplay({ preimageRef, inlineBytes, className }: PreimageDisplayProps) {
+export function PreimageDisplay({
+  preimageRef,
+  inlineBytes,
+  inlineAt,
+  className,
+}: PreimageDisplayProps) {
   const chain = useActiveChain()
   const lookupQuery = usePreimage(preimageRef)
-  const inlineQuery = useInlineCall(inlineBytes)
+  const inlineQuery = useInlineCall(inlineBytes, inlineAt)
   const preimageQuery = inlineBytes ? inlineQuery : lookupQuery
   // Default to collapsed - the preimage block is rarely useful at a
   // glance, and the proposal narrative + tally are the headline.
@@ -37,6 +47,7 @@ export function PreimageDisplay({ preimageRef, inlineBytes, className }: Preimag
   const data = preimageQuery.data
   const isMissing = preimageQuery.isSuccess && data?.bytes == null
   const hasCall = data && data.bytes != null && data.section && data.method
+  const decodeFailed = !!inlineBytes && inlineQuery.isError
   const preimageLink = preimageRef ? subscanPreimageUrl(chain, preimageRef.hash) : null
   const hash = data?.hash ?? preimageRef?.hash
   const len = data?.len ?? preimageRef?.len ?? 0
@@ -46,7 +57,7 @@ export function PreimageDisplay({ preimageRef, inlineBytes, className }: Preimag
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        disabled={!hasCall && !isMissing && !preimageQuery.isPending}
+        disabled={!hasCall && !isMissing && !decodeFailed && !preimageQuery.isPending}
         className="w-full flex items-center justify-between gap-3 text-left"
       >
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -116,6 +127,18 @@ export function PreimageDisplay({ preimageRef, inlineBytes, className }: Preimag
             )}
           </div>
         </>
+      )}
+
+      {expanded && decodeFailed && (
+        <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-3 space-y-1.5">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Couldn&apos;t decode this call with the chain&apos;s metadata. The
+            raw call:
+          </p>
+          <p className="font-mono text-[11px] text-foreground break-all">
+            {u8aToHex(inlineBytes)}
+          </p>
+        </div>
       )}
 
       {expanded && isMissing && preimageLink && (

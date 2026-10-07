@@ -257,7 +257,10 @@ increases, and is free when valid. The composer doesn't offer
 
 The detail page decodes inline proposals straight from `ReferendumInfoFor`
 (`useInlineCall`), so voters see e.g. `system.authorizeUpgrade(code_hash)`
-without a preimage lookup.
+without a preimage lookup. A decided referendum's bytes come from its
+history, so they're decoded with the runtime of that block - a later upgrade
+can re-index calls - and a call that still won't decode yields to Subscan's
+decode, or shows raw.
 
 ## Origin selection (`lib/governance/treasury.ts`)
 
