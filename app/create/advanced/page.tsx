@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, ArrowRight, FileUp, Loader2, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
 import type { ApiPromise } from "@polkadot/api"
 import { u8aToHex } from "@polkadot/util"
 import { Nav } from "@/components/layout/nav"
@@ -17,7 +18,7 @@ import { cn } from "@/lib/utils"
 import { subscanExtrinsicUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { parseTokenAmount } from "@/lib/chain/format"
-import { encodeForChain, isValidAddressForChain } from "@/lib/chain/ss58"
+import { encodeForChain, isValidAddressForChain, samePublicKey } from "@/lib/chain/ss58"
 import {
   buildProposalCall,
   PROPOSAL_KIND_META,
@@ -25,8 +26,8 @@ import {
   type ProposalCallSpec,
   type ProposalKind,
 } from "@/lib/governance/proposal-calls"
-import { extractReferendumIndex } from "@/lib/governance/referenda"
-import { canInline, hashCall } from "@/lib/governance/preimage"
+import { extractReferendumIndex, getReferendumCount } from "@/lib/governance/referenda"
+import { canInline, getPreimageStatus, hashCall } from "@/lib/governance/preimage"
 import { buildProposalSubmission } from "@/lib/governance/submit-proposal"
 import {
   DEFAULT_ENACTMENT,
@@ -38,8 +39,6 @@ import { pickOriginForAmount } from "@/lib/governance/treasury"
 import { confirmWithRetry } from "@/lib/query/confirm-proposal"
 import { useApi } from "@/lib/query/hooks/use-api"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
-import { usePreimageStatus } from "@/lib/query/hooks/use-preimage"
-import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
 import { useMe, useNoncePrefetch, useSignIn } from "@/lib/query/hooks/use-session"
 import { useExtrinsic } from "@/lib/query/hooks/use-tx"
 import { useWallet } from "@/lib/wallet/use-wallet"
@@ -96,6 +95,24 @@ const isHex = (s: string, exactBytes?: number) => {
   return true
 }
 
+/**
+ * What one submission is built from, frozen at click so the batch matches
+ * the draft staged from the same inputs - edits made while signing in or
+ * signing don't leak into it, and Retry resends it unchanged.
+ */
+type PendingSubmission = {
+  spec: ProposalCallSpec
+  origin: unknown
+  enactment: EnactmentChoice
+  callHash: `0x${string}`
+  inline: boolean
+  draft: DraftResponse | null
+  /** The call bytes are already noted on chain, so the batch omits their note. */
+  skipNote: boolean
+  /** The index setMetadata binds: referendumCount() read just before signing. */
+  referendumIndex: number | null
+}
+
 export default function AdvancedCreatePage() {
   const chain = useActiveChain()
   const apiQuery = useApi()
@@ -127,6 +144,13 @@ export default function AdvancedCreatePage() {
   const [staging, setStaging] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  // Sign-in and staging run before tx.submit's own single-flight guard, so
+  // the click handler needs one too: a second click (or a double-fired tap)
+  // mid-way would otherwise stage a second draft. The ref catches same-tick
+  // repeats; the state disables the button.
+  const preparingRef = useRef(false)
+  const [preparing, setPreparing] = useState(false)
+  const queryClient = useQueryClient()
 
   // Drafts + sign-in are keyed to the connected signer, encoded for this chain.
   const proposerAddress = useMemo(() => {
@@ -269,48 +293,31 @@ export default function AdvancedCreatePage() {
     }
   }, [apiQuery.data, spec])
 
-  // Hash of call bytes already noted on chain, whose notePreimage must be
-  // dropped (it would abort with AlreadyNoted and revert the batch). Keyed by
-  // hash rather than a boolean so a decision made for one call can never drop
-  // the note of another - a Lookup to an un-noted preimage would still submit,
-  // but could never enact.
-  const preimageStatusQuery = usePreimageStatus(
-    preview && !preview.inline && !preview.error ? preview.callHash : null,
-  )
-  const notedCallHashRef = useRef<string | null>(null)
-  useEffect(() => {
-    const noted =
-      preimageStatusQuery.data === "Unrequested" ||
-      preimageStatusQuery.data === "Requested"
-    if (noted && preview) notedCallHashRef.current = preview.callHash
-  }, [preimageStatusQuery.data, preview])
-
-  // The index setMetadata targets = referendumCount() when referenda.submit
-  // executes. Refetched right before signing; a stale value makes setMetadata
-  // fail the depositor check and the whole batch revert (see submit-proposal).
-  const referendumCountQuery = useReferendumCount()
-  const referendumIndexRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (referendumCountQuery.data != null) {
-      referendumIndexRef.current = referendumCountQuery.data
-    }
-  }, [referendumCountQuery.data])
+  // The submission being signed, and the one the in-flight batch was built
+  // from. They only differ if a later click replaced the former mid-flight;
+  // everything after the build (confirm, the AlreadyNoted retry) follows the
+  // latter.
+  const pendingRef = useRef<PendingSubmission | null>(null)
+  const builtRef = useRef<PendingSubmission | null>(null)
 
   // The last staged draft, keyed by the content it was staged from, so a
   // retry after a rejected signature reuses it instead of minting a second
-  // row. `draftForTxRef` is the draft the in-flight transaction anchors.
+  // row.
   const stagedRef = useRef<{ key: string; draft: DraftResponse } | null>(null)
-  const draftForTxRef = useRef<DraftResponse | null>(null)
 
   // Resolve a signed-in session, prompting the wallet to sign the nonce if
   // needed. Returns false when the user cancels or the signature fails.
   const ensureSignedIn = useCallback(async (): Promise<boolean> => {
-    if (meQuery.data) return true
+    // A session for another account doesn't count: the draft route only
+    // accepts the signer's own address, so it would 403 every attempt.
+    const isSigner = (me: { address: string } | null | undefined) =>
+      !!me && !!proposerAddress && samePublicKey(me.address, proposerAddress)
+    if (isSigner(meQuery.data)) return true
     // The /api/auth/me poll can trail a fresh cookie - re-check before forcing
     // a signature the user may not actually need.
     try {
       const refreshed = await meQuery.refetch()
-      if (refreshed.data) return true
+      if (isSigner(refreshed.data)) return true
     } catch {
       // fall through to the sign-in prompt
     }
@@ -329,7 +336,7 @@ export default function AdvancedCreatePage() {
       }
       return false
     }
-  }, [meQuery, sign.isWalletConnect, signIn])
+  }, [meQuery, proposerAddress, sign.isWalletConnect, signIn])
 
   // Upload proposal.json to R2 + insert the draft row; returns the envelope
   // the batch anchors. Reuses the last draft when nothing it covers changed.
@@ -400,39 +407,58 @@ export default function AdvancedCreatePage() {
     // a reorg between inBlock and finality would pin the wrong one.
     resolveOn: "finalized",
     build: (api) => {
-      if (!spec) throw new Error("Complete the proposal fields.")
-      if (!resolvedOrigin) throw new Error("No valid submission origin for this amount.")
-      const callBytes = buildProposalCall(api, spec).toU8a()
-      const draft = draftForTxRef.current
+      const pending = pendingRef.current
+      if (!pending) throw new Error("Complete the proposal fields.")
+      const callBytes = buildProposalCall(api, pending.spec).toU8a()
       let metadata: { remarkPayload: string; referendumIndex: number } | undefined
-      if (draft) {
-        const referendumIndex = referendumIndexRef.current
-        if (referendumIndex == null) {
+      if (pending.draft) {
+        if (pending.referendumIndex == null) {
           throw new Error("Couldn't read the next referendum index - try again in a moment.")
         }
-        metadata = { remarkPayload: draft.remark_payload, referendumIndex }
+        metadata = {
+          remarkPayload: pending.draft.remark_payload,
+          referendumIndex: pending.referendumIndex,
+        }
       }
       // Small calls ride inline (no preimage deposit); larger ones are noted
       // as a preimage and referenced by Lookup.
-      return buildProposalSubmission(api, {
+      const { calls } = buildProposalSubmission(api, {
         callBytes,
-        origin: resolvedOrigin.origin,
-        enactment: resolveEnactment(enactment),
-        skipNote: notedCallHashRef.current === hashCall(callBytes),
+        origin: pending.origin,
+        enactment: resolveEnactment(pending.enactment),
+        // The note decision was read for exactly these bytes.
+        skipNote: pending.skipNote && hashCall(callBytes) === pending.callHash,
         metadata,
-      }).calls
+      })
+      builtRef.current = pending
+      return calls
     },
     async onSuccess({ events, txHash, blockHash }) {
       const index = extractReferendumIndex([...events])
       setSubmittedIndex(index)
 
-      const draft = draftForTxRef.current
-      if (!draft) return
-      // This envelope is now bound to a referendum - never anchor it again.
-      draftForTxRef.current = null
-      stagedRef.current = null
+      const built = builtRef.current
+      builtRef.current = null
+      pendingRef.current = null
+      const draft = built?.draft ?? null
+      // This envelope is now noted on chain - never anchor it again.
+      if (draft) stagedRef.current = null
       if (index == null) {
-        setConfirmError("Couldn't read the new referendum index from the transaction events.")
+        // Shown beside the submit button, since there's no referendum to
+        // show a card for - and resubmitting may file a duplicate.
+        setConfirmError(
+          `The transaction finalized, but its referendum index couldn't be read from the events${draft ? ", so the details weren't linked" : ""}. Check the proposals list before submitting again.`,
+        )
+        return
+      }
+      if (!built || !draft) return
+      if (built.referendumIndex !== index) {
+        // A stale index only passes setMetadata's depositor check when it's
+        // this account's own earlier referendum, which now carries these
+        // details instead.
+        setConfirmError(
+          `the details were bound to your earlier referendum #${built.referendumIndex} instead - another submission from this account landed first.`,
+        )
         return
       }
 
@@ -465,14 +491,17 @@ export default function AdvancedCreatePage() {
         setConfirmError(formatError(e))
       } finally {
         setConfirming(false)
+        // The proposal page and the drafts lists read the row this just linked.
+        void queryClient.invalidateQueries({ queryKey: ["proposal-metadata"] })
+        void queryClient.invalidateQueries({ queryKey: ["my-drafts"] })
       }
     },
     onStatus(status) {
-      // Self-heal the AlreadyNoted dead-end: those call bytes are on chain, so
-      // the next attempt must skip notePreimage instead of rebuilding the
-      // batch that just reverted.
-      if (status.kind === "error" && /AlreadyNoted/i.test(status.message) && preview) {
-        notedCallHashRef.current = preview.callHash
+      // Self-heal the AlreadyNoted dead-end: those call bytes got noted after
+      // the pre-sign check, so the retry must skip their notePreimage - even
+      // if it can't re-read the status.
+      if (status.kind === "error" && /AlreadyNoted/i.test(status.message) && builtRef.current) {
+        builtRef.current.skipNote = true
       }
       if (sign.isWalletConnect) return
       if (status.kind === "error") {
@@ -481,50 +510,75 @@ export default function AdvancedCreatePage() {
     },
   })
 
-  // Refresh the (stale-able) preimage status and referendum count right
-  // before signing so the build closure sees on-chain reality, then submit.
+  // Read what the batch depends on fresh from chain right before signing -
+  // whether the call bytes are already noted, and the index the new
+  // referendum will get - then submit. Retry re-reads both for the same
+  // pending submission.
   const submitTx = useCallback(async () => {
-    if (preview && !preview.inline && !preview.error) {
-      try {
-        const res = await preimageStatusQuery.refetch()
-        if (res.data === "Unrequested" || res.data === "Requested") {
-          notedCallHashRef.current = preview.callHash
+    const pending = pendingRef.current
+    const api = apiQuery.data
+    if (pending && api) {
+      if (!pending.inline) {
+        try {
+          // Only an Unrequested preimage makes notePreimage abort with
+          // AlreadyNoted. A Requested one takes the note - and may not hold
+          // the bytes at all, so skipping it would leave the Lookup dangling.
+          pending.skipNote =
+            (await getPreimageStatus(api, pending.callHash)) === "Unrequested"
+        } catch {
+          // Keep the last answer: false, or true after an AlreadyNoted revert.
         }
-      } catch {
-        // Best-effort: fall back to what the seeded ref already holds.
       }
-    }
-    if (draftForTxRef.current) {
-      try {
-        const count = await referendumCountQuery.refetch()
-        if (count.data != null) referendumIndexRef.current = count.data
-      } catch {
-        // Best-effort: fall back to the seeded ref; build throws if empty.
+      if (pending.draft) {
+        try {
+          pending.referendumIndex = await getReferendumCount(api)
+        } catch {
+          // build refuses to guess, and the user retries.
+          pending.referendumIndex = null
+        }
       }
     }
     void tx.submit()
-  }, [preimageStatusQuery, preview, referendumCountQuery, tx])
+  }, [apiQuery.data, tx])
 
   const meta = PROPOSAL_KIND_META[kind]
   const canSubmit =
     isConnected && spec != null && !fieldError && !enactmentError &&
     resolvedOrigin != null && preview != null && preview.error == null &&
-    !detailsError && !tx.isSubmitting && !staging && !confirming
+    !detailsError && !tx.isSubmitting && !preparing && !confirming
 
   const handleSubmit = async () => {
     if (!isConnected) {
       setWalletOpen(true)
       return
     }
-    setConfirmError(null)
-    let draft: DraftResponse | null = null
-    if (attachDetails) {
-      draft = await stageDraft()
-      if (!draft) return
+    if (!spec || !resolvedOrigin || !preview || preview.error) return
+    if (preparingRef.current) return
+    preparingRef.current = true
+    setPreparing(true)
+    try {
+      setConfirmError(null)
+      let draft: DraftResponse | null = null
+      if (attachDetails) {
+        draft = await stageDraft()
+        if (!draft) return
+      }
+      pendingRef.current = {
+        spec,
+        origin: resolvedOrigin.origin,
+        enactment,
+        callHash: preview.callHash,
+        inline: preview.inline,
+        draft,
+        skipNote: false,
+        referendumIndex: null,
+      }
+      sign.open()
+      await submitTx()
+    } finally {
+      preparingRef.current = false
+      setPreparing(false)
     }
-    draftForTxRef.current = draft
-    sign.open()
-    void submitTx()
   }
 
   // Hash the exact wasm the upgrade will apply. The chain checks
@@ -895,13 +949,17 @@ export default function AdvancedCreatePage() {
                   with the same wasm file, from any account.
                 </p>
               )}
-              <Link
-                href={`/proposals/${submittedIndex}`}
-                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-              >
-                View proposal
-                <ArrowRight className="w-3 h-3" />
-              </Link>
+              {/* Not while linking: the proposal page would cache the
+                  details as missing. */}
+              {!confirming && (
+                <Link
+                  href={`/proposals/${submittedIndex}`}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  View proposal
+                  <ArrowRight className="w-3 h-3" />
+                </Link>
+              )}
               <p className="text-xs text-muted-foreground">
                 File the decision deposit to start the deciding clock:
               </p>
@@ -912,19 +970,24 @@ export default function AdvancedCreatePage() {
               />
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => void handleSubmit()}
-              disabled={isConnected && !canSubmit}
-              className="w-full mt-2 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {(tx.isSubmitting || staging) && <Loader2 className="w-4 h-4 animate-spin" />}
-              {!isConnected
-                ? "Connect wallet to submit"
-                : staging
-                  ? "Saving proposal details…"
-                  : "Sign & submit proposal"}
-            </button>
+            <>
+              {confirmError && (
+                <p className="text-xs text-amber-300 leading-relaxed mt-2">{confirmError}</p>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={isConnected && !canSubmit}
+                className="w-full mt-2 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {(tx.isSubmitting || preparing) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {!isConnected
+                  ? "Connect wallet to submit"
+                  : staging
+                    ? "Saving proposal details…"
+                    : "Sign & submit proposal"}
+              </button>
+            </>
           )}
         </div>
       </main>
@@ -945,8 +1008,9 @@ export default function AdvancedCreatePage() {
         }
         successTitle="Proposal submitted on chain"
         successBody="Your referendum is live. Place its decision deposit to start deciding."
-        successAt="in-block"
-        autoDismiss={false}
+        // Success waits for finality (the default): that's when onSuccess
+        // links the details, and a Done at in-block invited leaving first,
+        // which unsubscribes before the link ever runs.
         onClose={sign.close}
         onRetry={() => {
           tx.reset()
