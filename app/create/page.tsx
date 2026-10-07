@@ -168,12 +168,15 @@ function CreatePageInner() {
           title?: string
           summary?: string | null
           body_markdown?: string
-          spend?: { amount_planck?: string } | null
+          spend?: { amount_planck?: string; beneficiary?: string } | null
         }
         if (cancelled) return
         setTitle(j.title ?? "")
         setSummary(j.summary ?? "")
         setBody(j.body_markdown ?? "")
+        // Left empty, the beneficiary falls back to the proposer - which would
+        // silently re-point a draft that pays someone else.
+        if (j.spend?.beneficiary) setBeneficiaryInput(j.spend.beneficiary)
         if (j.spend?.amount_planck) {
           try {
             const planck = BigInt(j.spend.amount_planck)
