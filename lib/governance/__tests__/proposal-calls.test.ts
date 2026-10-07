@@ -28,7 +28,6 @@ function fakeApi(sink: Recorded[]): ApiPromise {
       whitelist: { whitelistCall: rec("whitelist.whitelistCall") },
       system: {
         authorizeUpgrade: rec("system.authorizeUpgrade"),
-        setCode: rec("system.setCode"),
         remark: rec("system.remark"),
       },
     },
@@ -71,12 +70,6 @@ describe("buildProposalCall", () => {
     expect(sink[0]).toEqual({ call: "system.authorizeUpgrade", args: ["0xabc"] })
   })
 
-  it("runtimeUpgrade → system.setCode(codeHex)", () => {
-    const sink: Recorded[] = []
-    buildProposalCall(fakeApi(sink), { kind: "runtimeUpgrade", codeHex: "0xdeadbeef" })
-    expect(sink[0]).toEqual({ call: "system.setCode", args: ["0xdeadbeef"] })
-  })
-
   it("remark → system.remark(stringToHex(text)) (hex, not raw UTF-8)", () => {
     const sink: Recorded[] = []
     buildProposalCall(fakeApi(sink), { kind: "remark", text: "hello" })
@@ -102,7 +95,6 @@ describe("PROPOSAL_KIND_META", () => {
       "killReferendum",
       "whitelistCall",
       "authorizeUpgrade",
-      "runtimeUpgrade",
       "remark",
       "rawCall",
     ]
@@ -120,7 +112,6 @@ describe("PROPOSAL_KIND_META", () => {
       Origins: "ReferendumKiller",
     })
     expect(PROPOSAL_KIND_META.authorizeUpgrade.suggestedOrigin).toEqual({ System: "Root" })
-    expect(PROPOSAL_KIND_META.runtimeUpgrade.suggestedOrigin).toEqual({ System: "Root" })
   })
 
   it("leaves treasurySpend origin null (derived from amount)", () => {
@@ -135,10 +126,9 @@ describe("PROPOSAL_KIND_META", () => {
       { kind: "killReferendum", index: 0 },
       { kind: "whitelistCall", callHash: "0x" },
       { kind: "authorizeUpgrade", codeHash: "0x" },
-      { kind: "runtimeUpgrade", codeHex: "0x" },
       { kind: "remark", text: "" },
       { kind: "rawCall", callHex: "0x" },
     ]
-    expect(specs).toHaveLength(8)
+    expect(specs).toHaveLength(7)
   })
 })

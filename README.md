@@ -79,10 +79,10 @@
 - **General + admin proposals** - a separate `/create/advanced` composer files
   any proposal under a chosen track origin: cancel / kill a referendum,
   whitelist a call, authorize a runtime upgrade by wasm hash
-  (`system.authorizeUpgrade`), set code directly, on-chain remark, or a raw
-  SCALE call. Small calls ride inline; larger ones are noted as a preimage
-  automatically. An optional title / summary / body is anchored with the same
-  EGOV1 `setMetadata` binding as treasury proposals.
+  (`system.authorizeUpgrade`), on-chain remark, or a raw SCALE call. Small
+  calls ride inline; larger ones are noted as a preimage automatically. An
+  optional title / summary / body is anchored with the same EGOV1
+  `setMetadata` binding as treasury proposals.
 - **Delegation** - delegate conviction-weighted ENJ on one track or batch
   across all eligible tracks in a single signature, and undelegate per track.
 - **Account governance state** - reclaim reserved deposits (submission /
@@ -125,9 +125,9 @@
   placement are all in the flow.
 - **`/create/advanced`** - general + admin proposal composer: cancel /
   kill a referendum, whitelist a call, authorize a runtime upgrade (hash
-  computed in the browser from the `.wasm`), set code directly, on-chain
-  remark, or a raw SCALE call, under a chosen track origin (inline vs
-  preimage chosen automatically by call size), with optional EGOV1 metadata.
+  computed in the browser from the `.wasm`), on-chain remark, or a raw SCALE
+  call, under a chosen track origin (inline vs preimage chosen automatically
+  by call size), with optional EGOV1 metadata.
 - **`/account`** - profile editor with **Sign out** in destructive red,
   a "Your proposals" panel (**Live / Drafts / Cancelled** filters,
   **Edit / Submit / Delete**), plus governance state: **Delegation**

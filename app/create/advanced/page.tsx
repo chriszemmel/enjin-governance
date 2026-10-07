@@ -53,7 +53,6 @@ const KIND_ORDER: ProposalKind[] = [
   "killReferendum",
   "whitelistCall",
   "authorizeUpgrade",
-  "runtimeUpgrade",
   "remark",
   "rawCall",
 ]
@@ -76,7 +75,6 @@ type Fields = {
   index: string
   callHash: string
   codeHash: string
-  codeHex: string
   remarkText: string
   rawHex: string
 }
@@ -87,7 +85,6 @@ const EMPTY_FIELDS: Fields = {
   index: "",
   callHash: "",
   codeHash: "",
-  codeHex: "",
   remarkText: "",
   rawHex: "",
 }
@@ -194,12 +191,6 @@ export default function AdvancedCreatePage() {
             spec: { kind, codeHash: fields.codeHash.toLowerCase() as `0x${string}` },
             fieldError: null,
           }
-        }
-        case "runtimeUpgrade": {
-          if (!isHex(fields.codeHex) || fields.codeHex.length < 10) {
-            return { spec: null, fieldError: "Paste the runtime wasm as hex (0x…)." }
-          }
-          return { spec: { kind, codeHex: fields.codeHex as `0x${string}` }, fieldError: null }
         }
         case "remark": {
           if (!fields.remarkText.trim()) return { spec: null, fieldError: "Enter remark text." }
@@ -715,15 +706,6 @@ export default function AdvancedCreatePage() {
                   authorization.
                 </p>
               </>
-            )}
-            {kind === "runtimeUpgrade" && (
-              <TextArea
-                label="Runtime code (wasm hex)"
-                value={fields.codeHex}
-                onChange={(v) => setField("codeHex", v)}
-                placeholder="0x…"
-                disabled={!isConnected}
-              />
             )}
             {kind === "remark" && (
               <TextArea

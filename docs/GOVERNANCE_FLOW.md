@@ -252,7 +252,8 @@ on the referendum. The page hashes the `.wasm` locally (blake2-256 - hash
 the exact file you will apply, normally srtool's `compact.compressed.wasm`).
 Once enacted, anyone submits `system.applyAuthorizedUpgrade(code)`, which
 checks the hash and that the spec name is unchanged and the spec version
-increases, and is free when valid. `system.setCode` remains available.
+increases, and is free when valid. The composer doesn't offer
+`system.setCode`, which would put the whole wasm in the submission batch.
 
 The detail page decodes inline proposals straight from `ReferendumInfoFor`
 (`useInlineCall`), so voters see e.g. `system.authorizeUpgrade(code_hash)`
