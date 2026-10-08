@@ -85,10 +85,17 @@ describe("decodeStatus - Ongoing", () => {
     expect(s.decisionDeposit).toBeNull()
   })
 
-  it("decodes an Inline proposal to its bytes", () => {
+  it("decodes an Inline proposal to its bare call bytes (no length prefix)", () => {
     const bytes = new Uint8Array([1, 2, 3])
+    // A BoundedVec's plain toU8a() carries a compact length prefix (3 << 2).
+    const prefixed = new Uint8Array([12, 1, 2, 3])
     const s = decodeStatus(
-      ongoing({ proposal: { isInline: true, asInline: { toU8a: () => bytes } } }),
+      ongoing({
+        proposal: {
+          isInline: true,
+          asInline: { toU8a: (isBare?: boolean) => (isBare ? bytes : prefixed) },
+        },
+      }),
     )
     if (s.type !== "Ongoing") throw new Error("unreachable")
     expect(s.proposal).toEqual({ type: "Inline", bytes })

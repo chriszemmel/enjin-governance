@@ -8,9 +8,10 @@
  * removed.
  *
  * The proposal's R2 objects (proposal.json + attachments) are deleted too,
- * best-effort, so a discarded draft doesn't leave blobs behind. Only
- * deletable rows reach here (never an on-chain proposal whose URL a finalised
- * envelope pins), so this can't 404 a shared on-chain link.
+ * best-effort, so a discarded draft doesn't leave blobs behind - unless the
+ * row's EGOV1 envelope is noted on chain. That happens when a batch landed
+ * but was never confirmed, and a live referendum's metadata may then pin the
+ * JSON's URL, so keeping it means this can't 404 a shared on-chain link.
  *
  * PATCH /api/proposals/[uuid]
  *
@@ -27,6 +28,7 @@
 
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
+import { stringToU8a } from "@polkadot/util"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { isDbConfigured } from "@/lib/db/client"
 import {
@@ -43,6 +45,7 @@ import { deleteObjects, putJson } from "@/lib/r2/upload"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
 import { getApi } from "@/lib/chain/api"
+import { getPreimageStatus, hashCall } from "@/lib/governance/preimage"
 import { getReferendum } from "@/lib/governance/referenda"
 import {
   PROPOSAL_SCHEMA,
@@ -110,9 +113,7 @@ export async function DELETE(
   }
 
   // Gather the R2 keys BEFORE the row (and its cascade-deleted attachment
-  // rows) are gone, so we can clean the bucket after. A deletable proposal is
-  // never pinned by a finalised on-chain envelope, so removing its objects is
-  // safe.
+  // rows) are gone, so we can clean the bucket after.
   let r2Keys: string[] = [existing.json_key]
   try {
     const attachments = await listAttachments(existing.id)
@@ -130,9 +131,11 @@ export async function DELETE(
     (k) => k.startsWith(ownPrefix) && !k.split("/").includes(".."),
   )
 
+  const keepObjects = await envelopeMayBeOnChain(existing.network, existing.remark_payload)
+
   await deleteProposalById(parsed.data)
 
-  if (isR2Configured()) {
+  if (isR2Configured() && !keepObjects) {
     try {
       await deleteObjects(r2Keys)
     } catch {
@@ -142,6 +145,29 @@ export async function DELETE(
   }
 
   return NextResponse.json({ ok: true })
+}
+
+/**
+ * Whether this row's EGOV1 envelope may already be noted on chain. A row
+ * stays 'draft' when its batch landed but the client never confirmed it
+ * (the tab closed before finality, or confirm gave up), and then a live
+ * referendum's metadata pins its proposal.json. Errs toward true: a stray
+ * blob is harmless, a deleted one can't be put back.
+ */
+async function envelopeMayBeOnChain(
+  network: string,
+  remarkPayload: string | null,
+): Promise<boolean> {
+  if (!remarkPayload) return false
+  const chain = CHAINS[network as ChainId]
+  if (!chain) return true
+  try {
+    const api = await getApi(chain.rpc, 0)
+    const status = await getPreimageStatus(api, hashCall(stringToU8a(remarkPayload)))
+    return status !== "Missing"
+  } catch {
+    return true
+  }
 }
 
 /**

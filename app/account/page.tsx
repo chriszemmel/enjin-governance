@@ -12,6 +12,7 @@ import {
   Trash2,
   Upload,
   Wallet,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Nav } from "@/components/layout/nav"
@@ -33,6 +34,7 @@ import {
   useUploadAvatar,
 } from "@/lib/query/hooks/use-profile"
 import {
+  useCancelDraft,
   useDeleteDraft,
   useMyDrafts,
   type MyDraft,
@@ -92,6 +94,7 @@ export default function AccountPage() {
 
   const draftsQuery = useMyDrafts(activeAddress, chain)
   const deleteDraft = useDeleteDraft()
+  const cancelDraft = useCancelDraft()
 
   const allDrafts = useMemo(() => draftsQuery.data ?? [], [draftsQuery.data])
   // "Drafts" pill groups draft + submitted (unfinished things that need
@@ -371,7 +374,7 @@ export default function AccountPage() {
                         key={d.id}
                         draft={d}
                         networkId={chain.id}
-                        busy={deleteDraft.isPending}
+                        busy={deleteDraft.isPending || cancelDraft.isPending}
                         onDelete={(id) =>
                           deleteDraft.mutate(
                             { id },
@@ -379,6 +382,18 @@ export default function AccountPage() {
                               onSuccess: () => toast.success("Proposal removed"),
                               onError: (e) =>
                                 toast.error("Could not delete", {
+                                  description: formatError(e),
+                                }),
+                            },
+                          )
+                        }
+                        onCancel={(id) =>
+                          cancelDraft.mutate(
+                            { id, reason: "Cancelled from account page" },
+                            {
+                              onSuccess: () => toast.success("Draft cancelled"),
+                              onError: (e) =>
+                                toast.error("Could not cancel draft", {
                                   description: formatError(e),
                                 }),
                             },
@@ -486,17 +501,22 @@ function DraftListItem({
   draft,
   busy,
   onDelete,
+  onCancel,
   networkId,
 }: {
   draft: MyDraft
   busy: boolean
   onDelete: (id: string) => void
+  onCancel: (id: string) => void
   networkId: string
 }) {
   const isOnChain = draft.status === "on_chain" && draft.referendum_index != null
   const isCancelled = draft.status === "cancelled"
   const isDraft = draft.status === "draft" || draft.status === "submitted"
-  const subtitle = `${draftStatusLabel(draft)} · ${new Date(draft.created_at).toLocaleDateString()}`
+  // Advanced-composer drafts don't store their call, so the treasury wizard
+  // can't resume them - they can only be cancelled (then deleted) and re-filed.
+  const isResumable = isDraft && draft.has_spend
+  const subtitle = `${draftStatusLabel(draft)}${isDraft && !draft.has_spend ? " · advanced proposal" : ""} · ${new Date(draft.created_at).toLocaleDateString()}`
   return (
     <li className="flex items-center gap-3 p-3 rounded-lg bg-surface-1 border border-border">
       <div className="flex-1 min-w-0">
@@ -504,7 +524,7 @@ function DraftListItem({
         <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>
       </div>
 
-      {isDraft && (
+      {isResumable && (
         <>
           <Link
             href={`/create?from=${draft.id}`}
@@ -545,6 +565,19 @@ function DraftListItem({
         >
           <ExternalLink className="w-3.5 h-3.5" />
         </a>
+      )}
+
+      {isDraft && !isResumable && (
+        <button
+          type="button"
+          onClick={() => onCancel(draft.id)}
+          disabled={busy}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors disabled:opacity-50"
+          title="Cancel this draft"
+        >
+          <X className="w-3 h-3" />
+          Cancel
+        </button>
       )}
 
       {isCancelled && (
