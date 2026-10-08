@@ -59,6 +59,9 @@ export async function GET(
       tx_hash: r.tx_hash,
       json_url: r.json_url,
       created_at: r.created_at,
+      // Only treasury-spend drafts can be resumed by the /create wizard;
+      // advanced-composer drafts don't persist their call to rebuild from.
+      has_spend: r.amount_planck != null,
     })),
   })
 }

@@ -86,7 +86,8 @@ function DraftRow({
   busy: boolean
 }) {
   const statusLabel =
-    draft.status === "draft" ? "Not signed" : "Broadcast - not finalised"
+    (draft.status === "draft" ? "Not signed" : "Broadcast - not finalised") +
+    (draft.has_spend ? "" : " · advanced proposal")
   // Full navigation (not a client-side Link) so the draft reliably reloads
   // even when we're already on /create - the wizard reads `?from=` on mount.
   const resumeHref =
@@ -100,14 +101,16 @@ function DraftRow({
           {statusLabel} · {new Date(draft.created_at).toLocaleString()}
         </p>
       </div>
-      <a
-        href={resumeHref}
-        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-purple-border text-[11px] font-medium hover:bg-primary/20 transition-colors"
-        title="Resume this draft"
-      >
-        <Pencil className="w-3 h-3" />
-        Resume
-      </a>
+      {draft.has_spend && (
+        <a
+          href={resumeHref}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-purple-border text-[11px] font-medium hover:bg-primary/20 transition-colors"
+          title="Resume this draft"
+        >
+          <Pencil className="w-3 h-3" />
+          Resume
+        </a>
+      )}
       <button
         type="button"
         onClick={onCancel}

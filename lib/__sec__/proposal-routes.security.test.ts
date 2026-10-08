@@ -33,9 +33,12 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceRateLimit: async () => ({ allowed: true, remaining: 9, resetAt: Date.now() + 60000, retryAfterSeconds: 0 }),
   RATE_LIMITS: { proposalDraft: { scope: "proposal-draft", limit: 10, windowMs: 60_000 } },
 }))
+// No RPC unless a test installs a fake chain api.
+const chain = vi.hoisted(() => ({ api: null as unknown }))
 vi.mock("@/lib/chain/api", () => ({
   getApi: async () => {
-    throw new Error("no RPC in tests")
+    if (!chain.api) throw new Error("no RPC in tests")
+    return chain.api
   },
 }))
 vi.mock("@/lib/r2/upload", async () => await import("./fake-bucket"))
@@ -89,6 +92,7 @@ const bodyOf = (k: string) => bucketMod.bucket.get(k)?.body
 beforeEach(() => {
   db.reset()
   bucketMod.resetBucket()
+  chain.api = null
   auth.user = { id: "attacker-user-id", address: ATTACKER }
   db.seedProposal({ id: VICTIM_ID, network: NET, proposer_address: VICTIM, status: "on_chain", referendum_index: 42, json_key: victimJsonKey })
   for (const k of [victimJsonKey, avatarKey, indexKey]) bucketMod.bucket.set(k, { body: `REAL:${k}`, contentType: "x" })
@@ -146,6 +150,46 @@ describe("DELETE", () => {
   it("still refuses to delete someone else's draft", async () => {
     const res = await DELETE(req(`https://gov.test/api/proposals/${VICTIM_ID}`, "DELETE"), ctx(VICTIM_ID))
     expect(res.status).toBe(403)
+  })
+
+  describe("a row with a staged envelope", () => {
+    const ownKey = proposalJsonKey(NET, OWN_ID)
+    beforeEach(() => {
+      // Cancelled after its batch may have landed unconfirmed.
+      db.seedProposal({
+        id: OWN_ID,
+        network: NET,
+        proposer_address: ATTACKER,
+        status: "cancelled",
+        json_key: ownKey,
+        remark_payload: 'EGOV1:{"u":"https://fake.local/r/p.json","h":"aa"}',
+      })
+      bucketMod.bucket.set(ownKey, { body: "OWN", contentType: "application/json" })
+    })
+    const statusFor = (opt: unknown) => ({
+      query: { preimage: { requestStatusFor: async () => opt } },
+    })
+
+    it("keeps its objects when the envelope is noted on chain", async () => {
+      chain.api = statusFor({ isSome: true, unwrap: () => ({ isUnrequested: true }) })
+      const res = await DELETE(req(`https://gov.test/api/proposals/${OWN_ID}`, "DELETE"), ctx(OWN_ID))
+      expect(res.status).toBe(200)
+      expect(db.proposals.has(OWN_ID)).toBe(false)
+      expect(bodyOf(ownKey)).toBe("OWN")
+    })
+
+    it("keeps its objects when the chain can't be read", async () => {
+      const res = await DELETE(req(`https://gov.test/api/proposals/${OWN_ID}`, "DELETE"), ctx(OWN_ID))
+      expect(res.status).toBe(200)
+      expect(bodyOf(ownKey)).toBe("OWN")
+    })
+
+    it("deletes its objects when the envelope was never noted", async () => {
+      chain.api = statusFor({ isSome: false })
+      const res = await DELETE(req(`https://gov.test/api/proposals/${OWN_ID}`, "DELETE"), ctx(OWN_ID))
+      expect(res.status).toBe(200)
+      expect(bucketMod.bucket.has(ownKey)).toBe(false)
+    })
   })
 })
 

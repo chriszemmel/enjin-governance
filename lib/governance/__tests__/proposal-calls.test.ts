@@ -26,7 +26,10 @@ function fakeApi(sink: Recorded[]): ApiPromise {
       treasury: { spendLocal: rec("treasury.spendLocal") },
       referenda: { cancel: rec("referenda.cancel"), kill: rec("referenda.kill") },
       whitelist: { whitelistCall: rec("whitelist.whitelistCall") },
-      system: { setCode: rec("system.setCode"), remark: rec("system.remark") },
+      system: {
+        authorizeUpgrade: rec("system.authorizeUpgrade"),
+        remark: rec("system.remark"),
+      },
     },
     createType: (type: string, value: unknown) => ({ __call: type, value }),
   } as unknown as ApiPromise
@@ -61,10 +64,10 @@ describe("buildProposalCall", () => {
     expect(sink[0]).toEqual({ call: "whitelist.whitelistCall", args: ["0xabc"] })
   })
 
-  it("runtimeUpgrade → system.setCode(codeHex)", () => {
+  it("authorizeUpgrade → system.authorizeUpgrade(codeHash)", () => {
     const sink: Recorded[] = []
-    buildProposalCall(fakeApi(sink), { kind: "runtimeUpgrade", codeHex: "0xdeadbeef" })
-    expect(sink[0]).toEqual({ call: "system.setCode", args: ["0xdeadbeef"] })
+    buildProposalCall(fakeApi(sink), { kind: "authorizeUpgrade", codeHash: "0xabc" })
+    expect(sink[0]).toEqual({ call: "system.authorizeUpgrade", args: ["0xabc"] })
   })
 
   it("remark → system.remark(stringToHex(text)) (hex, not raw UTF-8)", () => {
@@ -91,7 +94,7 @@ describe("PROPOSAL_KIND_META", () => {
       "cancelReferendum",
       "killReferendum",
       "whitelistCall",
-      "runtimeUpgrade",
+      "authorizeUpgrade",
       "remark",
       "rawCall",
     ]
@@ -108,7 +111,7 @@ describe("PROPOSAL_KIND_META", () => {
     expect(PROPOSAL_KIND_META.killReferendum.suggestedOrigin).toEqual({
       Origins: "ReferendumKiller",
     })
-    expect(PROPOSAL_KIND_META.runtimeUpgrade.suggestedOrigin).toEqual({ System: "Root" })
+    expect(PROPOSAL_KIND_META.authorizeUpgrade.suggestedOrigin).toEqual({ System: "Root" })
   })
 
   it("leaves treasurySpend origin null (derived from amount)", () => {
@@ -122,7 +125,7 @@ describe("PROPOSAL_KIND_META", () => {
       { kind: "cancelReferendum", index: 0 },
       { kind: "killReferendum", index: 0 },
       { kind: "whitelistCall", callHash: "0x" },
-      { kind: "runtimeUpgrade", codeHex: "0x" },
+      { kind: "authorizeUpgrade", codeHash: "0x" },
       { kind: "remark", text: "" },
       { kind: "rawCall", callHex: "0x" },
     ]
