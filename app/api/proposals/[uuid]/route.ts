@@ -7,10 +7,11 @@
  * failed rows, and broadcast-but-never-finalised rows can all be
  * removed.
  *
- * The proposal's R2 objects (proposal.json + attachments) are deleted too,
- * best-effort, so a discarded draft doesn't leave blobs behind. Only
- * deletable rows reach here (never an on-chain proposal whose URL a finalised
- * envelope pins), so this can't 404 a shared on-chain link.
+ * The proposal's R2 objects (every staged proposal.json version + uploads)
+ * are deleted too, best-effort, so a discarded draft doesn't leave blobs
+ * behind. A row whose batch landed but was never confirmed is refused
+ * instead (409, fail closed on 503): a live referendum's metadata may pin
+ * one of its JSON versions, so deleting it could 404 a shared on-chain link.
  *
  * PATCH /api/proposals/[uuid]
  *

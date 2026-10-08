@@ -35,7 +35,7 @@ import {
   samePublicKey,
 } from "@/lib/chain/ss58"
 import { extractReferendumIndex } from "@/lib/governance/referenda"
-import { hashCall } from "@/lib/governance/preimage"
+import { hashCall, noteWouldAbort } from "@/lib/governance/preimage"
 import { formatTrackName } from "@/lib/governance/display"
 import { maxTreasurySpend, pickOriginForAmount } from "@/lib/governance/treasury"
 import {
@@ -370,14 +370,13 @@ function CreatePageInner() {
     }
   }, [draft])
 
-  // If an earlier proposal already noted these exact call bytes,
+  // If an account already noted these exact call bytes (Unrequested),
   // `preimage.notePreimage` would abort with AlreadyNoted and revert
   // the whole batchAll. The hash + len are the same regardless, so we
-  // can skip step 1 and only sign submit + remark.
+  // can skip step 1 and only sign submit + remark. A Requested preimage
+  // still takes the note (see noteWouldAbort).
   const preimageStatusQuery = usePreimageStatus(preimagePreview?.preimageHash ?? null)
-  const preimageAlreadyNoted =
-    preimageStatusQuery.data === "Unrequested" ||
-    preimageStatusQuery.data === "Requested"
+  const preimageAlreadyNoted = noteWouldAbort(preimageStatusQuery.data)
 
   // Authoritative "should we skip notePreimage?" decision used by the build
   // closure at submit time. The status query is 30s-stale: if it read
@@ -673,7 +672,7 @@ function CreatePageInner() {
         // the note that is already there instead of guessing.
         if (/AlreadyNoted/i.test(status.message)) {
           void preimageStatusQuery.refetch().then((r) => {
-            skipNoteRef.current = r.data === "Unrequested" || r.data === "Requested"
+            if (r.isSuccess) skipNoteRef.current = noteWouldAbort(r.data)
           })
           void envelopeNoted.refresh()
         }
@@ -803,10 +802,10 @@ function CreatePageInner() {
   // safety.
   const submitProposal = useCallback(async () => {
     try {
+      // Both ways: a preimage unnoted since the cached read must be noted
+      // again, or the Lookup would point at nothing.
       const res = await preimageStatusQuery.refetch()
-      if (res.data === "Unrequested" || res.data === "Requested") {
-        skipNoteRef.current = true
-      }
+      if (res.isSuccess) skipNoteRef.current = noteWouldAbort(res.data)
     } catch {
       // Best-effort: fall back to whatever the seeded ref already holds.
     }

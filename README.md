@@ -168,8 +168,11 @@
   enactment moment is selectable (as-soon-as-possible / delay / at a block).
 - **General + admin proposals** - a separate `/create/advanced` composer files
   any proposal under a chosen track origin: cancel / kill a referendum,
-  whitelist a call, runtime upgrade, on-chain remark, or a raw SCALE call.
-  Small calls ride inline; larger ones are noted as a preimage automatically.
+  whitelist a call, authorize a runtime upgrade by wasm hash
+  (`system.authorizeUpgrade`), on-chain remark, or a raw SCALE call. Small
+  calls ride inline; larger ones are noted as a preimage automatically. The
+  title / summary / body is anchored with the same EGOV1 `setMetadata`
+  binding as treasury proposals.
 - **Delegation** - delegate conviction-weighted ENJ on one track or batch
   across all eligible tracks in a single signature, and undelegate per track.
 - **Account governance state** - reclaim reserved deposits (submission /
@@ -275,15 +278,17 @@
   they left off. Beneficiary, enactment timing, and decision-deposit
   placement are all in the flow.
 - **`/create/advanced`** - general + admin proposal composer: cancel /
-  kill a referendum, whitelist a call, runtime upgrade, on-chain remark,
-  or a raw SCALE call, under a chosen track origin (inline vs preimage
-  chosen automatically by call size).
+  kill a referendum, whitelist a call, authorize a runtime upgrade (hash
+  computed in the browser from the `.wasm`), on-chain remark, or a raw SCALE
+  call, under a chosen track origin (inline vs preimage chosen automatically
+  by call size), with its EGOV1 details.
 - **`/account`** - profile editor with **Sign out** in destructive red,
   a "Your proposals" panel (**Live / Drafts / Cancelled** filters,
-  **Edit / Submit / Delete**), plus governance state: **Delegation**
-  (delegate per track or all tracks at once, and undelegate), **Locked
-  balance** (free expired conviction locks), and **Reserved deposits**
-  (reclaim submission / decision / preimage deposits).
+  **Edit / Submit / Delete**; advanced drafts get **Cancel**, then
+  **Delete**), plus governance state: **Delegation** (delegate per track or
+  all tracks at once, and undelegate), **Locked balance** (free expired
+  conviction locks), and **Reserved deposits** (reclaim submission /
+  decision / preimage deposits).
 - **`/security`** - public security-disclosure form (no account required);
   reports persist to the DB and optionally fan out to Telegram. IP
   rate-limited and honeypot-guarded against bot spam.
@@ -517,7 +522,8 @@ test/                  PGlite database helper and the server-only stub
 ## The EGOV1 metadata standard
 
 Every treasury proposal filed through this app batches four calls
-into a single signed extrinsic:
+into a single signed extrinsic (`/create/advanced` proposals use the same
+binding - see [GOVERNANCE_FLOW](docs/GOVERNANCE_FLOW.md#filing-a-proposal)):
 
 ```text
 utility.batchAll([

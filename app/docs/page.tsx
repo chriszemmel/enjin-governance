@@ -110,15 +110,16 @@ export default function DocsPage() {
               </li>
             </ol>
             <p>
-              Step 1 is skipped when the preimage for these exact bytes is
-              already on chain. The wizard checks{" "}
-              <Code>api.query.preimage.requestStatusFor(hash)</Code> before
-              building the batch - if the status is{" "}
-              <Code>Unrequested</Code> or <Code>Requested</Code>, re-noting
-              would abort with <Code>AlreadyNoted</Code> and revert the whole
-              batch, so the wizard drops step 1 and signs the remaining
-              three calls. The referendum still references the same
-              (hash, len) pair, so the on-chain outcome is identical.
+              Step 1 is skipped when an account already noted these exact
+              bytes. The wizard reads{" "}
+              <Code>api.query.preimage.requestStatusFor(hash)</Code> right
+              before signing - if the status is <Code>Unrequested</Code>,
+              re-noting would abort with <Code>AlreadyNoted</Code> and revert
+              the whole batch, so the wizard drops step 1 and signs the
+              remaining three calls. The referendum still references the
+              same (hash, len) pair, so the on-chain outcome is identical. A{" "}
+              <Code>Requested</Code> preimage keeps step 1: noting it is
+              accepted, and it may not hold the bytes yet.
             </p>
             <p>
               The proposer separately places the per-track decision deposit
@@ -226,7 +227,7 @@ export default function DocsPage() {
   }],
   "call": {                       // 1.2.0, optional
     "section": "<pallet, e.g. system>",
-    "method": "<call, e.g. setCode>",
+    "method": "<call, e.g. authorizeUpgrade>",
     "origin": "<track origin, e.g. Root>",
     "preimage_hash": "<0x… blake2-256 of the call>",
     "preimage_len": <int>,

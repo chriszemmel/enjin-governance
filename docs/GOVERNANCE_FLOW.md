@@ -86,6 +86,19 @@ names with `findTrackByName` or `canonicalTrackName`, never with `===`.
   `lib/governance/preimage.ts` reads `preimage.preimageFor`. When `len` is
   wrong or 0 (old `Legacy` proposals), it recovers the length from
   `requestStatusFor` and, as a last resort, by scanning the preimage keys.
+- **Inline calls** - a call of 128 bytes or less (e.g.
+  `system.authorizeUpgrade`, `referenda.cancel`) rides in the referendum
+  itself, with no preimage. `decodeStatus` keeps its bare bytes (no compact
+  length prefix), and `useInlineCall` in `lib/query/hooks/use-preimage.ts`
+  decodes them: a live referendum with today's runtime, a decided one with
+  the runtime of the block its history was read at, since a later upgrade
+  can re-index calls. A call that still won't decode yields to Subscan's
+  decode, or is shown raw.
+- **Runtime code** - for a runtime upgrade the proposal page shows the code
+  hash voters compare with the srtool build: computed from the wasm of a
+  `system.setCode` call (older referenda), or read from an
+  `authorizeUpgrade` call (`runtimeCodeOf` in
+  `lib/governance/runtime-code.ts`).
 
 ## Writing to the chain: `useExtrinsic`
 
@@ -158,11 +171,24 @@ files the referendum and binds its EGOV1 record.
 - **Advanced composer** (`/create/advanced`, `app/create/advanced/page.tsx`) -
   any of the curated calls in `lib/governance/proposal-calls.ts`: a
   treasury spend, `referenda.cancel`, `referenda.kill`,
-  `whitelist.whitelistCall`, a runtime upgrade (`system.setCode`), a
-  `system.remark`, or a raw SCALE-encoded call. A raw call must re-encode
-  to exactly the pasted bytes. The origin is chosen from `SUBMIT_ORIGINS`
-  and defaults to the kind's suggested origin. Calls of 128 bytes or less
-  are submitted `Inline`; larger calls are noted as a preimage first.
+  `whitelist.whitelistCall`, a runtime upgrade
+  (`system.authorizeUpgrade`), a `system.remark`, or a raw SCALE-encoded
+  call. A raw call must re-encode to exactly the pasted bytes. The origin
+  is chosen from `SUBMIT_ORIGINS` and defaults to the kind's suggested
+  origin. Calls of 128 bytes or less are submitted `Inline`; larger calls
+  are noted as a preimage first.
+
+**Runtime upgrades** are filed as `system.authorizeUpgrade(code_hash)` on
+Root: a 34-byte inline call, so there is no multi-MB preimage, deposit or
+block-size limit on the referendum. The hash is pasted, or computed in the
+browser (blake2-256) from the `.wasm` - the exact file that will be
+applied, normally srtool's `compact.compressed.wasm`; the file is never
+uploaded. Once enacted, anyone submits
+`system.applyAuthorizedUpgrade(code)`, which checks the hash, that the spec
+name is unchanged and that the spec version increases, and is free when
+valid. The composer doesn't offer `system.setCode`, which would put the
+whole wasm in the submission batch; the raw call kind still covers any
+encoded call.
 
 ### 1. Compose
 
@@ -178,8 +204,11 @@ Beneficiary addresses from another network are caught here. See
 ### 2. Stage the draft
 
 Staging writes the proposal text before anything is signed on chain. It
-needs a signed-in session, so the composer asks for a sign-in signature
-first if there isn't one.
+needs a signed-in session for the connected account, so the composer asks
+for a sign-in signature first if there isn't one (`useEnsureSignedIn`; a
+session for another account doesn't count). The advanced composer
+disables its buttons from the click until sign-in, staging and the
+pre-sign chain reads are done, so a double tap can't stage twice.
 
 ```text
 POST /api/proposals/draft                     (app/api/proposals/draft/route.ts)
@@ -228,16 +257,24 @@ The builders are `buildTreasuryProposal` in
   before signing. If another submission lands first, the index is stale,
   `setMetadata` fails the depositor check (`NoPermission`) and the whole
   batch reverts. It can never annotate someone else's referendum. Retry
-  rebuilds with a fresh count.
-- **Already noted.** Noting a preimage that exists aborts with
-  `preimage.AlreadyNoted` and reverts the batch. The composers read the
-  preimage status of the call and of the envelope right before signing and
-  leave out a note that is already there. The envelope can already exist
-  if someone copied it. On an `AlreadyNoted` error both statuses are read
-  again, so the retry skips the right call.
+  rebuilds with a fresh count. The advanced composer refuses to build when
+  that read fails. A stale index passes only for the same account's own
+  earlier ongoing referendum; the advanced composer compares the index it
+  bound with the `Submitted` one and says so instead of linking.
+- **Already noted.** Noting a preimage that an account already noted
+  (`Unrequested`) aborts with `preimage.AlreadyNoted` and reverts the
+  batch. The composers read the preimage status of the call and of the
+  envelope right before signing and leave out such a note
+  (`noteWouldAbort`). A `Requested` preimage keeps its note: noting it is
+  accepted, and it may not hold the bytes yet. The envelope can already
+  exist if someone copied it. On an `AlreadyNoted` error both statuses are
+  read again, so the retry skips the right call.
 
 The user signs once. The hook resolves on finalisation and reads the new
-index from the `referenda.Submitted` event (`extractReferendumIndex`).
+index from the `referenda.Submitted` event (`extractReferendumIndex`). The
+sign dialog shows success only then, when the details get linked. The
+advanced composer links the draft its batch was built with, and its form
+stays locked from Review on, so Retry resends the same call and draft.
 
 ### 4. Link the draft to its referendum
 
@@ -306,8 +343,9 @@ The schema also has `submitted` and `failed`; the drafts lists still show
   hasn't reached the chain only to its signed-in proposer.
 - **Resume.** Drafts appear on `/create` and `/account`. The treasury
   wizard reopens an unsigned draft with `?from=<id>` and updates it in
-  place. Drafts from the advanced composer can't be resumed in the
-  treasury wizard.
+  place, restoring its beneficiary only for the connected account's own
+  drafts. Drafts from the advanced composer can't be resumed in the
+  treasury wizard; the drafts lists offer them Cancel, then Delete.
 - **Cancel** (`POST /api/proposals/<id>/cancel`) sets the status to
   `cancelled`. It is refused for `on_chain` rows.
 - **Delete** (`DELETE /api/proposals/<id>`) removes the row and the

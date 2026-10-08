@@ -50,7 +50,7 @@ import { useReferendumVotes } from "@/lib/query/hooks/use-referendum-votes"
 import { useMe } from "@/lib/query/hooks/use-session"
 import { useSubscanReferendum } from "@/lib/query/hooks/use-subscan-referendum"
 import { useSubscanPreimage } from "@/lib/query/hooks/use-subscan-preimage"
-import { usePreimage } from "@/lib/query/hooks/use-preimage"
+import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { encodeForChain } from "@/lib/chain/ss58"
 import { StatusChip } from "@/components/governance/status-chip"
@@ -187,6 +187,25 @@ export default function ProposalDetailPage() {
     return null
   })()
   const preimageQuery = usePreimage(earlyProposalRef ?? undefined)
+  // Small calls (≤128 bytes) ride inline in the referendum instead of as a
+  // preimage - e.g. system.authorizeUpgrade, referenda.cancel. Decode those
+  // straight from the referendum info: a live one with today's runtime, a
+  // decided one with the runtime of the block its history was read at
+  // (finalisedAt - 1, see getReferendumHistory).
+  const inlineCall: { bytes: Uint8Array; at: number | null } | null = (() => {
+    if (current?.status.type === "Ongoing") {
+      const proposal = current.status.proposal
+      return "type" in proposal && proposal.type === "Inline"
+        ? { bytes: proposal.bytes, at: null }
+        : null
+    }
+    const proposal =
+      historyQuery.data?.status.type === "Ongoing" ? historyQuery.data.status.proposal : null
+    return proposal && "type" in proposal && proposal.type === "Inline" && finalisedAt != null
+      ? { bytes: proposal.bytes, at: finalisedAt - 1 }
+      : null
+  })()
+  const inlineCallQuery = useInlineCall(inlineCall?.bytes, inlineCall?.at)
   // Subscan keeps the decoded preimage long after the chain prunes the
   // bytes from `preimage.preimageFor`. Run this in parallel with the
   // chain query so we have a fallback for old referenda.
@@ -332,7 +351,9 @@ export default function ProposalDetailPage() {
   const onChainIntent: ProposalIntent =
     preimageQuery.data?.section
       ? intentFromPreimage(preimageQuery.data, chain)
-      : null
+      : inlineCallQuery.data?.section
+        ? intentFromPreimage(inlineCallQuery.data, chain)
+        : null
   const subscanIntent: ProposalIntent = intentFromSubscanCall(decodedCall, chain)
   const intent: ProposalIntent = onChainIntent ?? subscanIntent
 
@@ -541,9 +562,13 @@ export default function ProposalDetailPage() {
               </div>
             </div>
 
-            {(decodedCall || proposalRef) && (
+            {(inlineCall || decodedCall || proposalRef) && (
               <div className="pt-5 border-t border-border">
-                {decodedCall ? (
+                {/* An inline call that won't decode yields to Subscan's
+                    decode when there is one; otherwise it shows raw. */}
+                {inlineCall && !(inlineCallQuery.isError && decodedCall) ? (
+                  <PreimageDisplay inlineBytes={inlineCall.bytes} inlineAt={inlineCall.at} />
+                ) : decodedCall ? (
                   <SubscanCallDisplay
                     call={decodedCall}
                     hash={
@@ -566,12 +591,14 @@ export default function ProposalDetailPage() {
                     <PreimageDisplay preimageRef={proposalRef} />
                   )
                 ) : null}
-                <RuntimeCodeHash callBytes={preimageQuery.data?.bytes} />
+                <RuntimeCodeHash
+                  code={preimageQuery.data?.runtimeCode ?? inlineCallQuery.data?.runtimeCode}
+                />
               </div>
             )}
           </div>
 
-          {!decodedCall && !proposalRef && !isOngoing && (
+          {!inlineCall && !decodedCall && !proposalRef && !isOngoing && (
             <div className="rounded-2xl bg-card border border-border p-6 space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Preimage</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">

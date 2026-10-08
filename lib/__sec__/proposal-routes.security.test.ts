@@ -445,6 +445,42 @@ describe("DELETE", () => {
     const res = await DELETE(req(`https://gov.test/api/proposals/${VICTIM_ID}`, "DELETE"), ctx(VICTIM_ID))
     expect(res.status).toBe(403)
   })
+
+  describe("a cancelled row whose batch may have landed unconfirmed", () => {
+    const ownKey = proposalJsonKey(NET, OWN_ID)
+    const del = () => DELETE(req(`https://gov.test/api/proposals/${OWN_ID}`, "DELETE"), ctx(OWN_ID))
+    beforeEach(() => {
+      db.seedProposal({
+        id: OWN_ID,
+        network: NET,
+        proposer_address: ATTACKER,
+        status: "cancelled",
+        json_key: ownKey,
+        remark_payload: 'EGOV1:{"u":"https://fake.local/r/p.json","h":"aa"}',
+      })
+      bucketMod.bucket.set(ownKey, { body: "OWN", contentType: "application/json" })
+    })
+
+    it("keeps its row and objects when the envelope is noted on chain", async () => {
+      chainState.mode = "anchored"
+      expect((await del()).status).toBe(409)
+      expect(db.proposals.has(OWN_ID)).toBe(true)
+      expect(bodyOf(ownKey)).toBe("OWN")
+    })
+
+    it("keeps its row and objects when the chain can't be read", async () => {
+      chainState.mode = "down"
+      expect((await del()).status).toBe(503)
+      expect(db.proposals.has(OWN_ID)).toBe(true)
+      expect(bodyOf(ownKey)).toBe("OWN")
+    })
+
+    it("deletes its row and objects when the envelope was never noted", async () => {
+      expect((await del()).status).toBe(200)
+      expect(db.proposals.has(OWN_ID)).toBe(false)
+      expect(bucketMod.bucket.has(ownKey)).toBe(false)
+    })
+  })
 })
 
 describe("PATCH (edit)", () => {
