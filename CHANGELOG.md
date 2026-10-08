@@ -185,6 +185,14 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   check allows 4,096 output tokens, since Haiku 5.5 thinks by default and
   thinking counts toward the limit.
 
+- **The Moderation menu entry without the reload:** after signing in, a
+  moderator or admin sees Moderation at once instead of after a reload (the
+  role was cached from before the sign-in). The browser also remembers which
+  wallets signed in with a role on this device, so next time Moderation shows
+  as soon as such a wallet connects, before it signs in. Nobody else sees it,
+  and the server is never asked about a wallet that hasn't signed in; the
+  page and its routes still need the sign-in.
+
 ## 1.9
 
 - **Search:** robots.txt, a sitemap with every referendum, a web app

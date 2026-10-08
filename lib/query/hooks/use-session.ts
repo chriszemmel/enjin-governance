@@ -78,6 +78,8 @@ type Me = {
 }
 
 const ME_KEY = ["me"] as const
+/** The moderation role belongs to the session: it changes when that does. */
+const MODERATION_KEY = ["moderation"] as const
 
 async function fetchMe(): Promise<Me | null> {
   const res = await fetch("/api/auth/me", { credentials: "include" })
@@ -184,6 +186,8 @@ export function useSignIn(prefetched?: IssuedNonce) {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ME_KEY })
+      // A role cached from before (signed out, or another wallet) is stale.
+      void qc.invalidateQueries({ queryKey: MODERATION_KEY })
     },
   })
 
@@ -207,7 +211,9 @@ export function useSignOut() {
   const qc = useQueryClient()
   const reset = useCallback(() => {
     void qc.setQueryData(ME_KEY, null)
+    void qc.setQueryData([...MODERATION_KEY, "me"], null)
     void qc.invalidateQueries({ queryKey: ME_KEY })
+    void qc.invalidateQueries({ queryKey: MODERATION_KEY })
   }, [qc])
   return useMutation<void, Error, void>({
     mutationFn: async () => {

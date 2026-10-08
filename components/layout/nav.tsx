@@ -29,6 +29,12 @@ import { getConnectorMeta } from "@/lib/wallet/connector-registry"
 import { usePublicProfile } from "@/lib/query/hooks/use-profile"
 import { PolkadotIdenticon } from "@/components/profile/identicon"
 import { useMyModerationRole } from "@/lib/query/hooks/use-moderation"
+import {
+  browserHintStorage,
+  hasModeratorHint,
+  rememberModeratorRole,
+} from "@/lib/moderation/role-hint"
+import { useMe } from "@/lib/query/hooks/use-session"
 
 // Two top-level destinations. "Create" lives as a per-page CTA on
 // Proposals and Treasury so it doesn't crowd the menu.
@@ -49,9 +55,26 @@ export function Nav() {
   const { status, connectorId, session, activeAddress } = useWallet()
   const { short: addressShort, full: addressFull } = useDisplayAddress()
   const isConnected = status === "connected" && !!addressShort
-  // Moderators and admins get a link to the review queue.
-  const roleQuery = useMyModerationRole(isConnected)
-  const links = roleQuery.data
+  // Moderators and admins get a link to the review queue: by the signed-in
+  // role, or, before signing in, because this wallet signed in with a role
+  // on this device before (lib/moderation/role-hint.ts).
+  const me = useMe()
+  const signedIn = !!me.data
+  const roleQuery = useMyModerationRole(isConnected && signedIn)
+  const hinted = useMemo(() => {
+    const storage = browserHintStorage()
+    return !signedIn && isConnected && !!activeAddress && !!storage
+      ? hasModeratorHint(storage, activeAddress)
+      : false
+  }, [signedIn, isConnected, activeAddress])
+  const signedInAddress = me.data?.address
+  useEffect(() => {
+    const storage = browserHintStorage()
+    if (!storage || !signedInAddress || !roleQuery.isSuccess) return
+    rememberModeratorRole(storage, signedInAddress, !!roleQuery.data)
+  }, [signedInAddress, roleQuery.isSuccess, roleQuery.data])
+  const showModeration = signedIn ? !!roleQuery.data : hinted
+  const links = showModeration
     ? [...navLinks, { label: "Moderation", href: "/moderation", icon: ShieldCheck }]
     : navLinks
 
