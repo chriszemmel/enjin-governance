@@ -75,8 +75,9 @@ const LEDGER = [
   "011_moderation.sql",
   "012_moderation_settings.sql",
   "013_moderation_keep_state.sql",
+  "014_drop_proposer_signature.sql",
 ]
-/** What moderationSchema reports (migrations 011-013 and the ledger). */
+/** What moderationSchema reports (migrations 011-013 and the ledger, which lists 014 too). */
 export const schema = {
   moderation: true,
   settings: true,

@@ -154,6 +154,25 @@ function databaseSection(db: StatusInputs["database"]): StatusSection {
       )
     }
   }
+  // 014 drops a column the 1.0 code still writes, so it waits until every
+  // deployment runs 2.0: a reminder, never a problem.
+  const schema = db.schema
+  if (schema) {
+    const ledger = schema.ledger
+    const applied = ledger?.some((f) => f.startsWith("014_")) ?? false
+    items.push(
+      item(
+        "migration-014",
+        "Migration 014: drop proposer_signature",
+        applied ? "ok" : "warning",
+        applied
+          ? "Applied."
+          : ledger
+            ? "Not applied yet. Once every deployment runs 2.0, run pnpm db:migrate to drop the unused column."
+            : "Can't tell without the migrations ledger. Once every deployment runs 2.0, run pnpm db:migrate.",
+      ),
+    )
+  }
   return { id: "database", title: "Database", items }
 }
 

@@ -33,6 +33,7 @@ function inputs(o: Overrides = {}): StatusInputs {
           "011_moderation.sql",
           "012_moderation_settings.sql",
           "013_moderation_keep_state.sql",
+          "014_drop_proposer_signature.sql",
         ],
       },
       ...o.database,
@@ -124,6 +125,21 @@ describe("database", () => {
     const gone = schema({ moderation: false, ledger: ["011_moderation.sql"] })
     expect(level(gone, "migration-011")).toBe("problem")
     expect(hint(gone, "migration-011")).toContain("tables are missing")
+  })
+
+  it("reminds about migration 014 until the ledger lists it, without calling it a problem", () => {
+    const schema = (ledger: string[] | null) => ({
+      database: { schema: { moderation: true, settings: true, keepState: true, ledger } },
+    })
+    expect(level(schema(["013_keep_state.sql"]), "migration-014")).toBe("warning")
+    expect(hint(schema(["013_keep_state.sql"]), "migration-014")).toContain(
+      "every deployment runs 2.0",
+    )
+    expect(level(schema(null), "migration-014")).toBe("warning")
+    expect(level(schema(["014_drop_proposer_signature.sql"]), "migration-014")).toBe("ok")
+    expect(() => level({ database: { reachable: false, schema: null } }, "migration-014")).toThrow(
+      "no item migration-014",
+    )
   })
 })
 
