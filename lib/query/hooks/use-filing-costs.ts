@@ -51,8 +51,7 @@ export function useFilingCosts(chain?: ChainConfig): FilingCosts {
     () => ({
       submissionDeposit: api ? readSubmissionDeposit(api) : null,
       existentialDeposit: (api ? readExistentialDeposit(api) : null) ?? 0n,
-      preimageRate:
-        rateQuery.data ?? (specVersion != null ? knownPreimageRate(specVersion) : null),
+      preimageRate: rateQuery.data ?? (specVersion != null ? knownPreimageRate(specVersion) : null),
       feeAllowance: feeAllowance(target.decimals),
     }),
     [api, rateQuery.data, specVersion, target.decimals],

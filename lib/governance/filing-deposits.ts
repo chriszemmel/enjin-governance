@@ -130,8 +130,9 @@ async function dryRunNote(api: ApiPromise, origin: string, len: number): Promise
   const call = api.tx.preimage.notePreimage(u8aToHex(randomAsU8a(len)))
   // v1 takes (origin, call); v2 adds the XCM version to report results in.
   const xcmVersion = Number(
-    (api.consts.xcmPallet?.advertisedXcmVersion as unknown as { toString(): string } | undefined)
-      ?.toString() ?? 4,
+    (
+      api.consts.xcmPallet?.advertisedXcmVersion as unknown as { toString(): string } | undefined
+    )?.toString() ?? 4,
   )
   const args: unknown[] = [{ system: { Signed: origin } }, call]
   if (dryRunCall.meta.params.length > 2) args.push(xcmVersion)
@@ -167,7 +168,10 @@ export async function readPreimageDepositRate(
   const fromConstants = constantsRate(api)
   if (fromConstants) return fromConstants
   try {
-    const [small, large] = await Promise.all([dryRunNote(api, probe, 16), dryRunNote(api, probe, 1040)])
+    const [small, large] = await Promise.all([
+      dryRunNote(api, probe, 16),
+      dryRunNote(api, probe, 1040),
+    ])
     if (small != null && large != null) {
       const rate = rateFromSamples({ len: 16, amount: small }, { len: 1040, amount: large })
       if (rate) return { ...rate, source: "dry-run" }
@@ -205,7 +209,11 @@ export function readExistentialDeposit(api: ApiPromise): bigint | null {
  * fixed-width but for the app URL. Once staged, use the real
  * `remark_payload` instead.
  */
-export function estimateEnvelopeBytes(appUrl: string, network: ChainId, proposalId: string): number {
+export function estimateEnvelopeBytes(
+  appUrl: string,
+  network: ChainId,
+  proposalId: string,
+): number {
   const sha = "0".repeat(64)
   const base = `${appUrl.replace(/\/+$/, "")}/r`
   const url = publicUrlFor(base, proposalJsonVersionKey(network, proposalId, sha))
@@ -243,7 +251,8 @@ export function filingRequirement(input: {
   feeAllowance: bigint
   existentialDeposit: bigint
 }): FilingRequirement {
-  const callPreimageDeposit = input.callLen == null ? 0n : preimageDeposit(input.callLen, input.rate)
+  const callPreimageDeposit =
+    input.callLen == null ? 0n : preimageDeposit(input.callLen, input.rate)
   const envelopePreimageDeposit =
     input.envelopeLen == null ? 0n : preimageDeposit(input.envelopeLen, input.rate)
   const feesAndMinimum = input.feeAllowance + input.existentialDeposit
@@ -252,8 +261,7 @@ export function filingRequirement(input: {
     callPreimageDeposit,
     envelopePreimageDeposit,
     feesAndMinimum,
-    total:
-      input.submissionDeposit + callPreimageDeposit + envelopePreimageDeposit + feesAndMinimum,
+    total: input.submissionDeposit + callPreimageDeposit + envelopePreimageDeposit + feesAndMinimum,
   }
 }
 

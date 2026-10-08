@@ -42,17 +42,17 @@ export function FilingCosts({
       <dl className="space-y-2 text-xs">
         {submits && (
           <Line label="Submission deposit" value={fmt(r.submissionDeposit)}>
-            Refunded if the referendum is approved or cancelled. It stays reserved if the
-            referendum is rejected or times out.
+            Refunded if the referendum is approved or cancelled. It stays reserved if the referendum
+            is rejected or times out.
           </Line>
         )}
         {r.callPreimageDeposit > 0n && (
           <Line label="Call preimage deposit" value={fmt(r.callPreimageDeposit)} />
         )}
         <Line label="EGOV1 record preimage deposit" value={fmt(r.envelopePreimageDeposit)}>
-          {r.callPreimageDeposit > 0n ? "Preimage deposits are" : "This deposit is"} priced
-          per byte by the chain. Reclaim them from your account page once the referendum no
-          longer needs them.
+          {r.callPreimageDeposit > 0n
+            ? "Preimage deposits are priced per byte by the chain, and can be reclaimed from your account page by unnoting them."
+            : "Priced per byte by the chain, and can be reclaimed from your account page by unnoting it."}
         </Line>
         <Line label="Fees and minimum balance" value={fmt(r.feesAndMinimum)}>
           The transaction fee, and the {chain.ticker} that must stay free while deposits are
@@ -79,8 +79,8 @@ export function FilingCosts({
               : <span className="font-mono text-foreground">{fmt(decisionDeposit)}</span>
             </>
           )}
-          . Not part of this batch: the referendum can start deciding only once it is placed,
-          and anyone can place it. It is refunded once the referendum concludes.
+          . Not part of this batch: the referendum can start deciding only once it is placed, and
+          anyone can place it. It is refunded once the referendum concludes.
         </p>
       )}
     </div>

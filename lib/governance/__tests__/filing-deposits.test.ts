@@ -78,7 +78,11 @@ function event(section: string, method: string, fields: Record<string, unknown>)
 
 describe("heldAmount", () => {
   it("reads balances.Held, or balances.Reserved on older runtimes", () => {
-    const held = event("balances", "Held", { reason: {}, who: "en1", amount: "1016000000000000000" })
+    const held = event("balances", "Held", {
+      reason: {},
+      who: "en1",
+      amount: "1016000000000000000",
+    })
     const noted = event("preimage", "Noted", { hash_: "0x01" })
     expect(heldAmount([noted, held])).toBe(1_016_000_000_000_000_000n)
     expect(heldAmount([event("balances", "Reserved", { who: "en1", amount: 7n })])).toBe(7n)
@@ -98,9 +102,13 @@ function fakeApi(opts: {
   dryRun?: DryRun
 }): ApiPromise {
   const dryRunCall = opts.dryRun
-    ? Object.assign(async (...args: unknown[]) => opts.dryRun!(args[0], args[1] as { len: number }, args[2] as number), {
-        meta: { params: [{}, {}, {}] },
-      })
+    ? Object.assign(
+        async (...args: unknown[]) =>
+          opts.dryRun!(args[0], args[1] as { len: number }, args[2] as number),
+        {
+          meta: { params: [{}, {}, {}] },
+        },
+      )
     : undefined
   return {
     consts: { preimage: opts.consts ?? {}, xcmPallet: {} },
@@ -123,15 +131,26 @@ const okDryRun =
     asOk: {
       executionResult: { isOk: true },
       emittedEvents: [
-        event("balances", "Held", { reason: {}, who: "en1", amount: base + perByte * BigInt(call.len) }),
+        event("balances", "Held", {
+          reason: {},
+          who: "en1",
+          amount: base + perByte * BigInt(call.len),
+        }),
       ],
     },
   })
 
 describe("readPreimageDepositRate", () => {
   it("prefers baseDeposit / byteDeposit constants where a runtime has them", async () => {
-    const api = fakeApi({ consts: { baseDeposit: "5", byteDeposit: "2" }, dryRun: okDryRun(9n, 9n) })
-    expect(await readPreimageDepositRate(api, "en1")).toEqual({ base: 5n, perByte: 2n, source: "constants" })
+    const api = fakeApi({
+      consts: { baseDeposit: "5", byteDeposit: "2" },
+      dryRun: okDryRun(9n, 9n),
+    })
+    expect(await readPreimageDepositRate(api, "en1")).toEqual({
+      base: 5n,
+      perByte: 2n,
+      source: "constants",
+    })
   })
 
   it("dry-runs two notes and solves the rate", async () => {

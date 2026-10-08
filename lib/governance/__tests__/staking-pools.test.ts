@@ -32,7 +32,10 @@ function fakeApi(): ApiPromise {
   const json = (v: unknown) => ({ toJSON: () => v })
   const bondedPools = Object.assign(async (id: number) => json(pools[id] ?? null), {
     entries: async () =>
-      Object.keys(pools).map((id) => [{ args: [{ toNumber: () => Number(id) }] }, json(pools[Number(id)])]),
+      Object.keys(pools).map((id) => [
+        { args: [{ toNumber: () => Number(id) }] },
+        json(pools[Number(id)]),
+      ]),
   })
   return {
     consts: {},
