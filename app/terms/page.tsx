@@ -13,16 +13,15 @@ export default function TermsPage() {
   const op = getOperator()
   const contact = <a href={`mailto:${op.email}`}>{op.email}</a>
   return (
-    <LegalPage title="Terms of use" subtitle="Nutzungsbedingungen" updated="26 September 2026">
+    <LegalPage title="Terms of use" subtitle="Nutzungsbedingungen" updated="8 October 2026">
       <section className="space-y-2">
         <h2>1. What this site is</h2>
         <p>
           This site is an independent, community-maintained interface for on-chain governance of the
           Enjin Blockchain (OpenGov): reading referenda, voting, filing proposals and discussing
           them. It is operated by {op.name} (see <Link href="/imprint">imprint</Link>
-          ). The domain is provided by Enjin. The Enjin Blockchain is developed by Atlas Development
-          Services, a core contributor to the Enjin Blockchain; its developers occasionally
-          contribute code to this project.
+          ). The domain is provided by Atlas Development Services, a core contributor to the Enjin
+          Blockchain, whose developers occasionally contribute code to this project.
         </p>
         <p>
           The site is non-custodial. It never holds your keys or funds and cannot sign, move or

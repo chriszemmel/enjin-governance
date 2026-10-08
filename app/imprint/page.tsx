@@ -14,7 +14,7 @@ export default function ImprintPage() {
     <LegalPage
       title="Imprint (Impressum)"
       subtitle="Information according to § 5 DDG (Germany) / Angaben gemäß § 5 DDG"
-      updated="26 September 2026"
+      updated="8 October 2026"
     >
       <section className="space-y-1">
         <h2>Operator / Diensteanbieter</h2>
@@ -60,9 +60,8 @@ export default function ImprintPage() {
         <p>
           This site is an independent, community-maintained interface to on-chain governance of the
           Enjin Blockchain. It is developed and maintained by {op.name}. The domain is provided by
-          Enjin. The Enjin Blockchain itself is developed by Atlas Development Services, a core
-          contributor to the Enjin Blockchain, whose developers occasionally contribute to this
-          project. The Enjin name and logo are used with Enjin&apos;s permission.
+          Atlas Development Services, a core contributor to the Enjin Blockchain, whose developers
+          occasionally contribute to this project. The Enjin name and logo are used with Enjin&apos;s permission.
         </p>
         <p>
           Proposals, attachments and comments are published by their authors, who are responsible

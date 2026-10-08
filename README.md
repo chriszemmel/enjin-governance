@@ -37,9 +37,9 @@
 </p>
 
 > Independent, community-maintained interface for Enjin on-chain governance,
-> developed and maintained by Chris Zemmel. The domain is provided by Enjin.
-> The Enjin Blockchain itself is developed by Atlas Development Services, a
-> core contributor, whose developers occasionally contribute to this project.
+> developed and maintained by Chris Zemmel. The domain is provided by Atlas
+> Development Services, a core contributor to the Enjin Blockchain, whose
+> developers occasionally contribute to this project.
 
 ---
 
