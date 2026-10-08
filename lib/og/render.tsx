@@ -10,6 +10,7 @@
 
 import { ImageResponse } from "next/og"
 import { loadOgFonts } from "./fonts"
+import { Backdrop } from "./referendum-card"
 import { fitTitle } from "./referendum-facts"
 
 export const OG_SIZE = { width: 1200, height: 630 } as const
@@ -42,22 +43,11 @@ export async function renderOgImage({ section, title, tagline }: Args): Promise<
           padding: "56px",
           color: "#FFFFFF",
           fontFamily: "Inter",
-          background: "linear-gradient(160deg, #110c2b 0%, #07051a 55%, #050410 100%)",
+          background: "#07051a",
           overflow: "hidden",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: "-260px",
-            right: "-300px",
-            width: "900px",
-            height: "900px",
-            borderRadius: "9999px",
-            background:
-              "radial-gradient(circle, rgba(120,102,213,0.36) 0%, rgba(120,102,213,0.08) 45%, transparent 68%)",
-          }}
-        />
+        <Backdrop />
         <div style={{ position: "absolute", top: "90px", right: "-190px", display: "flex", opacity: 0.045 }}>
           <svg width="560" height="560" viewBox="96 116 320 280">
             <path d={E_PATH} fill="#FFFFFF" />
@@ -105,13 +95,13 @@ export async function renderOgImage({ section, title, tagline }: Args): Promise<
           </div>
         </div>
 
+        <div style={{ display: "flex", width: "72px", height: "4px", borderRadius: "2px", background: "#7866D5" }} />
         <div
           style={{
             display: "flex",
             flex: 1,
             alignItems: "flex-end",
             justifyContent: "space-between",
-            borderTop: "1px solid rgba(255,255,255,0.08)",
             paddingTop: "20px",
           }}
         >

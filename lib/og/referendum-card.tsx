@@ -41,22 +41,11 @@ export async function renderReferendumCard(
           padding: "56px",
           color: "#FFFFFF",
           fontFamily: "Inter",
-          background: "linear-gradient(160deg, #110c2b 0%, #07051a 55%, #050410 100%)",
+          background: "#07051a",
           overflow: "hidden",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: "-260px",
-            right: "-300px",
-            width: "900px",
-            height: "900px",
-            borderRadius: "9999px",
-            background:
-              "radial-gradient(circle, rgba(120,102,213,0.36) 0%, rgba(120,102,213,0.08) 45%, transparent 68%)",
-          }}
-        />
+        <Backdrop />
         <div style={{ position: "absolute", top: "90px", right: "-190px", display: "flex", opacity: 0.045 }}>
           <svg width="560" height="560" viewBox="96 116 320 280">
             <path d={E_PATH} fill="#FFFFFF" />
@@ -113,13 +102,13 @@ export async function renderReferendumCard(
         </div>
 
         {/* Bottom: the amount or the action, then the site. */}
+        <div style={{ display: "flex", width: "72px", height: "4px", borderRadius: "2px", background: "#7866D5" }} />
         <div
           style={{
             display: "flex",
             flex: 1,
             alignItems: "flex-end",
             justifyContent: "space-between",
-            borderTop: "1px solid rgba(255,255,255,0.08)",
             paddingTop: "20px",
           }}
         >
@@ -154,5 +143,36 @@ function Fact({ fact }: { fact: CardFact | null }) {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The dark gradient and the purple glow top right, as one SVG: Satori clips
+ * a CSS radial gradient on an absolutely placed box at the frame's height,
+ * which left a hard line across the card.
+ */
+export function Backdrop() {
+  return (
+    <svg
+      width="1200"
+      height="630"
+      viewBox="0 0 1200 630"
+      style={{ position: "absolute", left: 0, top: 0 }}
+    >
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="0.36" y2="1">
+          <stop offset="0" stopColor="#110c2b" />
+          <stop offset="0.55" stopColor="#07051a" />
+          <stop offset="1" stopColor="#050410" />
+        </linearGradient>
+        <radialGradient id="glow" cx="1050" cy="190" r="433" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#7866D5" stopOpacity="0.36" />
+          <stop offset="0.66" stopColor="#7866D5" stopOpacity="0.08" />
+          <stop offset="1" stopColor="#7866D5" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width="1200" height="630" fill="url(#bg)" />
+      <rect width="1200" height="630" fill="url(#glow)" />
+    </svg>
   )
 }
