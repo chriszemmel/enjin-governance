@@ -1,7 +1,9 @@
 "use client"
 
+import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ChainConfig } from "@/lib/chain/chains"
+import { encodeForChain } from "@/lib/chain/ss58"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { confirmWithRetry } from "@/lib/governance/confirm-client"
 import { useMe } from "@/lib/query/hooks/use-session"
@@ -31,11 +33,22 @@ export type MyDraft = {
  * active chain. Used by the wizard to surface old un-landed drafts so
  * the proposer can mark them outdated. Unsigned drafts only come back
  * while their proposer is signed in, so the list refetches on sign-in.
+ *
+ * The address is asked for in the network's own format, the one the
+ * composers store (an extension account arrives in its own, e.g. `5…`).
  */
-export function useMyDrafts(address: string | null, chain?: ChainConfig) {
+export function useMyDrafts(rawAddress: string | null, chain?: ChainConfig) {
   const active = useActiveChain()
   const target = chain ?? active
   const session = useMe().data?.address ?? null
+  const address = useMemo(() => {
+    if (!rawAddress) return null
+    try {
+      return encodeForChain(rawAddress, target.id)
+    } catch {
+      return rawAddress
+    }
+  }, [rawAddress, target.id])
   return useQuery<MyDraft[]>({
     queryKey: ["my-drafts", target.id, address, session],
     queryFn: async () => {

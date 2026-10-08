@@ -65,6 +65,8 @@ const MISSING = "99999999-9999-4999-8999-999999999999"
 
 /** The same wallet in the Enjin Matrixchain format. */
 const asMatrix = (address: string) => encodeAddress(decodeAddress(address), 1110)
+/** The same wallet in the generic Substrate format an extension hands out. */
+const asGeneric = (address: string) => encodeAddress(decodeAddress(address), 42)
 const signIn = (address: string) => {
   auth.user = { id: `user-${address.slice(0, 6)}`, address }
 }
@@ -455,6 +457,7 @@ describe("by-proposer", () => {
 
   it("validates the address and the network", async () => {
     expect((await list("abc")).res.status).toBe(400)
+    expect((await list(`${ALICE.slice(0, -1)}x`)).res.status).toBe(400)
     expect((await list(ALICE, null)).res.status).toBe(400)
     expect((await list(ALICE, "polkadot")).res.status).toBe(400)
   })
@@ -466,6 +469,25 @@ describe("by-proposer", () => {
     // The proposer, signed in with another network's format of the same key.
     signIn(asMatrix(ALICE))
     expect(titles((await list(ALICE)).items)).toEqual(statuses.map((s) => `Alice ${s}`).sort())
+  })
+
+  it("finds the proposer's rows whatever format the address comes in", async () => {
+    // An extension account, in its own format: the rows are stored in the
+    // network's.
+    signIn(asGeneric(ALICE))
+    expect(titles((await list(asGeneric(ALICE))).items)).toEqual(
+      statuses.map((s) => `Alice ${s}`).sort(),
+    )
+    // An older advanced draft that kept the wallet's own format.
+    seed({
+      id: "55555555-5555-4555-8555-555555555555",
+      proposer_address: asGeneric(ALICE),
+      title: "Alice legacy",
+    })
+    expect(titles((await list(ALICE)).items)).toContain("Alice legacy")
+    expect(titles((await list(asMatrix(ALICE))).items)).toContain("Alice legacy")
+    // Another wallet's rows never match.
+    expect((await list(BOB)).items).toEqual([])
   })
 
   it("treats a failed session lookup as signed out", async () => {

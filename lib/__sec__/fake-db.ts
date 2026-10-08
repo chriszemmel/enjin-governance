@@ -404,10 +404,10 @@ export async function getProposalsByIndices(
 // WHERE network = $1 AND proposer_address = $2 ORDER BY created_at DESC LIMIT 50
 export async function listProposalsByProposer(
   network: string,
-  address: string,
+  addresses: readonly string[],
 ): Promise<ProposalRow[]> {
   return [...proposals.values()]
-    .filter((r) => r.network === network && r.proposer_address === address)
+    .filter((r) => r.network === network && addresses.includes(r.proposer_address))
     .sort((x, y) => y.created_at.getTime() - x.created_at.getTime())
     .slice(0, 50)
     .map((r) => ({ ...r }))

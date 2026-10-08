@@ -7,16 +7,40 @@
  *
  * Unsigned drafts are private: only the proposer, signed in, sees them.
  * Anyone else gets the proposals that reached the chain.
+ *
+ * The address may come in any SS58 format (an extension hands out its own,
+ * often the generic `5…`); rows are found in the formats they are stored in.
  */
 
 import { NextResponse, type NextRequest } from "next/server"
+import { decodeAddress, encodeAddress } from "@polkadot/util-crypto"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
-import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
+import type { ChainId } from "@/lib/chain/chains"
+import { encodeForChain, initializeWasm, isValidSs58, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { listProposalsByProposer } from "@/lib/db/proposals"
 
 export const runtime = "nodejs"
+
+/** The generic Substrate format (`5…`), the usual one from an extension. */
+const GENERIC_SS58_PREFIX = 42
+
+/**
+ * The formats a proposer's address can be stored in. The composers store
+ * the network's own (`encodeForChain`); advanced drafts from before that
+ * kept the wallet's own, usually the generic one. The column is matched
+ * exactly, so the query asks for each.
+ */
+function storedForms(address: string, network: ChainId): string[] {
+  return [
+    ...new Set([
+      encodeForChain(address, network),
+      encodeAddress(decodeAddress(address), GENERIC_SS58_PREFIX),
+      address,
+    ]),
+  ]
+}
 
 const NETWORK_VALUES = [
   "enjin-relay",
@@ -37,7 +61,8 @@ export async function GET(
   }
 
   const { address } = await context.params
-  if (!address || address.length < 4) {
+  await initializeWasm()
+  if (!address || !isValidSs58(address)) {
     return NextResponse.json(
       { ok: false, error: "Invalid address" },
       { status: 400 },
@@ -54,10 +79,9 @@ export async function GET(
   }
 
   const [rows, me] = await Promise.all([
-    listProposalsByProposer(network.data, address),
+    listProposalsByProposer(network.data, storedForms(address, network.data)),
     getCurrentUser().catch(() => null),
   ])
-  await initializeWasm()
   let isOwner = false
   try {
     isOwner = me != null && samePublicKey(me.address, address)
