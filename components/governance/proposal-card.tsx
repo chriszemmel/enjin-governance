@@ -14,6 +14,10 @@ import { BlockTime } from "./block-time"
 import { TrackBadge } from "./track-badge"
 import { TallyBar } from "./tally-bar"
 import { LifecycleMini } from "./lifecycle-progress"
+import { formatTokenAmount } from "@/lib/chain/format"
+import { intentFromPreimage } from "@/lib/governance/call-extract"
+import { localSpendTarget } from "@/lib/governance/payout"
+import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 
 interface ProposalCardProps {
   referendum: Referendum
@@ -58,6 +62,7 @@ export function ProposalCard({
   // Submitted while ongoing; once decided, the block it ended at.
   const submittedBlock = status.type === "Ongoing" ? status.submitted : status.at
   const isOngoing = status.type === "Ongoing"
+  const spendAmount = useSpendAmount(referendum)
 
   return (
     <Link
@@ -115,7 +120,12 @@ export function ProposalCard({
       {/* An Approved referendum's call still waits in the scheduler until
           it's enacted; the bar shows that too, then hides itself. */}
       {(isOngoing || status.type === "Approved") && (
-        <LifecycleMini referendum={referendum} track={track ?? null} className="mb-4" />
+        <LifecycleMini
+          referendum={referendum}
+          track={track ?? null}
+          amount={spendAmount}
+          className="mb-4"
+        />
       )}
 
       {/* An Approved card's line above already dates it. */}
@@ -128,4 +138,21 @@ export function ProposalCard({
       )}
     </Link>
   )
+}
+
+/**
+ * What a live treasury spend_local pays, decoded from its call on chain
+ * (the preimage, or the inline call) - never from the off-chain metadata,
+ * whose amount the proposer typed. Null for any other call.
+ */
+function useSpendAmount(referendum: Referendum): string | null {
+  const chain = useActiveChain()
+  const proposal = referendum.status.type === "Ongoing" ? referendum.status.proposal : null
+  const inline = proposal && "type" in proposal && proposal.type === "Inline" ? proposal.bytes : null
+  const lookup = proposal && !inline ? (proposal as { hash: `0x${string}`; len: number }) : null
+  const preimage = usePreimage(lookup)
+  const inlineCall = useInlineCall(inline)
+  const decoded = preimage.data?.section ? preimage.data : inlineCall.data
+  const target = decoded?.section ? localSpendTarget(intentFromPreimage(decoded, chain)) : null
+  return target ? formatTokenAmount(target.amount, chain, { maxFractionDigits: 2 }) : null
 }

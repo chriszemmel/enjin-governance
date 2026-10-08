@@ -151,6 +151,15 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   event and its block behind Details. Proposal cards say "Voting" or
   "Confirming" with the time left, an approved one its approval date, and
   drop the block number from the footer. Fits a 360 px screen.
+- **What is asked comes first:** on a proposal page the treasury request
+  (amount, beneficiary, call) now sits above the lifecycle. Proposal cards
+  show what a live spend pays next to "Voting", decoded from its call on
+  chain rather than taken from the proposer's metadata.
+- **Treasury counts include decided spends:** a decided referendum no
+  longer carries its track on chain, so the treasury page counted 0
+  approved and 0 rejected. Tracks of decided referenda are read from the
+  archive (and shown on their cards); without an archive the counts say
+  "-" instead of leaving them out.
 - **Runtime upgrades in an open tab:** tracks, spend tiers, the support
   denominator and treasury constants are keyed on the runtime's spec
   version and refresh when it changes, instead of keeping the old values

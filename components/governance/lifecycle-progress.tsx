@@ -36,6 +36,8 @@ import type { Referendum, Track } from "@/lib/governance/types"
 interface LifecycleProgressProps {
   referendum: Referendum
   track: Track | null | undefined
+  /** The amount a treasury spend pays, decoded from its call. */
+  amount?: string | null
   /** Override the chain head - used by previews/tests. */
   currentBlockOverride?: number | null
   className?: string
@@ -399,6 +401,7 @@ function FinishedCard({
 export function LifecycleMini({
   referendum,
   track,
+  amount,
   currentBlockOverride,
   className,
 }: LifecycleProgressProps) {
@@ -449,7 +452,10 @@ export function LifecycleMini({
   return (
     <div className={cn("space-y-1.5", className)}>
       <div className="flex items-center justify-between gap-3 text-[11px]">
-        <span className="text-foreground/80 font-medium">{label[activeStage.id]}</span>
+        <span className="text-foreground/80 font-medium">
+          {label[activeStage.id]}
+          {amount && <span> · {amount}</span>}
+        </span>
         <span className="text-muted-foreground tabular-nums">
           {left == null ? "" : left > 0 ? `${formatBlockDuration(left)} left` : "Ending"}
         </span>

@@ -422,11 +422,12 @@ export default function ProposalDetailPage() {
               ) : null,
           })}
 
-          <LifecycleProgress referendum={ref} track={track ?? null} intent={intent} />
-
+          {/* What is asked comes first, then how long there is to decide. */}
           {intent?.kind === "treasury-spend" && (
             <TreasuryRequestSummary intent={intent} chain={chain} limitTier={spendLimitTier} />
           )}
+
+          <LifecycleProgress referendum={ref} track={track ?? null} intent={intent} />
 
           <TallyVotesSwiper
             slides={[
