@@ -117,11 +117,35 @@ describe("getLifecycle - terminal", () => {
     return { index: 1, status, trackId: null, tally: null }
   }
 
-  it("approved: every stage is done", () => {
+  it("approved without the scheduler read: decided stages done, Enact unknown (not a check)", () => {
     const lc = getLifecycle(terminal("Approved"), track, 6000)
     expect(lc.terminal).toBe("approved")
-    expect(lc.stages.every((s) => s.state === "done")).toBe(true)
-    expect(lc.overallProgress).toBe(1)
+    expect(lc.stages.map((s) => s.state)).toEqual(["done", "done", "done", "unknown"])
+    expect(lc.activeStageId).toBeNull()
+    expect(lc.overallProgress).toBe(0.75)
+  })
+
+  it("timed out: never decided, so only prepare is done", () => {
+    const lc = getLifecycle(terminal("TimedOut"), track, 6000)
+    expect(lc.stages.map((s) => s.state)).toEqual(["done", "skipped", "skipped", "skipped"])
+    expect(lc.timeline.map((e) => e.label)).toEqual(["Submitted", "Timed out"])
+  })
+
+  it("lists an outcome's rows before the history arrives, blocks unknown", () => {
+    const lc = getLifecycle(terminal("Approved"), track, 6000)
+    expect(lc.timeline.map((e) => [e.label, e.block])).toEqual([
+      ["Submitted", null],
+      ["Decision started", null],
+      ["Confirm started", null],
+      ["Approved", 5000],
+      ["Enactment", 5100],
+    ])
+    const rejected = getLifecycle(terminal("Rejected"), track, 6000)
+    expect(rejected.timeline.map((e) => e.label)).toEqual([
+      "Submitted",
+      "Decision started",
+      "Rejected",
+    ])
   })
 
   it("rejected: prep + decide done, confirm + enact skipped", () => {

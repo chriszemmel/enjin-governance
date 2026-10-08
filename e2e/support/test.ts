@@ -74,11 +74,17 @@ function installFakeWallet(address: string) {
 
 /**
  * Opens Canary referendum 13 with its test metadata. The chain part is
- * real, so the first load waits for the RPC connection.
+ * real, so the first load waits for the RPC connection. It also waits for
+ * the treasury summary: it comes with the call, decoded after the archive
+ * history, and pushes everything below it (the EGOV1 header and its menu)
+ * down, so a test that clicks there first could hit a moving target.
  */
 export async function openProposal(page: Page) {
   await page.goto(PROPOSAL_PATH)
   await expect(page.getByText("EGOV1 · Verified")).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText("Treasury request", { exact: true })).toBeVisible({
+    timeout: 60_000,
+  })
 }
 
 /** /create with the fake wallet connected and the form ready. */

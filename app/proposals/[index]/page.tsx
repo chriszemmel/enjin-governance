@@ -422,7 +422,7 @@ export default function ProposalDetailPage() {
               ) : null,
           })}
 
-          <LifecycleProgress referendum={ref} track={track ?? null} />
+          <LifecycleProgress referendum={ref} track={track ?? null} intent={intent} />
 
           {intent?.kind === "treasury-spend" && (
             <TreasuryRequestSummary intent={intent} chain={chain} limitTier={spendLimitTier} />

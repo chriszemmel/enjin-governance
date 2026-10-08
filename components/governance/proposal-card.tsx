@@ -112,10 +112,10 @@ export function ProposalCard({
         </div>
       )}
 
-      {isOngoing && (
-        <div className="mb-4">
-          <LifecycleMini referendum={referendum} track={track ?? null} />
-        </div>
+      {/* An Approved referendum's call still waits in the scheduler until
+          it's enacted; the bar shows that too, then hides itself. */}
+      {(isOngoing || status.type === "Approved") && (
+        <LifecycleMini referendum={referendum} track={track ?? null} className="mb-4" />
       )}
 
       <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
