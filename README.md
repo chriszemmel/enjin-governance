@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-971%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-996%20passing-22c55e?style=flat-square" />
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
@@ -164,12 +164,15 @@
   `MetadataOf` binding carries an `EGOV1:{"u":"…","h":"…"}` envelope so any
   third party can rebuild the proposal corpus by resolving it through the
   preimage pallet. Auto-picks the smallest origin tier that covers the amount (capped
-  at BigSpender / 1,000,000 ENJ); the beneficiary can be any address, and the
+  at TreasuryAdmin / 25,000,000 ENJ); the beneficiary can be any address, and the
   enactment moment is selectable (as-soon-as-possible / delay / at a block).
 - **General + admin proposals** - a separate `/create/advanced` composer files
   any proposal under a chosen track origin: cancel / kill a referendum,
-  whitelist a call, runtime upgrade, on-chain remark, or a raw SCALE call.
-  Small calls ride inline; larger ones are noted as a preimage automatically.
+  whitelist a call, authorize a runtime upgrade by wasm hash
+  (`system.authorizeUpgrade`), on-chain remark, or a raw SCALE call. Small
+  calls ride inline; larger ones are noted as a preimage automatically. The
+  title / summary / body is anchored with the same EGOV1 `setMetadata`
+  binding as treasury proposals.
 - **Delegation** - delegate conviction-weighted ENJ on one track or batch
   across all eligible tracks in a single signature, and undelegate per track.
 - **Account governance state** - reclaim reserved deposits (submission /
@@ -275,15 +278,17 @@
   they left off. Beneficiary, enactment timing, and decision-deposit
   placement are all in the flow.
 - **`/create/advanced`** - general + admin proposal composer: cancel /
-  kill a referendum, whitelist a call, runtime upgrade, on-chain remark,
-  or a raw SCALE call, under a chosen track origin (inline vs preimage
-  chosen automatically by call size).
+  kill a referendum, whitelist a call, authorize a runtime upgrade (hash
+  computed in the browser from the `.wasm`), on-chain remark, or a raw SCALE
+  call, under a chosen track origin (inline vs preimage chosen automatically
+  by call size), with its EGOV1 details.
 - **`/account`** - profile editor with **Sign out** in destructive red,
   a "Your proposals" panel (**Live / Drafts / Cancelled** filters,
-  **Edit / Submit / Delete**), plus governance state: **Delegation**
-  (delegate per track or all tracks at once, and undelegate), **Locked
-  balance** (free expired conviction locks), and **Reserved deposits**
-  (reclaim submission / decision / preimage deposits).
+  **Edit / Submit / Delete**; advanced drafts get **Cancel**, then
+  **Delete**), plus governance state: **Delegation** (delegate per track or
+  all tracks at once, and undelegate), **Locked balance** (free expired
+  conviction locks), and **Reserved deposits** (reclaim submission /
+  decision / preimage deposits).
 - **`/security`** - public security-disclosure form (no account required);
   reports persist to the DB and optionally fan out to Telegram. IP
   rate-limited and honeypot-guarded against bot spam.
@@ -335,7 +340,7 @@
 |---|---|
 | TypeScript source files (excl. vendored shadcn and tests) | **~300** |
 | Docs files | **7** |
-| Unit tests | **971** (84 files), including route tests and database tests against PGlite |
+| Unit tests | **996** (85 files), including route tests and database tests against PGlite |
 | Browser tests | **18** (Playwright, against the production build) |
 | Test coverage (lines) | **88%** of API routes, **80%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and components are covered by the browser tests, not by unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
@@ -406,7 +411,7 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (971 tests)
+pnpm test         # Vitest (996 tests)
 pnpm test:watch   # Vitest watch
 pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
 ```
@@ -517,7 +522,8 @@ test/                  PGlite database helper and the server-only stub
 ## The EGOV1 metadata standard
 
 Every treasury proposal filed through this app batches four calls
-into a single signed extrinsic:
+into a single signed extrinsic (`/create/advanced` proposals use the same
+binding - see [GOVERNANCE_FLOW](docs/GOVERNANCE_FLOW.md#filing-a-proposal)):
 
 ```text
 utility.batchAll([

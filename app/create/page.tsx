@@ -35,7 +35,7 @@ import {
   samePublicKey,
 } from "@/lib/chain/ss58"
 import { extractReferendumIndex } from "@/lib/governance/referenda"
-import { hashCall } from "@/lib/governance/preimage"
+import { hashCall, noteWouldAbort } from "@/lib/governance/preimage"
 import { formatTrackName } from "@/lib/governance/display"
 import { maxTreasurySpend, pickOriginForAmount } from "@/lib/governance/treasury"
 import {
@@ -46,6 +46,7 @@ import { useApi } from "@/lib/query/hooks/use-api"
 import { useBalance } from "@/lib/query/hooks/use-balance"
 import { useEnsureSignedIn } from "@/lib/wallet/use-ensure-signed-in"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
+import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
 import { useEnvelopeNoted, usePreimageStatus } from "@/lib/query/hooks/use-preimage"
 import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
@@ -110,6 +111,8 @@ function CreatePageInner() {
   const chain = useActiveChain()
   const apiQuery = useApi()
   const tracksQuery = useTracks()
+  const treasuryTiers = useTreasuryTiers()
+  const treasuryBalanceQuery = useBalance(chain.treasuryAddress)
   const currentBlockQuery = useCurrentBlock()
 
   const [enactment, setEnactment] = useState<EnactmentChoice>(DEFAULT_ENACTMENT)
@@ -302,13 +305,33 @@ function CreatePageInner() {
   } catch (e) {
     amountError = e instanceof Error ? e.message : "Invalid amount"
   }
+  // Spend limits for the connected runtime - null while connecting, or when
+  // the runtime predates every listed spec (then nothing can be filed).
+  const tiers = treasuryTiers.table?.tiers ?? null
   const pickedTier =
-    parsedAmount != null ? pickOriginForAmount(parsedAmount) : null
-  // A positive amount with no covering tier means it exceeds the BigSpender
-  // cap - there is no unbounded fallback, so we block submission rather than
-  // file a referendum that can't enact.
+    parsedAmount != null && tiers ? pickOriginForAmount(parsedAmount, tiers) : null
+  // A positive amount with no covering tier means it exceeds the top tier's
+  // (TreasuryAdmin) cap - there is no unbounded fallback, so we block
+  // submission rather than file a referendum that can't enact.
   const amountExceedsMaxTier =
-    parsedAmount != null && parsedAmount > 0n && !amountError && pickedTier == null
+    parsedAmount != null && parsedAmount > 0n && !amountError && tiers != null && pickedTier == null
+
+  // Non-blocking notes under the amount field. spend_local doesn't check the
+  // treasury balance: an approved spend the treasury can't cover waits until
+  // it can.
+  const amountWarnings: string[] = []
+  if (treasuryTiers.table && treasuryTiers.notice) {
+    amountWarnings.push(treasuryTiers.notice)
+  }
+  if (
+    parsedAmount != null &&
+    treasuryBalanceQuery.data != null &&
+    parsedAmount > treasuryBalanceQuery.data
+  ) {
+    amountWarnings.push(
+      `The treasury holds ${formatTokenAmount(treasuryBalanceQuery.data, chain)} right now. If approved, this spend is paid only once the treasury can cover it in full.`,
+    )
+  }
 
   // Track-level deposits for the picked origin (read from chain consts).
   const trackForOrigin = useMemo(() => {
@@ -370,14 +393,13 @@ function CreatePageInner() {
     }
   }, [draft])
 
-  // If an earlier proposal already noted these exact call bytes,
+  // If an account already noted these exact call bytes (Unrequested),
   // `preimage.notePreimage` would abort with AlreadyNoted and revert
   // the whole batchAll. The hash + len are the same regardless, so we
-  // can skip step 1 and only sign submit + remark.
+  // can skip step 1 and only sign submit + remark. A Requested preimage
+  // still takes the note (see noteWouldAbort).
   const preimageStatusQuery = usePreimageStatus(preimagePreview?.preimageHash ?? null)
-  const preimageAlreadyNoted =
-    preimageStatusQuery.data === "Unrequested" ||
-    preimageStatusQuery.data === "Requested"
+  const preimageAlreadyNoted = noteWouldAbort(preimageStatusQuery.data)
 
   // Authoritative "should we skip notePreimage?" decision used by the build
   // closure at submit time. The status query is 30s-stale: if it read
@@ -470,11 +492,16 @@ function CreatePageInner() {
     missingReasons.push(`Enter a requested amount in ${chain.ticker}`)
   } else if (parsedAmount <= 0n) {
     missingReasons.push("Requested amount must be greater than zero")
+  } else if (treasuryTiers.specVersion == null) {
+    missingReasons.push("Waiting for the chain connection to load treasury spend limits")
+  } else if (!tiers) {
+    missingReasons.push(treasuryTiers.notice ?? "Treasury spend limits are unavailable")
   } else if (amountExceedsMaxTier) {
-    const cap = maxTreasurySpend()
+    const cap = maxTreasurySpend(tiers)
+    const capTier = cap != null ? pickOriginForAmount(cap, tiers) : null
     missingReasons.push(
-      cap != null
-        ? `Requested amount exceeds the maximum treasury spend of ${formatTokenAmount(cap, chain)} (BigSpender). Reduce the amount.`
+      cap != null && capTier
+        ? `Requested amount exceeds the maximum treasury spend of ${formatTokenAmount(cap, chain)} (${formatTrackName(capTier.origin)}). Reduce the amount.`
         : "Requested amount exceeds the maximum treasury spend tier.",
     )
   }
@@ -673,7 +700,7 @@ function CreatePageInner() {
         // the note that is already there instead of guessing.
         if (/AlreadyNoted/i.test(status.message)) {
           void preimageStatusQuery.refetch().then((r) => {
-            skipNoteRef.current = r.data === "Unrequested" || r.data === "Requested"
+            if (r.isSuccess) skipNoteRef.current = noteWouldAbort(r.data)
           })
           void envelopeNoted.refresh()
         }
@@ -803,10 +830,10 @@ function CreatePageInner() {
   // safety.
   const submitProposal = useCallback(async () => {
     try {
+      // Both ways: a preimage unnoted since the cached read must be noted
+      // again, or the Lookup would point at nothing.
       const res = await preimageStatusQuery.refetch()
-      if (res.data === "Unrequested" || res.data === "Requested") {
-        skipNoteRef.current = true
-      }
+      if (res.isSuccess) skipNoteRef.current = noteWouldAbort(res.data)
     } catch {
       // Best-effort: fall back to whatever the seeded ref already holds.
     }
@@ -867,6 +894,8 @@ function CreatePageInner() {
             body={body}
             amount={amount}
             amountError={amountError}
+            amountWarnings={amountWarnings}
+            tiers={tiers}
             pickedTier={pickedTier}
             requiredPlanck={requiredPlanck}
             balanceSufficient={balanceSufficient}

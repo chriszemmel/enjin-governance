@@ -50,8 +50,9 @@ import { useReferendumVotes } from "@/lib/query/hooks/use-referendum-votes"
 import { useMe } from "@/lib/query/hooks/use-session"
 import { useSubscanReferendum } from "@/lib/query/hooks/use-subscan-referendum"
 import { useSubscanPreimage } from "@/lib/query/hooks/use-subscan-preimage"
-import { usePreimage } from "@/lib/query/hooks/use-preimage"
+import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
+import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
 import { encodeForChain } from "@/lib/chain/ss58"
 import { StatusChip } from "@/components/governance/status-chip"
 import {
@@ -74,7 +75,9 @@ import {
   intentFromSubscanCall,
   type ProposalIntent,
 } from "@/lib/governance/call-extract"
-import type { Deposit, PreimageRef, Tally } from "@/lib/governance/types"
+import { formatTrackName } from "@/lib/governance/display"
+import { canonicalTrackName } from "@/lib/governance/tracks"
+import type { Deposit, PreimageRef, Tally, TreasuryTier } from "@/lib/governance/types"
 import { normaliseSubscanCall, type SubscanCallParam } from "@/lib/subscan/client"
 import {
   proposalHeaderText,
@@ -123,6 +126,7 @@ export default function ProposalDetailPage() {
     (chainHydrated ? chain.id : env.NEXT_PUBLIC_DEFAULT_NETWORK)
   const referendumQuery = useReferendum(Number.isFinite(index) ? index : -1)
   const tracksQuery = useTracks()
+  const treasuryTiers = useTreasuryTiers()
   // Read for the linked network straight away, not first for the saved one.
   const metadataQuery = useProposalMetadata(
     Number.isFinite(index) ? index : null,
@@ -187,6 +191,25 @@ export default function ProposalDetailPage() {
     return null
   })()
   const preimageQuery = usePreimage(earlyProposalRef ?? undefined)
+  // Small calls (≤128 bytes) ride inline in the referendum instead of as a
+  // preimage - e.g. system.authorizeUpgrade, referenda.cancel. Decode those
+  // straight from the referendum info: a live one with today's runtime, a
+  // decided one with the runtime of the block its history was read at
+  // (finalisedAt - 1, see getReferendumHistory).
+  const inlineCall: { bytes: Uint8Array; at: number | null } | null = (() => {
+    if (current?.status.type === "Ongoing") {
+      const proposal = current.status.proposal
+      return "type" in proposal && proposal.type === "Inline"
+        ? { bytes: proposal.bytes, at: null }
+        : null
+    }
+    const proposal =
+      historyQuery.data?.status.type === "Ongoing" ? historyQuery.data.status.proposal : null
+    return proposal && "type" in proposal && proposal.type === "Inline" && finalisedAt != null
+      ? { bytes: proposal.bytes, at: finalisedAt - 1 }
+      : null
+  })()
+  const inlineCallQuery = useInlineCall(inlineCall?.bytes, inlineCall?.at)
   // Subscan keeps the decoded preimage long after the chain prunes the
   // bytes from `preimage.preimageFor`. Run this in parallel with the
   // chain query so we have a fallback for old referenda.
@@ -332,9 +355,22 @@ export default function ProposalDetailPage() {
   const onChainIntent: ProposalIntent =
     preimageQuery.data?.section
       ? intentFromPreimage(preimageQuery.data, chain)
-      : null
+      : inlineCallQuery.data?.section
+        ? intentFromPreimage(inlineCallQuery.data, chain)
+        : null
   const subscanIntent: ProposalIntent = intentFromSubscanCall(decodedCall, chain)
   const intent: ProposalIntent = onChainIntent ?? subscanIntent
+
+  // The spend tier this referendum's track authorizes on the connected
+  // runtime, so an amount above its limit (e.g. filed before the tiers were
+  // corrected) is flagged before it fails at enactment. `treasury.spend`
+  // converts its asset amount before the check, so only spend_local is compared.
+  const spendLimitTier =
+    isOngoing && track && intent?.kind === "treasury-spend" && intent.method !== "spend"
+      ? (treasuryTiers.table?.tiers.find(
+          (t) => canonicalTrackName(t.origin) === canonicalTrackName(track.name),
+        ) ?? null)
+      : null
 
   return (
     <Shell>
@@ -389,7 +425,7 @@ export default function ProposalDetailPage() {
           <LifecycleProgress referendum={ref} track={track ?? null} />
 
           {intent?.kind === "treasury-spend" && (
-            <TreasuryRequestSummary intent={intent} chain={chain} />
+            <TreasuryRequestSummary intent={intent} chain={chain} limitTier={spendLimitTier} />
           )}
 
           <TallyVotesSwiper
@@ -541,9 +577,13 @@ export default function ProposalDetailPage() {
               </div>
             </div>
 
-            {(decodedCall || proposalRef) && (
+            {(inlineCall || decodedCall || proposalRef) && (
               <div className="pt-5 border-t border-border">
-                {decodedCall ? (
+                {/* An inline call that won't decode yields to Subscan's
+                    decode when there is one; otherwise it shows raw. */}
+                {inlineCall && !(inlineCallQuery.isError && decodedCall) ? (
+                  <PreimageDisplay inlineBytes={inlineCall.bytes} inlineAt={inlineCall.at} />
+                ) : decodedCall ? (
                   <SubscanCallDisplay
                     call={decodedCall}
                     hash={
@@ -566,12 +606,14 @@ export default function ProposalDetailPage() {
                     <PreimageDisplay preimageRef={proposalRef} />
                   )
                 ) : null}
-                <RuntimeCodeHash callBytes={preimageQuery.data?.bytes} />
+                <RuntimeCodeHash
+                  code={preimageQuery.data?.runtimeCode ?? inlineCallQuery.data?.runtimeCode}
+                />
               </div>
             )}
           </div>
 
-          {!decodedCall && !proposalRef && !isOngoing && (
+          {!inlineCall && !decodedCall && !proposalRef && !isOngoing && (
             <div className="rounded-2xl bg-card border border-border p-6 space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Preimage</h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
@@ -1101,10 +1143,14 @@ function DepositRow({
 function TreasuryRequestSummary({
   intent,
   chain,
+  limitTier,
 }: {
   intent: Extract<ProposalIntent, { kind: "treasury-spend" }>
   chain: ChainConfig
+  /** The spend tier the referendum's track authorizes, when known. */
+  limitTier: TreasuryTier | null
 }) {
+  const limit = limitTier?.maxAmount ?? null
   return (
     <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-card to-card border border-purple-border p-6">
       <div className="flex items-start gap-4">
@@ -1130,6 +1176,14 @@ function TreasuryRequestSummary({
             <code className="font-mono text-foreground">treasury.{intent.method}</code>{" "}
             and pays the beneficiary from the {chain.shortName} treasury.
           </p>
+          {limitTier && limit != null && intent.amount > limit && (
+            <p className="text-[11px] text-amber-300 mt-2 leading-relaxed">
+              The amount is above {formatTrackName(limitTier.origin)}&apos;s spend limit on this
+              runtime ({formatTokenAmount(limit, chain)}). Unless an upgrade raises
+              that limit before enactment, the spend fails with InsufficientPermission and nothing
+              is paid.
+            </p>
+          )}
         </div>
       </div>
     </div>

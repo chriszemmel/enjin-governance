@@ -86,6 +86,19 @@ names with `findTrackByName` or `canonicalTrackName`, never with `===`.
   `lib/governance/preimage.ts` reads `preimage.preimageFor`. When `len` is
   wrong or 0 (old `Legacy` proposals), it recovers the length from
   `requestStatusFor` and, as a last resort, by scanning the preimage keys.
+- **Inline calls** - a call of 128 bytes or less (e.g.
+  `system.authorizeUpgrade`, `referenda.cancel`) rides in the referendum
+  itself, with no preimage. `decodeStatus` keeps its bare bytes (no compact
+  length prefix), and `useInlineCall` in `lib/query/hooks/use-preimage.ts`
+  decodes them: a live referendum with today's runtime, a decided one with
+  the runtime of the block its history was read at, since a later upgrade
+  can re-index calls. A call that still won't decode yields to Subscan's
+  decode, or is shown raw.
+- **Runtime code** - for a runtime upgrade the proposal page shows the code
+  hash voters compare with the srtool build: computed from the wasm of a
+  `system.setCode` call (older referenda), or read from an
+  `authorizeUpgrade` call (`runtimeCodeOf` in
+  `lib/governance/runtime-code.ts`).
 
 ## Writing to the chain: `useExtrinsic`
 
@@ -158,11 +171,24 @@ files the referendum and binds its EGOV1 record.
 - **Advanced composer** (`/create/advanced`, `app/create/advanced/page.tsx`) -
   any of the curated calls in `lib/governance/proposal-calls.ts`: a
   treasury spend, `referenda.cancel`, `referenda.kill`,
-  `whitelist.whitelistCall`, a runtime upgrade (`system.setCode`), a
-  `system.remark`, or a raw SCALE-encoded call. A raw call must re-encode
-  to exactly the pasted bytes. The origin is chosen from `SUBMIT_ORIGINS`
-  and defaults to the kind's suggested origin. Calls of 128 bytes or less
-  are submitted `Inline`; larger calls are noted as a preimage first.
+  `whitelist.whitelistCall`, a runtime upgrade
+  (`system.authorizeUpgrade`), a `system.remark`, or a raw SCALE-encoded
+  call. A raw call must re-encode to exactly the pasted bytes. The origin
+  is chosen from `SUBMIT_ORIGINS` and defaults to the kind's suggested
+  origin. Calls of 128 bytes or less are submitted `Inline`; larger calls
+  are noted as a preimage first.
+
+**Runtime upgrades** are filed as `system.authorizeUpgrade(code_hash)` on
+Root: a 34-byte inline call, so there is no multi-MB preimage, deposit or
+block-size limit on the referendum. The hash is pasted, or computed in the
+browser (blake2-256) from the `.wasm` - the exact file that will be
+applied, normally srtool's `compact.compressed.wasm`; the file is never
+uploaded. Once enacted, anyone submits
+`system.applyAuthorizedUpgrade(code)`, which checks the hash, that the spec
+name is unchanged and that the spec version increases, and is free when
+valid. The composer doesn't offer `system.setCode`, which would put the
+whole wasm in the submission batch; the raw call kind still covers any
+encoded call.
 
 ### 1. Compose
 
@@ -178,8 +204,11 @@ Beneficiary addresses from another network are caught here. See
 ### 2. Stage the draft
 
 Staging writes the proposal text before anything is signed on chain. It
-needs a signed-in session, so the composer asks for a sign-in signature
-first if there isn't one.
+needs a signed-in session for the connected account, so the composer asks
+for a sign-in signature first if there isn't one (`useEnsureSignedIn`; a
+session for another account doesn't count). The advanced composer
+disables its buttons from the click until sign-in, staging and the
+pre-sign chain reads are done, so a double tap can't stage twice.
 
 ```text
 POST /api/proposals/draft                     (app/api/proposals/draft/route.ts)
@@ -228,16 +257,24 @@ The builders are `buildTreasuryProposal` in
   before signing. If another submission lands first, the index is stale,
   `setMetadata` fails the depositor check (`NoPermission`) and the whole
   batch reverts. It can never annotate someone else's referendum. Retry
-  rebuilds with a fresh count.
-- **Already noted.** Noting a preimage that exists aborts with
-  `preimage.AlreadyNoted` and reverts the batch. The composers read the
-  preimage status of the call and of the envelope right before signing and
-  leave out a note that is already there. The envelope can already exist
-  if someone copied it. On an `AlreadyNoted` error both statuses are read
-  again, so the retry skips the right call.
+  rebuilds with a fresh count. The advanced composer refuses to build when
+  that read fails. A stale index passes only for the same account's own
+  earlier ongoing referendum; the advanced composer compares the index it
+  bound with the `Submitted` one and says so instead of linking.
+- **Already noted.** Noting a preimage that an account already noted
+  (`Unrequested`) aborts with `preimage.AlreadyNoted` and reverts the
+  batch. The composers read the preimage status of the call and of the
+  envelope right before signing and leave out such a note
+  (`noteWouldAbort`). A `Requested` preimage keeps its note: noting it is
+  accepted, and it may not hold the bytes yet. The envelope can already
+  exist if someone copied it. On an `AlreadyNoted` error both statuses are
+  read again, so the retry skips the right call.
 
 The user signs once. The hook resolves on finalisation and reads the new
-index from the `referenda.Submitted` event (`extractReferendumIndex`).
+index from the `referenda.Submitted` event (`extractReferendumIndex`). The
+sign dialog shows success only then, when the details get linked. The
+advanced composer links the draft its batch was built with, and its form
+stays locked from Review on, so Retry resends the same call and draft.
 
 ### 4. Link the draft to its referendum
 
@@ -306,8 +343,9 @@ The schema also has `submitted` and `failed`; the drafts lists still show
   hasn't reached the chain only to its signed-in proposer.
 - **Resume.** Drafts appear on `/create` and `/account`. The treasury
   wizard reopens an unsigned draft with `?from=<id>` and updates it in
-  place. Drafts from the advanced composer can't be resumed in the
-  treasury wizard.
+  place, restoring its beneficiary only for the connected account's own
+  drafts. Drafts from the advanced composer can't be resumed in the
+  treasury wizard; the drafts lists offer them Cancel, then Delete.
 - **Cancel** (`POST /api/proposals/<id>/cancel`) sets the status to
   `cancelled`. It is refused for `on_chain` rows.
 - **Delete** (`DELETE /api/proposals/<id>`) removes the row and the
@@ -409,35 +447,67 @@ be valid for the active chain.
 
 ## Origins and treasury tiers
 
-`lib/governance/treasury.ts` maps an amount to the smallest treasury origin
-that covers it:
+Each treasury origin can authorize a spend up to a fixed limit, set by the
+runtime's `Spender` EnsureOrigin (relaychain
+`runtime/common/src/governance/origins.rs`, the treasury's `SpendOrigin`).
+If the amount exceeds the origin's limit, `spend_local` fails with
+`InsufficientPermission` at enactment, after the full vote. The limits
+aren't in metadata or `api.consts`, so `ENJIN_SPEND_LIMITS` in
+`lib/governance/treasury.ts` copies them from the runtime source, one
+table per runtime spec version. The enjin and canary runtimes both take
+`Spender` from `runtime/common`, so one table per spec covers both
+networks.
 
-| Origin | Maximum spend |
-|---|---|
-| `SmallTipper` | 250 ENJ |
-| `BigTipper` | 1,000 ENJ |
-| `SmallSpender` | 10,000 ENJ |
-| `MediumSpender` | 100,000 ENJ |
-| `BigSpender` | 1,000,000 ENJ |
+| Origin | Spec 1070 (v1.7.0) | Spec 1080 (v1.8.0) |
+|---|---|---|
+| `SmallTipper` | 100 ENJ | 2,500 ENJ |
+| `BigTipper` | 5,000 ENJ | 10,000 ENJ |
+| `SmallSpender` | 50,000 ENJ | 50,000 ENJ |
+| `MediumSpender` | 250,000 ENJ | 250,000 ENJ |
+| `BigSpender` | 2,500,000 ENJ | 2,500,000 ENJ |
+| `TreasuryAdmin` | 25,000,000 ENJ | 25,000,000 ENJ |
 
-- `pickOriginForAmount(amount, tiers = ENJIN_TREASURY_TIERS)` returns the
-  first tier that covers the amount, or `null` when none does. The
-  composers block a `null` rather than fall back to another origin.
-- The caps are a static table. The runtime doesn't expose its per-origin
-  spend limits in metadata, so they can't be read from chain. Enjin has no
-  `Treasurer` origin, so `BigSpender` is the top tier, and 1,000,000 ENJ is
-  a product cap, not a chain value.
+```ts
+tiers = treasuryTiersForSpec(api.runtimeVersion.specVersion).tiers
+pickOriginForAmount(amount, tiers) →
+  the first tier (smallest first) with amount ≤ tier.maxAmount
+  : null   // above the top tier's limit - rejected at compose time
+```
+
+- `useTreasuryTiers` (`lib/query/hooks/use-treasury-tiers.ts`) reads the
+  connected runtime's `specVersion` and picks the table with
+  `treasuryTiersForSpec`. It holds each origin to the lowest limit across
+  that spec and every later listed one, so a referendum filed before a
+  listed upgrade still enacts after it.
+- A spec missing from the list (newer than every entry, or between two)
+  uses the nearest older table, flagged unverified: the wizard, the
+  advanced composer and `/treasury` warn. A spec older than every entry
+  gets no table, and no spend can be filed.
+- `TreasuryAdmin` is Enjin's counterpart to Polkadot's `Treasurer` (there
+  is no origin by that name): the largest `Spender` entry and the
+  treasury's `RejectOrigin`. It is the top tier; a larger amount returns
+  `null`, and the composers block it rather than fall back to an origin
+  that can't authorize the spend. Its decision deposit is much larger than
+  the other tiers'.
 - `assertTierCoversAmount` re-checks at build time, so a referendum is
   never filed under an origin the table says is too small.
+- `spend_local` doesn't check the treasury balance. The wizard warns,
+  without blocking, when a request is larger than the treasury holds: an
+  approved spend is paid at a later spend period, once the treasury can
+  cover it in full.
+- The proposal page warns when an ongoing `spend_local` is above its
+  track's limit, e.g. one filed before these limits were in place.
+- When a runtime upgrade changes `Spender`, add its spec version to
+  `ENJIN_SPEND_LIMITS` before the upgrade is applied.
 
 The advanced composer offers these origins (`SUBMIT_ORIGINS` in
 `lib/governance/proposal-calls.ts`): `Root`, `WhitelistedCaller`,
-`ReferendumCanceller`, `ReferendumKiller`, `GeneralAdmin` and the five
-treasury origins. Cancel defaults to `ReferendumCanceller` and kill to
-`ReferendumKiller`; every other kind defaults to `Root`. A treasury spend in the
-advanced composer still takes its origin from the amount. An origin that
-is too weak for the call only fails at enactment, after the full vote, so
-the composer warns about it.
+`ReferendumCanceller`, `ReferendumKiller`, `GeneralAdmin` and the treasury
+origins up to `BigSpender`. Cancel defaults to `ReferendumCanceller` and
+kill to `ReferendumKiller`; every other kind defaults to `Root`. A treasury
+spend in the advanced composer still takes its origin from the amount, and
+can reach `TreasuryAdmin`. An origin that is too weak for the call only
+fails at enactment, after the full vote, so the composer warns about it.
 
 ## Deposits
 

@@ -19,6 +19,9 @@ import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { FoundABugModal } from "@/components/layout/found-a-bug-modal"
 import { CHAINS } from "@/lib/chain/chains"
+import { formatTokenAmount } from "@/lib/chain/format"
+import { ENJIN_SPEND_LIMITS, TREASURY_SPEND_ORIGINS } from "@/lib/governance/treasury"
+import type { TreasuryTier } from "@/lib/governance/types"
 
 export const metadata = {
   title: "Docs",
@@ -110,15 +113,16 @@ export default function DocsPage() {
               </li>
             </ol>
             <p>
-              Step 1 is skipped when the preimage for these exact bytes is
-              already on chain. The wizard checks{" "}
-              <Code>api.query.preimage.requestStatusFor(hash)</Code> before
-              building the batch - if the status is{" "}
-              <Code>Unrequested</Code> or <Code>Requested</Code>, re-noting
-              would abort with <Code>AlreadyNoted</Code> and revert the whole
-              batch, so the wizard drops step 1 and signs the remaining
-              three calls. The referendum still references the same
-              (hash, len) pair, so the on-chain outcome is identical.
+              Step 1 is skipped when an account already noted these exact
+              bytes. The wizard reads{" "}
+              <Code>api.query.preimage.requestStatusFor(hash)</Code> right
+              before signing - if the status is <Code>Unrequested</Code>,
+              re-noting would abort with <Code>AlreadyNoted</Code> and revert
+              the whole batch, so the wizard drops step 1 and signs the
+              remaining three calls. The referendum still references the
+              same (hash, len) pair, so the on-chain outcome is identical. A{" "}
+              <Code>Requested</Code> preimage keeps step 1: noting it is
+              accepted, and it may not hold the bytes yet.
             </p>
             <p>
               The proposer separately places the per-track decision deposit
@@ -131,19 +135,47 @@ export default function DocsPage() {
             </p>
             <p>
               Spend authority is mapped from amount to track by{" "}
-              <Code>pickOriginForAmount</Code>. The runtime tiers:
+              <Code>pickOriginForAmount</Code>, using the runtime&apos;s
+              per-origin spend limits. They aren&apos;t exposed in metadata,
+              so the app carries a copy per runtime spec version (amounts in
+              ENJ, cENJ on Canary):
             </p>
-            <ul className="list-disc pl-5 space-y-1">
-              <li>SmallTipper - up to 250 ENJ</li>
-              <li>BigTipper - up to 1,000 ENJ</li>
-              <li>SmallSpender - up to 10,000 ENJ</li>
-              <li>MediumSpender - up to 100,000 ENJ</li>
-              <li>BigSpender - up to 1,000,000 ENJ (cap)</li>
-            </ul>
+            <div className="overflow-x-auto">
+              <table className="text-sm">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th className="font-medium pr-6 pb-1">Origin</th>
+                    {ENJIN_SPEND_LIMITS.map((l) => (
+                      <th key={l.specVersion} className="font-medium pr-6 pb-1 text-right">
+                        Spec {l.specVersion}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="font-mono">
+                  {TREASURY_SPEND_ORIGINS.map((origin) => (
+                    <tr key={origin} className="border-t border-border">
+                      <td className="pr-6 py-1">{origin}</td>
+                      {ENJIN_SPEND_LIMITS.map((l) => (
+                        <td key={l.specVersion} className="pr-6 py-1 text-right tabular-nums">
+                          {formatSpendLimit(l.tiers.find((t) => t.origin === origin))}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <p>
-              Enjin has no Treasurer track, so BigSpender is the top tier.
-              Requests above 1,000,000 ENJ are not supported and the wizard
-              blocks them.
+              The wizard reads the connected chain&apos;s runtime spec version
+              and files under that version&apos;s limits, held to the lowest
+              value any later listed version allows, so a referendum filed
+              before a listed upgrade still enacts after it. On a runtime
+              newer than every listed version it uses the newest limits and
+              warns; on an older one it won&apos;t file a spend. TreasuryAdmin
+              (Enjin&apos;s counterpart to Polkadot&apos;s Treasurer) is the
+              top tier and carries a much larger decision deposit. Requests
+              above its limit are not supported and the wizard blocks them.
             </p>
           </Section>
 
@@ -226,7 +258,7 @@ export default function DocsPage() {
   }],
   "call": {                       // 1.2.0, optional
     "section": "<pallet, e.g. system>",
-    "method": "<call, e.g. setCode>",
+    "method": "<call, e.g. authorizeUpgrade>",
     "origin": "<track origin, e.g. Root>",
     "preimage_hash": "<0x… blake2-256 of the call>",
     "preimage_len": <int>,
@@ -1045,6 +1077,13 @@ function Code({ children }: { children: React.ReactNode }) {
       {children}
     </code>
   )
+}
+
+/** A tier's spend limit in whole tokens, for the spend-limits table. */
+function formatSpendLimit(tier: TreasuryTier | undefined): string {
+  if (!tier) return "-"
+  if (tier.maxAmount == null) return "∞"
+  return formatTokenAmount(tier.maxAmount, CHAINS["enjin-relay"], { withTicker: false })
 }
 
 /**

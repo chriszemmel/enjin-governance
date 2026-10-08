@@ -145,7 +145,9 @@ function decodeProposal(raw: unknown): OngoingStatus["proposal"] {
     }
   }
   if (p.isInline) {
-    // Bare call bytes: `Bytes.toU8a()` would prefix the SCALE length.
+    // `asInline` is a BoundedVec<u8> - plain `.toU8a()` prepends its compact
+    // length, which `createType("Call", …)` would then read as the pallet
+    // index. `isBare = true` yields just the call bytes.
     const bytes = (p.asInline as { toU8a: (isBare?: boolean) => Uint8Array }).toU8a(true)
     return { type: "Inline", bytes }
   }

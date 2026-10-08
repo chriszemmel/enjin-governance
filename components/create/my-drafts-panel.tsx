@@ -157,7 +157,8 @@ function DraftRow({
   const indexValid = indexInput.trim() !== "" && Number.isInteger(index) && index >= 0
 
   const statusLabel =
-    draft.status === "draft" ? "Not submitted" : "Broadcast - not finalised"
+    (draft.status === "draft" ? "Not submitted" : "Broadcast - not finalised") +
+    (draft.is_treasury === false ? " · advanced proposal" : "")
   // Full navigation (not a client-side Link) so the draft reliably reloads
   // even when we're already on /create - the wizard reads `?from=` on mount.
   const resumeHref =

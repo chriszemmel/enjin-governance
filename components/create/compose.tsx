@@ -4,10 +4,7 @@ import { useMemo, useRef } from "react"
 import { Hash } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTrackName } from "@/lib/governance/display"
-import {
-  ENJIN_TREASURY_TIERS,
-  type pickOriginForAmount,
-} from "@/lib/governance/treasury"
+import type { TreasuryTier } from "@/lib/governance/types"
 import {
   AttachmentDropzone,
   type UploadedAttachment,
@@ -50,7 +47,11 @@ type ComposeProps = {
   body: string
   amount: string
   amountError: string | null
-  pickedTier: ReturnType<typeof pickOriginForAmount>
+  /** Non-blocking notes shown under the amount (unverified limits, treasury balance). */
+  amountWarnings: string[]
+  /** Spend tiers for the connected runtime; null while connecting or unsupported. */
+  tiers: readonly TreasuryTier[] | null
+  pickedTier: TreasuryTier | null
   requiredPlanck: bigint | null
   balanceSufficient: boolean
   proposalId: string
@@ -181,6 +182,11 @@ export function Compose(p: ComposeProps) {
             The smallest treasury track that covers this amount will be chosen automatically.
           </p>
         )}
+        {p.amountWarnings.map((w) => (
+          <p key={w} className="text-[11px] text-amber-300 leading-relaxed">
+            {w}
+          </p>
+        ))}
       </div>
 
       <MarkdownEditor
@@ -231,19 +237,23 @@ export function Compose(p: ComposeProps) {
           <Hash className="w-3 h-3" />
           Treasury tier reference
         </summary>
-        <ul className="mt-3 space-y-1.5 font-mono pl-5">
-          {ENJIN_TREASURY_TIERS.map((t) => (
-            <li key={t.origin} className="flex justify-between">
-              <span className="text-foreground">{formatTrackName(t.origin)}</span>
-              <span>
-                ≤{" "}
-                {t.maxAmount == null
-                  ? "∞"
-                  : `${(t.maxAmount / 10n ** BigInt(p.chainDecimals)).toString()} ${p.chainTicker}`}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {p.tiers ? (
+          <ul className="mt-3 space-y-1.5 font-mono pl-5">
+            {p.tiers.map((t) => (
+              <li key={t.origin} className="flex justify-between">
+                <span className="text-foreground">{formatTrackName(t.origin)}</span>
+                <span>
+                  ≤{" "}
+                  {t.maxAmount == null
+                    ? "∞"
+                    : `${(t.maxAmount / 10n ** BigInt(p.chainDecimals)).toString()} ${p.chainTicker}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 pl-5">Spend limits aren&apos;t available for this chain yet.</p>
+        )}
       </details>
     </div>
   )

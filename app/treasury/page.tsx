@@ -26,28 +26,22 @@ import {
   planckToString,
 } from "@/lib/chain/format"
 import { shortenAddress } from "@/lib/chain/ss58"
-import { ENJIN_TREASURY_TIERS } from "@/lib/governance/treasury"
+import { TREASURY_SPEND_ORIGINS } from "@/lib/governance/treasury"
 import { canonicalTrackName } from "@/lib/governance/tracks"
 import { useBalance } from "@/lib/query/hooks/use-balance"
 import { useMyDrafts } from "@/lib/query/hooks/use-my-drafts"
 import { useReferenda } from "@/lib/query/hooks/use-referenda"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
+import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
 import { useTokenPrice } from "@/lib/query/hooks/use-token-price"
 import { useProposalMetadataBatch } from "@/lib/query/hooks/use-proposal-metadata"
 import { useWallet } from "@/lib/wallet/use-wallet"
 
-// Compared in canonical form (lowercased, separators stripped) because the
-// runtime serialises track names as snake_case (`small_tipper`) while our
-// code paths often hold the PascalCase variant (`SmallTipper`).
-const TREASURY_TRACK_NAMES = new Set(
-  [
-    "SmallTipper",
-    "BigTipper",
-    "SmallSpender",
-    "MediumSpender",
-    "BigSpender",
-  ].map(canonicalTrackName),
-)
+// The tracks the wizard files spends under. Compared in canonical form
+// (lowercased, separators stripped) because the runtime serialises track
+// names as snake_case (`small_tipper`) while the origin list holds the
+// PascalCase variant (`SmallTipper`).
+const TREASURY_TRACK_NAMES = new Set(TREASURY_SPEND_ORIGINS.map(canonicalTrackName))
 
 export default function TreasuryPage() {
   const chain = useActiveChain()
@@ -55,6 +49,7 @@ export default function TreasuryPage() {
   const balanceQuery = useBalance(chain.treasuryAddress)
   const priceQuery = useTokenPrice()
   const tracksQuery = useTracks()
+  const treasuryTiers = useTreasuryTiers()
   const referendaQuery = useReferenda()
   const myDraftsQuery = useMyDrafts(activeAddress, chain)
 
@@ -309,8 +304,9 @@ export default function TreasuryPage() {
                   Both amounts are read live from the chain on each proposal.
                 </li>
                 <li>
-                  Approved spends are dispatched to the beneficiary
-                  automatically when the referendum enacts.
+                  Approved spends are paid to the beneficiary automatically
+                  at the treasury&apos;s next spend period after enactment,
+                  once the treasury holds enough to cover them.
                 </li>
               </ul>
             </div>
@@ -322,18 +318,27 @@ export default function TreasuryPage() {
                 does this automatically based on the amount.
               </p>
               <ul className="text-xs font-mono space-y-1.5 pt-2 border-t border-border">
-                {ENJIN_TREASURY_TIERS.map((t) => (
-                  <li key={t.origin} className="flex justify-between">
-                    <span className="text-foreground">{t.origin}</span>
-                    <span className="text-muted-foreground">
-                      ≤{" "}
-                      {t.maxAmount == null
-                        ? "∞"
-                        : formatTokenAmountCompact(t.maxAmount, chain)}
-                    </span>
-                  </li>
-                ))}
+                {TREASURY_SPEND_ORIGINS.map((origin) => {
+                  const tier = treasuryTiers.table?.tiers.find((t) => t.origin === origin)
+                  return (
+                    <li key={origin} className="flex justify-between">
+                      <span className="text-foreground">{origin}</span>
+                      <span className="text-muted-foreground">
+                        {!tier
+                          ? "-"
+                          : tier.maxAmount == null
+                            ? "≤ ∞"
+                            : `≤ ${formatTokenAmountCompact(tier.maxAmount, chain)}`}
+                      </span>
+                    </li>
+                  )
+                })}
               </ul>
+              {treasuryTiers.notice && (
+                <p className="text-[11px] text-amber-300 leading-relaxed">
+                  {treasuryTiers.notice}
+                </p>
+              )}
             </div>
           </section>
         </div>

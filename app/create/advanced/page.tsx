@@ -13,9 +13,9 @@ import {
   Wallet,
 } from "lucide-react"
 import { toast } from "sonner"
+import { useQueryClient } from "@tanstack/react-query"
 import type { ApiPromise } from "@polkadot/api"
-import { hexToU8a, u8aToHex } from "@polkadot/util"
-import { blake2AsHex } from "@polkadot/util-crypto"
+import { u8aToHex } from "@polkadot/util"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { WalletModal } from "@/components/wallet/wallet-modal"
@@ -49,7 +49,7 @@ import {
 } from "@/lib/governance/proposal-calls"
 import { attachMetadataToExisting, buildProposalBatch } from "@/lib/governance/proposal-batch"
 import { extractReferendumIndex } from "@/lib/governance/referenda"
-import { canInline, hashCall } from "@/lib/governance/preimage"
+import { canInline, hashCall, noteWouldAbort } from "@/lib/governance/preimage"
 import {
   DEFAULT_ENACTMENT,
   resolveEnactment,
@@ -73,6 +73,7 @@ import { useProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
 import { useReferendum } from "@/lib/query/hooks/use-referendum"
 import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
+import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
 import { useExtrinsic } from "@/lib/query/hooks/use-tx"
 import { useWallet } from "@/lib/wallet/use-wallet"
 import { useSignFlow } from "@/lib/wallet/use-sign-flow"
@@ -86,7 +87,7 @@ const KIND_ORDER: ProposalKind[] = [
   "cancelReferendum",
   "killReferendum",
   "whitelistCall",
-  "runtimeUpgrade",
+  "authorizeUpgrade",
   "remark",
   "rawCall",
 ]
@@ -118,7 +119,7 @@ type Fields = {
   beneficiary: string
   index: string
   callHash: string
-  codeHex: string
+  codeHash: string
   remarkText: string
   rawHex: string
 }
@@ -128,17 +129,13 @@ const EMPTY_FIELDS: Fields = {
   beneficiary: "",
   index: "",
   callHash: "",
-  codeHex: "",
+  codeHash: "",
   remarkText: "",
   rawHex: "",
 }
 
-type RuntimeFile = {
-  name: string
-  size: number
-  hex: `0x${string}`
-  codeHash: `0x${string}`
-}
+/** The runtime wasm whose hash filled the code-hash field. */
+type WasmFile = { name: string; size: number }
 
 const isHex = (s: string, exactBytes?: number) => {
   if (!/^0x[0-9a-fA-F]*$/.test(s)) return false
@@ -150,9 +147,22 @@ const isHex = (s: string, exactBytes?: number) => {
 type Mode = "new" | "existing"
 type Step = "create" | "review" | "submit"
 
+/**
+ * What a signed batch was built from, captured in the build closure so the
+ * success handler links the draft and index that batch actually carries -
+ * not whatever the page holds by the time it finalises.
+ */
+type BuiltSubmission = {
+  mode: Mode
+  draft: DraftResponse
+  /** The index setMetadata binds: referendumCount() read just before signing. */
+  referendumIndex: number
+}
+
 export default function AdvancedCreatePage() {
   const chain = useActiveChain()
   const apiQuery = useApi()
+  const treasuryTiers = useTreasuryTiers()
   const currentBlockQuery = useCurrentBlock()
   const tracksQuery = useTracks()
   const { status: walletStatus, session, activeAddress } = useWallet()
@@ -167,8 +177,8 @@ export default function AdvancedCreatePage() {
   const [step, setStep] = useState<Step>("create")
   const [kind, setKind] = useState<ProposalKind>(DEFAULT_KIND)
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
-  const [runtimeFile, setRuntimeFile] = useState<RuntimeFile | null>(null)
-  const [pasteHex, setPasteHex] = useState(false)
+  const [wasmFile, setWasmFile] = useState<WasmFile | null>(null)
+  const [hashingWasm, setHashingWasm] = useState(false)
   const [originIdx, setOriginIdx] = useState<number>(() => suggestedOriginIdx(DEFAULT_KIND))
   const [enactment, setEnactment] = useState<EnactmentChoice>(DEFAULT_ENACTMENT)
   const [walletOpen, setWalletOpen] = useState(false)
@@ -178,7 +188,14 @@ export default function AdvancedCreatePage() {
     | { kind: "linking" }
     | { kind: "linked" }
     | { kind: "failed"; message: string }
+    // A stale index passes setMetadata only for this account's own earlier
+    // referendum, which then carries these details instead.
+    | { kind: "misbound"; earlierIndex: number }
   >({ kind: "idle" })
+  // The batch finalised, but no Submitted event named the new referendum:
+  // signing again would file a duplicate, so the button goes away.
+  const [indexLost, setIndexLost] = useState(false)
+  const queryClient = useQueryClient()
 
   // Proposal details - the EGOV1 record every proposal type now carries.
   const [proposalId] = useState(() => crypto.randomUUID())
@@ -256,19 +273,18 @@ export default function AdvancedCreatePage() {
           }
           return { spec: { kind, callHash: fields.callHash as `0x${string}` }, fieldError: null }
         }
-        case "runtimeUpgrade": {
-          if (runtimeFile && !pasteHex) {
-            return { spec: { kind, codeHex: runtimeFile.hex }, fieldError: null }
-          }
-          if (!isHex(fields.codeHex) || fields.codeHex.length < 10) {
+        case "authorizeUpgrade": {
+          const codeHash = fields.codeHash.trim()
+          if (!isHex(codeHash, 32)) {
             return {
               spec: null,
-              fieldError: pasteHex
-                ? "Paste the runtime wasm as hex (0x…)."
-                : "Choose the runtime .wasm file.",
+              fieldError: "Enter the wasm's 32-byte blake2-256 hash (0x…), or pick the .wasm file.",
             }
           }
-          return { spec: { kind, codeHex: fields.codeHex as `0x${string}` }, fieldError: null }
+          return {
+            spec: { kind, codeHash: codeHash.toLowerCase() as `0x${string}` },
+            fieldError: null,
+          }
         }
         case "remark": {
           if (!fields.remarkText.trim()) return { spec: null, fieldError: "Enter remark text." }
@@ -284,21 +300,23 @@ export default function AdvancedCreatePage() {
     } catch (e) {
       return { spec: null, fieldError: formatError(e) }
     }
-  }, [kind, fields, chain, runtimeFile, pasteHex])
+  }, [kind, fields, chain])
 
   // Resolve the submission origin: treasury spends derive their tier from the
-  // amount; everything else uses the selected origin (defaulting to the kind's
-  // suggestion via the dropdown's initial index).
+  // amount and the connected runtime's spend limits; everything else uses the
+  // selected origin (defaulting to the kind's suggestion via the dropdown's
+  // initial index).
+  const tierTable = treasuryTiers.table
   const resolvedOrigin = useMemo<{ origin: unknown; label: string } | null>(() => {
     if (kind === "treasurySpend") {
-      if (spec?.kind !== "treasurySpend") return null
-      const tier = pickOriginForAmount(spec.amount)
+      if (spec?.kind !== "treasurySpend" || !tierTable) return null
+      const tier = pickOriginForAmount(spec.amount, tierTable.tiers)
       if (!tier) return null
       return { origin: { Origins: tier.origin }, label: tier.origin }
     }
     const picked = SUBMIT_ORIGINS[originIdx] ?? SUBMIT_ORIGINS[0]
     return { origin: picked.origin, label: picked.label }
-  }, [kind, spec, originIdx])
+  }, [kind, spec, originIdx, tierTable])
 
   const enactmentError = validateEnactment(enactment, {
     currentBlock: currentBlockQuery.data ?? null,
@@ -338,15 +356,7 @@ export default function AdvancedCreatePage() {
   }, [apiQuery.data, spec])
 
   // Runtime upgrades: the hash voters compare with the release build.
-  const codeHash = useMemo<`0x${string}` | null>(() => {
-    if (spec?.kind !== "runtimeUpgrade") return null
-    if (runtimeFile && !pasteHex) return runtimeFile.codeHash
-    try {
-      return blake2AsHex(hexToU8a(spec.codeHex), 256) as `0x${string}`
-    } catch {
-      return null
-    }
-  }, [spec, runtimeFile, pasteHex])
+  const codeHash = spec?.kind === "authorizeUpgrade" ? spec.codeHash : null
 
   // ---- existing referendum --------------------------------------------------
   const existing = existingQuery.data ?? null
@@ -440,6 +450,25 @@ export default function AdvancedCreatePage() {
     }
   }, [mode, existingCall, existingTrackName, preview, resolvedOrigin, codeHash])
 
+  // Sign-in, staging and the pre-sign chain reads all run before tx.submit's
+  // own single-flight guard, so the clicks that start them need one too: a
+  // second click (or a double-fired tap) mid-way would otherwise prompt a
+  // second sign-in or stage again. The ref catches same-tick repeats; the
+  // state disables the buttons.
+  const preparingRef = useRef(false)
+  const [preparing, setPreparing] = useState(false)
+  const guarded = useCallback(async (work: () => Promise<void>) => {
+    if (preparingRef.current) return
+    preparingRef.current = true
+    setPreparing(true)
+    try {
+      await work()
+    } finally {
+      preparingRef.current = false
+      setPreparing(false)
+    }
+  }, [])
+
   // ---- validation ------------------------------------------------------------
   const detailsError = (() => {
     const t = title.trim()
@@ -453,14 +482,24 @@ export default function AdvancedCreatePage() {
       ? existingProblem
       : (fieldError ??
         enactmentError ??
-        (resolvedOrigin == null ? "No valid submission origin for this amount." : null) ??
+        (resolvedOrigin != null
+          ? null
+          : kind === "treasurySpend" && !tierTable
+            ? (treasuryTiers.notice ?? "Loading the treasury spend limits…")
+            : "No valid submission origin for this amount.") ??
         preview?.error ??
         (preview ? null : "Connecting to the chain…"))
   // Existing referenda by hash: wait until the call is decoded, or the
   // record would say "unknown.unknown".
   const existingCallLoading = mode === "existing" && existingRef != null && existingPreimage.isPending
   const canReview =
-    isConnected && !detailsError && !callError && callMeta != null && !staging && !existingCallLoading
+    isConnected &&
+    !detailsError &&
+    !callError &&
+    callMeta != null &&
+    !staging &&
+    !preparing &&
+    !existingCallLoading
 
   // ---- stage the EGOV1 record ------------------------------------------------
   const stage = useCallback(async () => {
@@ -536,14 +575,15 @@ export default function AdvancedCreatePage() {
   const preimageStatusQuery = usePreimageStatus(
     mode === "new" && preview && !preview.inline ? preview.hash : null,
   )
-  const callAlreadyNoted =
-    preimageStatusQuery.data === "Unrequested" || preimageStatusQuery.data === "Requested"
+  const callAlreadyNoted = noteWouldAbort(preimageStatusQuery.data)
   const skipNoteRef = useRef(false)
   useEffect(() => {
     skipNoteRef.current = callAlreadyNoted
   }, [callAlreadyNoted])
   // And whether the envelope is already noted (by anyone): skip its note.
   const envelopeNoted = useEnvelopeNoted(draft?.remark_payload)
+  // What the in-flight batch was built from (see BuiltSubmission).
+  const builtRef = useRef<BuiltSubmission | null>(null)
 
   const tx = useExtrinsic({
     // The referendum index is written to our DB on success, so wait for
@@ -552,18 +592,20 @@ export default function AdvancedCreatePage() {
     build: (api) => {
       if (!draft) throw new Error("Review the proposal before submitting.")
       if (mode === "existing") {
-        return attachMetadataToExisting(api, {
+        const { calls } = attachMetadataToExisting(api, {
           remarkPayload: draft.remark_payload,
           referendumIndex: existingIndex,
           skipEnvelopeNote: envelopeNoted.skipRef.current,
-        }).calls
+        })
+        builtRef.current = { mode, draft, referendumIndex: existingIndex }
+        return calls
       }
       if (!spec || !resolvedOrigin) throw new Error("Complete the proposal fields.")
       const referendumIndex = referendumIndexRef.current
       if (referendumIndex == null) {
         throw new Error("Couldn't read the next referendum index - try again in a moment.")
       }
-      return buildProposalBatch(api, {
+      const { calls } = buildProposalBatch(api, {
         callBytes: buildProposalCall(api, spec).toU8a(),
         origin: resolvedOrigin.origin,
         enactment: resolveEnactment(enactment),
@@ -571,12 +613,25 @@ export default function AdvancedCreatePage() {
         referendumIndex,
         skipNote: skipNoteRef.current,
         skipEnvelopeNote: envelopeNoted.skipRef.current,
-      }).calls
+      })
+      builtRef.current = { mode, draft, referendumIndex }
+      return calls
     },
     async onSuccess({ events, txHash, blockHash }) {
-      const index = mode === "existing" ? existingIndex : extractReferendumIndex([...events])
+      const built = builtRef.current
+      builtRef.current = null
+      if (!built) return
+      const index =
+        built.mode === "existing" ? built.referendumIndex : extractReferendumIndex([...events])
+      if (index == null) {
+        setIndexLost(true)
+        return
+      }
       setSubmittedIndex(index)
-      if (!draft || index == null) return
+      if (built.referendumIndex !== index) {
+        setLinkState({ kind: "misbound", earlierIndex: built.referendumIndex })
+        return
+      }
       setLinkState({ kind: "linking" })
       let blockNumber: number | null = null
       try {
@@ -589,7 +644,7 @@ export default function AdvancedCreatePage() {
         // best-effort
       }
       const error = await confirmWithRetry(
-        draft.id,
+        built.draft.id,
         {
           referendum_index: index,
           tx_hash: txHash,
@@ -599,13 +654,16 @@ export default function AdvancedCreatePage() {
         () => ensureSignedIn({ fresh: true }),
       ).catch((e) => formatError(e))
       setLinkState(error ? { kind: "failed", message: error } : { kind: "linked" })
+      // The proposal page and the drafts lists read the row this just linked.
+      void queryClient.invalidateQueries({ queryKey: ["proposal-metadata"] })
+      void queryClient.invalidateQueries({ queryKey: ["my-drafts"] })
     },
     onStatus(status) {
       // One of the two preimages is already on chain: re-read both so the
       // next attempt skips exactly that note.
       if (status.kind === "error" && /AlreadyNoted/i.test(status.message)) {
         void preimageStatusQuery.refetch().then((r) => {
-          skipNoteRef.current = r.data === "Unrequested" || r.data === "Requested"
+          if (r.isSuccess) skipNoteRef.current = noteWouldAbort(r.data)
         })
         void envelopeNoted.refresh()
       }
@@ -622,18 +680,13 @@ export default function AdvancedCreatePage() {
       return
     }
     if (mode === "new") {
-      try {
-        const res = await preimageStatusQuery.refetch()
-        if (res.data === "Unrequested" || res.data === "Requested") skipNoteRef.current = true
-      } catch {
-        // fall back to the seeded ref
-      }
-      try {
-        const count = await referendumCountQuery.refetch()
-        if (count.data != null) referendumIndexRef.current = count.data
-      } catch {
-        // build throws if the ref is still empty
-      }
+      // Read fresh what the batch depends on. A failed status read keeps the
+      // last answer; a failed count read leaves no index, so the build
+      // refuses rather than bind the details to a guessed one.
+      const status = await preimageStatusQuery.refetch()
+      if (status.isSuccess) skipNoteRef.current = noteWouldAbort(status.data)
+      const count = await referendumCountQuery.refetch()
+      referendumIndexRef.current = count.isSuccess ? count.data : null
       await envelopeNoted.refresh()
     }
     // "existing" signs straight from the tap (no network wait, so mobile
@@ -647,22 +700,21 @@ export default function AdvancedCreatePage() {
   const meta = PROPOSAL_KIND_META[kind]
   const readOnly = !isConnected || step !== "create"
 
-  const onRuntimeFile = async (file: File | undefined) => {
+  // Hash the exact wasm the upgrade will apply. The chain checks
+  // applyAuthorizedUpgrade's code against this blake2-256, byte for byte.
+  const onWasmFile = async (file: File | undefined) => {
     if (!file) return
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    if (bytes.length < 4 || bytes.length > 8 * 1024 * 1024) {
-      toast.error("That doesn't look like a runtime", {
-        description: "Expected a compressed wasm between a few KB and 8 MB.",
-      })
-      return
+    setHashingWasm(true)
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      if (bytes.length === 0) throw new Error("The file is empty.")
+      setField("codeHash", hashCall(bytes))
+      setWasmFile({ name: file.name, size: bytes.length })
+    } catch (e) {
+      toast.error("Could not read the wasm file", { description: formatError(e) })
+    } finally {
+      setHashingWasm(false)
     }
-    setRuntimeFile({
-      name: file.name,
-      size: bytes.length,
-      hex: u8aToHex(bytes) as `0x${string}`,
-      codeHash: blake2AsHex(bytes, 256) as `0x${string}`,
-    })
-    setPasteHex(false)
   }
 
   return (
@@ -758,7 +810,7 @@ export default function AdvancedCreatePage() {
                 <p className="text-[11px] text-muted-foreground mt-2">{meta.description}</p>
               </Section>
 
-              <Section title={kind === "runtimeUpgrade" ? "Runtime code" : "Call"}>
+              <Section title={kind === "authorizeUpgrade" ? "Runtime code" : "Call"}>
                 {kind === "treasurySpend" && (
                   <>
                     <TextInput
@@ -797,67 +849,65 @@ export default function AdvancedCreatePage() {
                     disabled={readOnly}
                   />
                 )}
-                {kind === "runtimeUpgrade" &&
-                  (pasteHex ? (
-                    <>
-                      <TextArea
-                        label="Runtime code (wasm hex)"
-                        value={fields.codeHex}
-                        onChange={(v) => setField("codeHex", v)}
-                        placeholder="0x…"
-                        disabled={readOnly}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setPasteHex(false)}
-                        className="text-[11px] text-primary hover:text-purple-dim"
-                      >
-                        Choose a .wasm file instead
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <label
-                        className={cn(
-                          "flex items-center gap-3 rounded-xl border-2 border-dashed border-purple-border bg-primary/5 px-4 py-3",
-                          readOnly ? "opacity-60" : "cursor-pointer hover:bg-primary/10",
-                        )}
-                      >
-                        {runtimeFile ? (
-                          <FileCode2 className="w-5 h-5 text-primary flex-shrink-0" />
-                        ) : (
-                          <Upload className="w-5 h-5 text-primary flex-shrink-0" />
-                        )}
-                        <span className="min-w-0">
-                          <span className="block font-mono text-xs text-foreground truncate">
-                            {runtimeFile?.name ?? "Choose the runtime .wasm file"}
-                          </span>
-                          <span className="block text-[11px] text-muted-foreground">
-                            {runtimeFile
-                              ? `${(runtimeFile.size / (1024 * 1024)).toFixed(2)} MB · read in your browser, no hex pasting`
-                              : "e.g. enjin_runtime.compact.compressed.wasm"}
-                          </span>
+                {kind === "authorizeUpgrade" && (
+                  <>
+                    <TextInput
+                      label="Code hash (blake2-256 of the runtime wasm)"
+                      value={fields.codeHash}
+                      onChange={(v) => {
+                        setField("codeHash", v)
+                        setWasmFile(null)
+                      }}
+                      placeholder="0x…"
+                      mono
+                      disabled={readOnly}
+                    />
+                    <label
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl border-2 border-dashed border-purple-border bg-primary/5 px-4 py-3",
+                        readOnly || hashingWasm
+                          ? "opacity-60"
+                          : "cursor-pointer hover:bg-primary/10",
+                      )}
+                    >
+                      {hashingWasm ? (
+                        <Loader2 className="w-5 h-5 text-primary flex-shrink-0 animate-spin" />
+                      ) : wasmFile ? (
+                        <FileCode2 className="w-5 h-5 text-primary flex-shrink-0" />
+                      ) : (
+                        <Upload className="w-5 h-5 text-primary flex-shrink-0" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="block font-mono text-xs text-foreground truncate">
+                          {wasmFile?.name ?? "Compute it from the runtime .wasm file"}
                         </span>
-                        <input
-                          type="file"
-                          accept=".wasm,application/wasm"
-                          hidden
-                          disabled={readOnly}
-                          onChange={(e) => {
-                            void onRuntimeFile(e.target.files?.[0])
-                            e.currentTarget.value = ""
-                          }}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setPasteHex(true)}
-                        className="text-[11px] text-muted-foreground hover:text-foreground"
-                      >
-                        Paste hex instead
-                      </button>
-                    </>
-                  ))}
+                        <span className="block text-[11px] text-muted-foreground">
+                          {wasmFile
+                            ? `${wasmFile.size.toLocaleString("en-US")} bytes · hashed in your browser, never uploaded`
+                            : "e.g. enjin_runtime.compact.compressed.wasm"}
+                        </span>
+                      </span>
+                      <input
+                        type="file"
+                        accept=".wasm,application/wasm"
+                        hidden
+                        disabled={readOnly || hashingWasm}
+                        onChange={(e) => {
+                          void onWasmFile(e.target.files?.[0])
+                          e.currentTarget.value = ""
+                        }}
+                      />
+                    </label>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Hash the exact file you will apply - normally srtool&apos;s{" "}
+                      <span className="font-mono">compact.compressed.wasm</span>. Once the
+                      referendum enacts, anyone submits{" "}
+                      <span className="font-mono">system.applyAuthorizedUpgrade</span> with that
+                      file; any other bytes are rejected. A spec name change or a version that
+                      doesn&apos;t increase voids the authorization.
+                    </p>
+                  </>
+                )}
                 {kind === "remark" && (
                   <TextArea
                     label="Remark text"
@@ -899,10 +949,17 @@ export default function AdvancedCreatePage() {
 
               <Section title="Submission origin (track)">
                 {kind === "treasurySpend" ? (
-                  <p className="text-xs text-muted-foreground">
-                    Derived from the amount:{" "}
-                    <span className="text-primary font-mono">{resolvedOrigin?.label ?? "-"}</span>
-                  </p>
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Derived from the amount and this runtime&apos;s spend limits:{" "}
+                      <span className="text-primary font-mono">{resolvedOrigin?.label ?? "-"}</span>
+                    </p>
+                    {treasuryTiers.notice && (
+                      <p className="text-[11px] text-amber-300 leading-relaxed">
+                        {treasuryTiers.notice}
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <>
                     <select
@@ -1037,19 +1094,20 @@ export default function AdvancedCreatePage() {
               )}
               <button
                 type="button"
-                onClick={() => (isConnected ? void stage() : setWalletOpen(true))}
+                onClick={() => (isConnected ? void guarded(stage) : setWalletOpen(true))}
                 disabled={isConnected && !canReview}
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {staging && <Loader2 className="w-4 h-4 animate-spin" />}
+                {(staging || preparing) && <Loader2 className="w-4 h-4 animate-spin" />}
                 {isConnected ? "Review" : "Connect wallet"}
-                {isConnected && !staging && <ArrowRight className="w-4 h-4" />}
+                {isConnected && !staging && !preparing && <ArrowRight className="w-4 h-4" />}
               </button>
               <button
                 type="button"
                 // The draft (if any) is kept: staging again updates it in place.
                 onClick={() => setMode(mode === "new" ? "existing" : "new")}
-                className="w-full mt-4 text-xs text-primary hover:text-purple-dim"
+                disabled={preparing}
+                className="w-full mt-4 text-xs text-primary hover:text-purple-dim disabled:opacity-50"
               >
                 {mode === "new" ? (
                   <>
@@ -1142,13 +1200,26 @@ export default function AdvancedCreatePage() {
                       "Its title and description now show on the proposal page."}
                     {linkState.kind === "failed" &&
                       `On chain, but linking on this site failed: ${linkState.message} You can link it later from your drafts.`}
+                    {linkState.kind === "misbound" &&
+                      `On chain, but its details were bound to your earlier referendum #${linkState.earlierIndex} instead - another submission from this account landed first. To give #${submittedIndex} its own, reload this page and use “Add details to an existing referendum”.`}
                   </p>
-                  <Link
-                    href={`/proposals/${submittedIndex}?network=${chain.id}`}
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:text-purple-dim"
-                  >
-                    View the proposal <ArrowRight className="w-3 h-3" />
-                  </Link>
+                  {mode === "new" && kind === "authorizeUpgrade" && (
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Once it enacts, apply the upgrade by submitting{" "}
+                      <span className="font-mono">system.applyAuthorizedUpgrade</span> with the
+                      same wasm file, from any account.
+                    </p>
+                  )}
+                  {/* Not while linking: the proposal page would cache the
+                      details as missing. */}
+                  {linkState.kind !== "linking" && (
+                    <Link
+                      href={`/proposals/${submittedIndex}?network=${chain.id}`}
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:text-purple-dim"
+                    >
+                      View the proposal <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  )}
                   {mode === "new" && (
                     <PlaceDepositButton
                       referendumIndex={submittedIndex}
@@ -1157,23 +1228,29 @@ export default function AdvancedCreatePage() {
                     />
                   )}
                 </div>
+              ) : indexLost ? (
+                <p className="rounded-2xl bg-amber-500/5 border border-amber-500/30 p-5 text-xs text-muted-foreground leading-relaxed">
+                  The transaction finalized, but its referendum number couldn&apos;t be read from
+                  its events, so the details weren&apos;t linked. Find it in the proposals list,
+                  then link it from your drafts - signing again would file a duplicate.
+                </p>
               ) : (
                 <div className="grid grid-cols-[1fr_2fr] gap-2">
                   <button
                     type="button"
                     onClick={() => setStep("create")}
-                    disabled={tx.isSubmitting}
+                    disabled={tx.isSubmitting || preparing}
                     className="px-4 py-3 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-surface-1 disabled:opacity-50"
                   >
                     Back
                   </button>
                   <button
                     type="button"
-                    onClick={() => void submit()}
-                    disabled={tx.isSubmitting}
+                    onClick={() => void guarded(submit)}
+                    disabled={tx.isSubmitting || preparing}
                     className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-all disabled:opacity-50"
                   >
-                    {tx.isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {(tx.isSubmitting || preparing) && <Loader2 className="w-4 h-4 animate-spin" />}
                     Sign &amp; submit
                   </button>
                 </div>
@@ -1213,12 +1290,15 @@ export default function AdvancedCreatePage() {
         }
         successTitle="Proposal submitted on chain"
         successBody="Your referendum is live. Place its decision deposit to start deciding."
-        successAt="in-block"
-        autoDismiss={false}
+        // Success waits for finality (the default): that's when onSuccess
+        // links the details, and a Done at in-block invited leaving first,
+        // before the link ever runs.
         onClose={sign.close}
+        // The form is locked from Review on, so a retry re-reads the chain
+        // and resends the same call and draft.
         onRetry={() => {
           tx.reset()
-          void submit()
+          void guarded(submit)
         }}
       />
       <SignRequestModal
