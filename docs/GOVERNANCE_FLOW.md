@@ -26,8 +26,10 @@ Skip this section if you already know OpenGov.
 - **Enactment** - when a passed call runs: `After n` blocks (clamped by the
   runtime to the track's minimum) or `At` a block height.
 - **Submission deposit** - reserved when the referendum is filed.
+  Refundable only if the referendum is approved or cancelled.
 - **Decision deposit** - per track and larger. Anyone can place it. Until
-  it is placed, the referendum cannot start deciding.
+  it is placed, the referendum cannot start deciding. Refundable once the
+  referendum concludes, unless it was killed.
 - **Conviction** - multiplies a vote's weight in exchange for a lock:
   `None` counts 0.1x with no lock, `Locked1x` to `Locked6x` count 1x to 6x.
 - **Metadata** - an optional preimage hash bound to a referendum with
@@ -532,15 +534,27 @@ The treasury wizard only lets a proposer continue when their free balance
 covers the submission deposit, the track's decision deposit and 0.01 of a
 token for fees.
 
-The Reserved deposits panel on `/account`
-(`components/governance/reserved-deposits-panel.tsx`) lists the
+Refunds follow pallet_referenda (`canRefundDeposit` in
+`lib/governance/deposits.ts`); neither deposit comes back by itself, and
+anyone can submit the refund for the original depositor:
+
+| Status | `refundSubmissionDeposit` | `refundDecisionDeposit` |
+|---|---|---|
+| Ongoing | No (`BadStatus`) | No (`Unfinished`) |
+| Approved, Cancelled | Yes | Yes |
+| Rejected, TimedOut | No (`BadStatus`): stays reserved for good | Yes |
+| Killed | Slashed | Slashed |
+
+The proposal page and the Reserved deposits panel on `/account`
+(`components/governance/reserved-deposits-panel.tsx`) offer Refund only
+where the runtime accepts it, and say why a rejected or timed-out
+referendum's submission deposit stays reserved. The panel lists the
 connected account's deposits with `getReferendumDepositsFor` and
 `getPreimageDepositsFor` (`lib/governance/deposits.ts`) and reclaims them
 with `referenda.refundSubmissionDeposit`,
-`referenda.refundDecisionDeposit` or `preimage.unnotePreimage`. A killed
-referendum has no deposits left to refund; they were slashed. A reserved
-deposit is separate from a conviction lock: unlocking votes never frees
-it.
+`referenda.refundDecisionDeposit` or `preimage.unnotePreimage`. A
+reserved deposit is separate from a conviction lock: unlocking votes
+never frees it.
 
 ## Conviction voting
 

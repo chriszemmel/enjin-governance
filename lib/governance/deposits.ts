@@ -3,9 +3,11 @@
  * can show them and offer one-click reclaim. Two sources:
  *
  *  - Referendum deposits - the submission + decision deposits on each
- *    `referenda` row, refundable once the referendum is terminal
- *    (Approved / Rejected / TimedOut / Cancelled; a Killed referendum slashes
- *    them, so none remain).
+ *    `referenda` row. What can be refunded follows pallet_referenda (see
+ *    canRefundDeposit): the decision deposit once the referendum has
+ *    concluded, the submission deposit only when it was Approved or
+ *    Cancelled. A Rejected or TimedOut referendum's submission deposit stays
+ *    reserved for good, and a Killed referendum's deposits were slashed.
  *  - Preimage deposits - the per-byte deposit held for a noted preimage,
  *    which the runtime lets its depositor reclaim via `unnotePreimage` while
  *    the preimage is Unrequested.
@@ -27,14 +29,70 @@ import { stringToU8a } from "@polkadot/util"
 import { samePublicKey } from "@/lib/chain/ss58"
 import { REMARK_MAGIC } from "./proposal-metadata"
 import { listReferenda } from "./referenda"
-import type { Referendum } from "./types"
+import type { Referendum, ReferendumStatusType } from "./types"
+
+export type DepositKind = "submission" | "decision"
 
 export type ReferendumDeposit = {
   index: number
-  kind: "submission" | "decision"
+  kind: DepositKind
   amount: bigint
-  /** Refundable now (the referendum has concluded). */
+  /** The referendum's status, which decides whether the deposit can come back. */
+  status: ReferendumStatusType
+  /** Refundable now: the runtime accepts the refund call (canRefundDeposit). */
   refundable: boolean
+}
+
+/**
+ * Whether the runtime refunds a `kind` deposit of a referendum in `status`.
+ * Mirrors pallet_referenda's `take_submission_deposit` and
+ * `take_decision_deposit`:
+ *
+ *  - `refund_submission_deposit` works only for Approved and Cancelled.
+ *    Rejected and TimedOut answer `BadStatus` (checked on Enjin 1070 and
+ *    1080 forks), so that deposit stays reserved; nothing releases it.
+ *  - `refund_decision_deposit` works for any concluded referendum that still
+ *    holds one: Approved, Rejected, TimedOut or Cancelled. Ongoing answers
+ *    `Unfinished`; Killed slashed it (`NoDeposit`).
+ */
+export function canRefundDeposit(kind: DepositKind, status: ReferendumStatusType): boolean {
+  if (kind === "submission") return status === "Approved" || status === "Cancelled"
+  return (
+    status === "Approved" ||
+    status === "Rejected" ||
+    status === "TimedOut" ||
+    status === "Cancelled"
+  )
+}
+
+/**
+ * Why a deposit the runtime won't refund is still held, for the UI: a short
+ * label and a sentence. Null when it can be refunded.
+ */
+export function depositHold(
+  kind: DepositKind,
+  status: ReferendumStatusType,
+): { label: string; reason: string } | null {
+  if (canRefundDeposit(kind, status)) return null
+  switch (status) {
+    case "Ongoing":
+      return {
+        label: "Held until concluded",
+        reason:
+          kind === "submission"
+            ? "Refundable if the referendum is approved or cancelled."
+            : "Refundable once the referendum concludes.",
+      }
+    case "Killed":
+      return { label: "Slashed", reason: "Killing a referendum forfeits its deposits." }
+    default: {
+      const outcome = status === "TimedOut" ? "timed out" : "was rejected"
+      return {
+        label: "Stays reserved",
+        reason: `The referendum ${outcome}, and the chain refunds a submission deposit only for approved or cancelled referenda.`,
+      }
+    }
+  }
 }
 
 export type PreimageDeposit = {
@@ -61,8 +119,9 @@ export type ProposalRecordRef = {
 
 /**
  * Pure: pull `address`'s submission/decision deposits out of decoded referenda.
- * A Killed referendum exposes no deposits (they were slashed). Ongoing
- * referenda hold the deposits but they're not refundable until conclusion.
+ * A Killed referendum exposes no deposits (they were slashed). Each one is
+ * refundable as canRefundDeposit says: Ongoing referenda hold both, and a
+ * Rejected or TimedOut one keeps its submission deposit for good.
  */
 export function extractReferendumDeposits(
   refs: readonly Referendum[],
@@ -72,14 +131,25 @@ export function extractReferendumDeposits(
   for (const r of refs) {
     const s = r.status
     if (s.type === "Killed") continue
-    const refundable = s.type !== "Ongoing"
     const sub = s.submissionDeposit
     if (sub && samePublicKey(sub.who, address)) {
-      out.push({ index: r.index, kind: "submission", amount: sub.amount, refundable })
+      out.push({
+        index: r.index,
+        kind: "submission",
+        amount: sub.amount,
+        status: s.type,
+        refundable: canRefundDeposit("submission", s.type),
+      })
     }
     const dec = s.decisionDeposit
     if (dec && samePublicKey(dec.who, address)) {
-      out.push({ index: r.index, kind: "decision", amount: dec.amount, refundable })
+      out.push({
+        index: r.index,
+        kind: "decision",
+        amount: dec.amount,
+        status: s.type,
+        refundable: canRefundDeposit("decision", s.type),
+      })
     }
   }
   return out

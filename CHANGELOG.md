@@ -80,6 +80,13 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   a request is larger than the treasury holds, the proposal page flags an
   ongoing spend above its track's limit, and `/docs` shows the limits per
   spec. (#9)
+- **Deposit refunds follow the runtime:** a submission deposit is offered
+  for refund only when the referendum was approved or cancelled, and a
+  decision deposit once it concluded. A rejected or timed-out
+  referendum's submission deposit stays reserved for good; the proposal
+  page and the Reserved deposits panel now say so instead of showing a
+  Refund button that failed with `BadStatus`. A killed referendum's
+  deposits show as slashed.
 
 ## 1.9
 

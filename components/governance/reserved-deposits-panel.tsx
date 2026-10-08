@@ -8,7 +8,11 @@ import { useQueryClient } from "@tanstack/react-query"
 import { subscanExtrinsicUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { formatTokenAmount } from "@/lib/chain/format"
-import type { ProposalRecordRef } from "@/lib/governance/deposits"
+import {
+  depositHold,
+  type DepositKind,
+  type ProposalRecordRef,
+} from "@/lib/governance/deposits"
 import { buildUnnotePreimage } from "@/lib/governance/preimage"
 import {
   buildRefundDecisionDeposit,
@@ -29,8 +33,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-
-type DepositKind = "decision" | "submission"
 
 type ActiveAction =
   | { type: "unnote"; key: string; hash: `0x${string}` }
@@ -196,7 +198,8 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
         Deposits held when you submit a referendum or note a preimage. This is{" "}
         <span className="text-foreground">reserved</span>, not a conviction lock -
         unlocking a vote won&apos;t free it. Reclaim each below once it&apos;s
-        releasable.
+        releasable. A submission deposit comes back only if the referendum was
+        approved or cancelled; a rejected or timed-out one stays reserved.
       </p>
 
       {query.isPending ? (
@@ -216,6 +219,7 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
         <ul className="space-y-2 pt-1">
           {data!.referendumDeposits.map((d) => {
             const key = `ref-${d.index}-${d.kind}`
+            const hold = depositHold(d.kind, d.status)
             return (
               <li
                 key={key}
@@ -231,6 +235,9 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
                   <p className="text-[11px] text-muted-foreground mt-0.5 capitalize">
                     {d.kind} deposit · {formatTokenAmount(d.amount, chain)}
                   </p>
+                  {hold && d.status !== "Ongoing" && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{hold.reason}</p>
+                  )}
                 </div>
                 {d.refundable ? (
                   <ReclaimButton
@@ -242,7 +249,7 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
                   />
                 ) : (
                   <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                    Held until concluded
+                    {hold?.label ?? "Held"}
                   </span>
                 )}
               </li>

@@ -33,7 +33,7 @@ import { UserChip } from "@/components/profile/user-chip"
 import { PlaceDepositButton } from "@/components/governance/place-deposit-button"
 import { ProposalMetadataHeader } from "@/components/governance/proposal-metadata-header"
 import { ProposalWithdrawDialog } from "@/components/governance/proposal-withdraw-dialog"
-import { RefundDepositButton } from "@/components/governance/refund-deposit-button"
+import { DepositRefundAction } from "@/components/governance/refund-deposit-button"
 import { LifecycleProgress } from "@/components/governance/lifecycle-progress"
 import { CommentsSection } from "@/components/governance/comments-section"
 import {
@@ -533,12 +533,19 @@ export default function ProposalDetailPage() {
                   label="Submission"
                   deposit={submissionDeposit}
                   chain={chain}
-                  fallbackLabel={!isOngoing ? "Refunded" : "Not yet placed"}
+                  fallbackLabel={
+                    ref.status.type === "Killed"
+                      ? "Slashed"
+                      : !isOngoing
+                        ? "Refunded"
+                        : "Not yet placed"
+                  }
                   action={
-                    submissionDeposit && !isOngoing ? (
-                      <RefundDepositButton
+                    submissionDeposit ? (
+                      <DepositRefundAction
                         referendumIndex={ref.index}
                         kind="submission"
+                        status={ref.status.type}
                         chain={chain}
                       />
                     ) : null
@@ -565,10 +572,11 @@ export default function ProposalDetailPage() {
                     )
                   }
                   action={
-                    decisionDeposit && !isOngoing ? (
-                      <RefundDepositButton
+                    decisionDeposit ? (
+                      <DepositRefundAction
                         referendumIndex={ref.index}
                         kind="decision"
+                        status={ref.status.type}
                         chain={chain}
                       />
                     ) : null
