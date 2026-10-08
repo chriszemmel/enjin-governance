@@ -26,7 +26,8 @@ Highlights:
 ### Upgrading from 1.0
 
 1. Back up the database (a Neon branch is enough), then run
-   `pnpm db:migrate` for migrations `011`, `012` and `013`.
+   `pnpm db:migrate --until 013` for migrations `011`, `012` and `013`.
+   Don't apply `014` yet: it drops a column 1.0 still writes.
 2. Set `NEXT_PUBLIC_APP_URL` to the production domain: in production the
    app refuses to stage proposals while it points at localhost.
 3. Set `GOVERNANCE_ADMIN_PUBLIC_KEYS` to your wallet to become the first
@@ -35,6 +36,11 @@ Highlights:
    details, and Upstash (`KV_REST_API_*`) for shared rate limits.
 4. Redeploy, then open **Moderation → Status** as an admin: it lists
    anything still missing.
+5. Only once 2.0 is live and you won't roll back to 1.0, run
+   `pnpm db:migrate` to apply `014`, which drops the never-written
+   `proposals.proposer_signature`. 1.0 inserts that column on every
+   draft: applied earlier, `014` breaks staging drafts on 1.0 and any
+   rollback to it.
 
 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
 
@@ -100,6 +106,12 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   the Destroying state can't vote or delegate. The vote panel lists such a
   pool disabled with a note and falls back to ENJ; on 1070 it can still
   vote.
+- **Migration `014`** drops `proposals.proposer_signature`, which was
+  never written (drafts always stored null) and is no longer read or
+  inserted. Apply it only after 2.0 is deployed (upgrade step 5);
+  `pnpm db:migrate --until 013` applies the earlier ones without it, and
+  restoring a backup uses the same option to match the migrations its
+  manifest lists.
 - **Every admin origin in the advanced composer:** StakingAdmin,
   TreasuryAdmin, LeaseAdmin, FellowshipAdmin, AuctionAdmin,
   MultiTokensAdmin, FuelTanksAdmin, WhitelistAdmin and ParachainsAdmin join

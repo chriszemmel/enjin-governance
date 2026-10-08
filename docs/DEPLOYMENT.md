@@ -82,7 +82,8 @@ Notes:
    `scripts/run-migrations.mjs` applies every `scripts/NNN_*.sql` (or
    `.mjs`) file in order, records each one in a `_migrations` table and
    skips files already recorded. Run it again after every update that adds
-   a migration.
+   a migration. `--until NNN` applies only the files numbered up to `NNN`
+   (see [Migrations that wait for a deploy](#migrations-that-wait-for-a-deploy)).
 
 4. Set `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in Vercel.
 
@@ -104,6 +105,7 @@ keeps working from the chain.
 | `011_moderation.sql` | Roles, item state, public action log, reports, posting pauses |
 | `012_moderation_settings.sql` | Content-check settings and daily usage per model |
 | `013_moderation_keep_state.sql` | Moderation state and reports outlive a deleted draft (foreign keys `ON DELETE SET NULL`) |
+| `014_drop_proposer_signature.sql` | Drops the never-written `proposals.proposer_signature`. **Only after 2.0 is deployed** (below) |
 
 To apply them by hand instead, run each file in order with
 `psql "$DATABASE_URL_UNPOOLED" -f scripts/<file>`. Choose one method:
@@ -113,6 +115,20 @@ the applied file names into `_migrations`.
 
 Migrations are forward-only. Keep them backward-compatible (add columns,
 don't drop them) for at least one deploy, so a rollback still works.
+
+### Migrations that wait for a deploy
+
+A migration that removes something the running release still uses must
+wait until the new release is live. `014` is one: 1.0 inserts
+`proposals.proposer_signature` on every draft, 2.0 no longer does.
+Dropping it while 1.0 serves makes staging a draft fail there, and a
+rollback to 1.0 afterwards fails the same way. So, upgrading from 1.0:
+
+1. Before deploying 2.0: `pnpm db:migrate --until 013`.
+2. Deploy 2.0 and check it.
+3. Once you won't roll back to 1.0: `pnpm db:migrate`, which applies `014`.
+
+A fresh database for 2.0 can take every migration at once.
 
 ### Schema overview
 
@@ -417,7 +433,10 @@ Vercel keeps previous deployments. To roll back, open **Deployments**,
 find the last good one and choose **Promote to Production**.
 
 The database does not roll back with it, which is why migrations must stay
-backward-compatible for at least one deploy.
+backward-compatible for at least one deploy. After `014` a rollback to 1.0
+can't stage drafts (it writes the dropped column); add the column back
+with `ALTER TABLE proposals ADD COLUMN IF NOT EXISTS proposer_signature
+TEXT;` if you must roll back that far.
 
 ## See also
 

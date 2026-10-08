@@ -5,7 +5,12 @@
  * small `_migrations` ledger table (one row per filename).
  *
  * Usage:
- *   pnpm db:migrate
+ *   pnpm db:migrate               every pending file
+ *   pnpm db:migrate --until 013   only pending files numbered up to 013
+ *
+ * `--until` holds back a migration that must wait for a deploy, such as
+ * 014 (drop a column the previous release still writes): apply the
+ * earlier files before deploying, the rest after.
  *
  * Reads `DATABASE_URL_UNPOOLED` from the environment. If that isn't
  * set it falls back to `DATABASE_URL` - but you should prefer the
@@ -34,6 +39,20 @@ if (!url) {
   process.exit(1)
 }
 
+/** `--until NNN` / `--until=NNN`: the highest migration number to apply, or null for all. */
+function parseUntil(argv) {
+  const i = argv.findIndex((a) => a === "--until" || a.startsWith("--until="))
+  if (i < 0) return null
+  const raw = argv[i].includes("=") ? argv[i].slice("--until=".length) : argv[i + 1]
+  if (!raw || !/^\d+$/.test(raw)) {
+    console.error("--until needs a migration number, e.g. --until 013")
+    process.exit(1)
+  }
+  return raw
+}
+
+const until = parseUntil(process.argv.slice(2))
+const untilNumber = until == null ? null : Number(until)
 const sql = neon(url)
 
 async function ensureLedger() {
@@ -69,6 +88,10 @@ async function main() {
       console.log(`= ${f} (already applied)`)
       continue
     }
+    if (untilNumber != null && Number(f.match(/^\d+/)[0]) > untilNumber) {
+      console.log(`- ${f} (held back by --until ${until})`)
+      continue
+    }
     const path = join(SCRIPTS_DIR, f)
     console.log(`+ ${f}`)
     try {
@@ -95,7 +118,7 @@ async function main() {
     }
   }
 
-  console.log("Migrations up to date.")
+  console.log(until != null ? `Migrations up to ${until} applied.` : "Migrations up to date.")
 }
 
 main().catch((e) => {

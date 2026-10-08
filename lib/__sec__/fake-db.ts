@@ -22,7 +22,6 @@ export type ProposalRow = {
   json_url: string
   json_key: string
   json_sha256: string
-  proposer_signature: string | null
   preimage_hash: string | null
   preimage_len: number | null
   remark_payload: string | null
@@ -97,7 +96,6 @@ export function seedProposal(
     json_url: p.json_url ?? `https://fake.local/r/${p.json_key}`,
     json_key: p.json_key,
     json_sha256: p.json_sha256 ?? "0".repeat(64),
-    proposer_signature: p.proposer_signature ?? null,
     preimage_hash: p.preimage_hash ?? null,
     preimage_len: p.preimage_len ?? null,
     remark_payload: p.remark_payload ?? null,
@@ -154,7 +152,6 @@ type CreateProposalDraft = {
   jsonUrl: string
   jsonKey: string
   jsonSha256: string
-  proposerSignature: string | null
   preimageHash: string | null
   preimageLen: number | null
   remarkPayload: string | null
@@ -181,7 +178,6 @@ export async function insertProposalDraft(d: CreateProposalDraft): Promise<Propo
     json_url: d.jsonUrl,
     json_key: d.jsonKey,
     json_sha256: d.jsonSha256,
-    proposer_signature: d.proposerSignature,
     preimage_hash: d.preimageHash,
     preimage_len: d.preimageLen,
     remark_payload: d.remarkPayload,

@@ -223,14 +223,16 @@ Tables (rows): ${a.tables.map((t) => `${t.name} (${t.rows})`).join(", ")}.
 Restore the database
 --------------------
 1. Create an empty Postgres database (for example a new Neon branch).
-2. From the repository, at the same app version, apply the schema:
-     DATABASE_URL_UNPOOLED="<database url>" pnpm db:migrate
-   (manifest.json lists the migrations this backup's database had.)
+2. From the repository, at the same app version, apply the schema up to
+   the last migration manifest.json lists (this backup's database had
+   exactly those), e.g. for 013:
+     DATABASE_URL_UNPOOLED="<database url>" pnpm db:migrate --until 013
 3. Load the data:
      psql "<database url>" -v ON_ERROR_STOP=1 -f db/restore.sql
    It runs in one transaction, parents before the tables that refer to
    them: either every row is restored or none is. Rows that already exist
    are left as they are.
+4. Apply any later migrations: pnpm db:migrate
 
 Restore the files
 -----------------

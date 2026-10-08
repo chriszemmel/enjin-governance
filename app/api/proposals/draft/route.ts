@@ -419,7 +419,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     jsonUrl: put.url,
     jsonKey: put.key,
     jsonSha256: put.sha256,
-    proposerSignature: null,
     preimageHash: parsed.preimage_hash,
     preimageLen: parsed.preimage_len,
     remarkPayload,

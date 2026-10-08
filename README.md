@@ -509,7 +509,7 @@ lib/
 docs/                  ARCHITECTURE · CHAIN_FLOW · GOVERNANCE_FLOW ·
                        WALLET_INTEGRATION · ENVIRONMENT · DEPLOYMENT ·
                        HANDOVER · screenshots/ (README images)
-scripts/               SQL migrations (004-013) + run-migrations.mjs
+scripts/               SQL migrations (004-014) + run-migrations.mjs
 e2e/                   Playwright browser tests, fixtures and API mocks
 test/                  PGlite database helper and the server-only stub
 .github/workflows/     CI (verify + browser tests)
@@ -637,7 +637,9 @@ variable, redeploy.
 
 In Reown Cloud → **Allowed Domains**: add your production domain.
 Run `pnpm db:migrate` against the Neon project; it records what it applied,
-so don't also paste the SQL files by hand.
+so don't also paste the SQL files by hand. Upgrading a live 1.0 database,
+hold back `014` until 2.0 is deployed: `pnpm db:migrate --until 013` first
+(see the changelog's upgrade steps).
 Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---
@@ -746,7 +748,8 @@ open an issue first to align on approach.
 proposals, moderation with optional automatic checks and a status page,
 legal pages, search metadata, safer uploads, several rounds of security
 review, and tests at three levels. Upgrading from 1.0 needs migrations
-`011` to `013` and a few environment variables.
+`011` to `013` before the deploy, `014` after it, and a few environment
+variables.
 
 Every version, and the upgrade steps, are in
 **[`CHANGELOG.md`](CHANGELOG.md)**.

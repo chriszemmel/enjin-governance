@@ -99,7 +99,18 @@ describe("migrations", () => {
       "011_moderation.sql",
       "012_moderation_settings.sql",
       "013_moderation_keep_state.sql",
+      "014_drop_proposer_signature.sql",
     ])
+  })
+
+  it("drops the never-written proposals.proposer_signature (014)", async () => {
+    const rows = await db.sql`
+      SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'proposals'
+    `
+    const columns = rows.map((r) => r.column_name)
+    expect(columns).toContain("json_sha256")
+    expect(columns).not.toContain("proposer_signature")
   })
 })
 
