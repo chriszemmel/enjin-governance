@@ -65,8 +65,22 @@ Hooks in `lib/query/hooks/`:
 ### Tracks
 
 `getTracks(api)` in `lib/governance/tracks.ts` decodes
-`api.consts.referenda.tracks` and caches the result per `ApiPromise`.
-Tracks only change with a runtime upgrade, so `useTracks` never refetches.
+`api.consts.referenda.tracks` and caches the result per `ApiPromise` and
+runtime spec version. Tracks only change with a runtime upgrade (spec 1080
+changes decision deposits, support floors and `maxDeciding`), so
+`useTracks` is keyed on the spec version and doesn't refetch otherwise.
+
+### Runtime upgrades in an open tab
+
+polkadot.js follows `state_subscribeRuntimeVersion`: on an upgrade it
+fetches the new metadata, re-decorates `api.consts` and only then updates
+`api.runtimeVersion`. `useSpecVersion` (`lib/query/hooks/use-spec-version.ts`)
+reads `api.runtimeVersion` every 15 s - from memory, no request - and every
+cache built from runtime constants puts it in its key: the tracks, the spend
+tiers (`useTreasuryTiers`), the support denominator (`useSupportIssuance`),
+`treasury.spendPeriod` (`useSpendPayout`) and the decode of a live inline
+call (`useInlineCall`). A tab left open across an upgrade picks up the new
+values within 15 s.
 
 The runtime pads track names with NUL bytes and uses snake_case
 (`small_tipper`), while origins use PascalCase (`SmallTipper`). Compare
@@ -101,6 +115,94 @@ names with `findTrackByName` or `canonicalTrackName`, never with `===`.
   `system.setCode` call (older referenda), or read from an
   `authorizeUpgrade` call (`runtimeCodeOf` in
   `lib/governance/runtime-code.ts`).
+
+### Support
+
+The Decision slide measures support as `tally.support` over the issuance
+the runtime uses as `MaxTurnout`, which changed between releases
+(`lib/governance/support.ts`):
+
+| Spec | Denominator |
+|---|---|
+| below 1080 (mainnet 1070) | active issuance: `balances.totalIssuance - balances.inactiveIssuance` |
+| 1080 and up (Canary, mainnet from November) | `balances.totalIssuance` |
+
+On mainnet about 575M of the 2,029M ENJ is inactive, so dividing by the
+total understated support by about 28%: referendum #15 started confirming
+with 33.9% of active issuance (24.3% of total) against a 32.3%
+requirement. `useSupportIssuance` reads both issuances and picks the
+denominator by the connected spec version; the chart caption says which
+issuance the percentages are of.
+
+### Lifecycle
+
+`getLifecycle(referendum, track, currentBlock, context)` in
+`lib/governance/lifecycle.ts` is pure. `LifecycleProgress`
+(`components/governance/lifecycle-progress.tsx`) shows it on the proposal
+page, and `LifecycleMini` as a bar on cards. It returns:
+
+- **Four stages**, Prepare → Decide → Confirm → Enact, each `done`,
+  `active`, `upcoming`, `skipped`, `cancelled`, `failed` or `unknown`.
+  Whatever can't be read stays `unknown` (a dashed dot), never a check.
+- **A timeline**, one row per event with its block and relative time, as
+  Subscan shows it: Submitted, Decision started, Confirm started, Approved
+  (or Rejected, Timed out, ...), Enactment scheduled / Executed, Payout.
+  `≈` marks an estimate. A decided referendum's earlier blocks come from
+  its history (`context.history`, the row before the decision).
+- **The payout** of a treasury `spend_local`, shown as one line under the
+  stepper (not a fifth column).
+
+**Enactment.** Approved isn't the end. The referenda pallet hands the call
+to the scheduler (`schedule_enactment`) for
+
+```
+max(desired, approval + max(track.minEnactmentPeriod, 1))
+desired: After(n) → approval + n,  At(b) → b
+```
+
+(`enactmentBlock` in `lib/governance/scheduler.ts`). While a referendum is
+confirming, the approval block is `deciding.confirming` and the Enact
+stage shows this estimate. Once Approved, the stage follows the scheduler:
+
+- The task is named `blake2_256(("assembly", "enactment", index).encode())`
+  (`enactmentTaskName`: `[u8; 8]` `b"assembly"`, the string
+  `"enactment"`, a `u32` index). `scheduler.lookup(name)` returns
+  `[block, slot]` while the call waits: Enact is active, from the approval
+  block to that block.
+- Once the lookup is gone, the call ran (or root cancelled it). The archive
+  gives the details: the lookup at the approval block is the block it was
+  scheduled for, and that block's `scheduler.Dispatched` event for the task
+  gives the result. Ok → done at that block; an error → `failed`; no such
+  event → `unknown`. Without the archive, Enact is done at an estimated
+  block.
+- `useEnactment` (`lib/query/hooks/use-enactment.ts`) reads the lookup
+  (every 30 s while scheduled) and, on the proposal page, the archive
+  record. Cards read only the lookup.
+
+Mainnet referendum #12 (MediumSpender, `spend_local` 30,000 ENJ): approved
+at 17,533,282, lookup `[17547682, 0]` (approval + 14,400, since it asked
+for `After(0)`), dispatched Ok at 17,547,682.
+
+**Payout.** `treasury.spend_local` doesn't pay anyone: it stores a
+treasury proposal, appends its index to `treasury.approvals` and emits
+`SpendApproved`. The treasury pays approved proposals at the next spend
+period - the blocks divisible by `treasury.spendPeriod` (14,400) - if the
+pot covers them, and removes them. `useSpendPayout`
+(`lib/query/hooks/use-spend-payout.ts`, logic in
+`lib/governance/payout.ts`) tracks it when the decoded call is a
+`spendLocal` (not `treasury.spend`, which pays through `treasury.payout`):
+
+- before enactment: upcoming, estimated at the spend period after the
+  enactment block;
+- after it: the proposal index from the `SpendApproved` the enactment
+  emitted (or, without the archive, a proposal with the same beneficiary
+  and amount). Still in `proposals` and `approvals` → active, "next spend
+  period, block X, if the treasury can cover it"; gone → paid; the
+  dispatch failed → no payout. Anything else stays unknown: a spend that
+  failed at enactment never created a proposal, so a missing one alone
+  doesn't prove a payment.
+
+#12 created treasury proposal #6, awarded at 17,553,600.
 
 ## Writing to the chain: `useExtrinsic`
 
@@ -489,7 +591,8 @@ pickOriginForAmount(amount, tiers) →
 ```
 
 - `useTreasuryTiers` (`lib/query/hooks/use-treasury-tiers.ts`) reads the
-  connected runtime's `specVersion` and picks the table with
+  connected runtime's `specVersion` (`useSpecVersion`, so an upgrade in an
+  open tab switches tables) and picks the table with
   `treasuryTiersForSpec`. It holds each origin to the lowest limit across
   that spec and every later listed one, so a referendum filed before a
   listed upgrade still enacts after it.

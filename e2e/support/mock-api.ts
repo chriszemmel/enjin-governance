@@ -13,6 +13,7 @@ import {
   PROPOSAL_METADATA,
   QUEUE,
   REFERENDUM,
+  SUBSCAN_REFERENDUM,
   fixture,
 } from "./data"
 
@@ -129,6 +130,10 @@ export async function installApiMocks(page: Page, opts: MockOptions): Promise<Ap
         name: file.name,
         moderation: null,
       })
+    }
+
+    if (p === `/api/subscan/${NETWORK}/referendum/${REFERENDUM}`) {
+      return json(route, { data: SUBSCAN_REFERENDUM })
     }
 
     if (p === "/api/moderation/state") return json(route, { ok: true, items: [] })

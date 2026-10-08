@@ -859,6 +859,9 @@ export default function DocsPage() {
               <li>
                 <strong>Decision period</strong> - voting is open;
                 approval and support curves are evaluated continuously.
+                Support is measured against active issuance (total minus
+                inactive) up to runtime spec 1079, and against total
+                issuance from spec 1080.
               </li>
               <li>
                 <strong>Confirm period</strong> - the curves must hold
@@ -866,7 +869,10 @@ export default function DocsPage() {
               </li>
               <li>
                 <strong>Enactment delay</strong> - after approval, the
-                noted call dispatches this many blocks later.
+                scheduler dispatches the noted call at least this many
+                blocks later, or later still if the proposal asked for a
+                later block. A treasury <Code>spend_local</Code> then waits
+                for the next spend period to be paid.
               </li>
             </ul>
             <p>

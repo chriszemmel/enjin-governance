@@ -93,9 +93,15 @@ hourly rebuild). See [Server-side reads](#server-side-reads).
 - **Polling.** Reads poll; there are no storage subscriptions. The current
   block refreshes every 6 s, balances every 12 s, locks, votes and sENJ
   balances every 24 s, a referendum every 10 s while ongoing and every 60 s
-  after, and the referenda list and total issuance every 60 s.
-- **History.** Archive history (`useReferendumHistory`) never goes stale,
-  since concluded state can't change.
+  after, the referenda list and the support issuance every 60 s, an
+  Approved referendum's scheduler lookup every 30 s while its call waits,
+  and a spend's treasury proposal every 60 s until it is paid.
+- **Runtime version.** `useSpecVersion` re-reads `api.runtimeVersion`
+  every 15 s from memory (polkadot.js keeps it current); caches of runtime
+  constants are keyed on it.
+- **History.** Archive history (`useReferendumHistory`, and an executed
+  enactment's record in `useEnactment`) never goes stale, since concluded
+  state can't change.
 - **After a transaction.** `useExtrinsic` invalidates that chain's referenda
   queries and all balance queries.
 

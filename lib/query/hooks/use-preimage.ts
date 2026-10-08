@@ -17,6 +17,7 @@ import { runtimeCodeOf, type RuntimeCode } from "@/lib/governance/runtime-code"
 import type { PreimageRef, PreimageStatus } from "@/lib/governance/types"
 import { useApi } from "./use-api"
 import { useArchiveApi } from "./use-archive-api"
+import { useSpecVersion } from "./use-spec-version"
 
 type DecodedPreimage = {
   hash: `0x${string}`
@@ -78,7 +79,8 @@ export function usePreimage(ref: PreimageRef | null | undefined, chain?: ChainCo
  * `atBlock` is the block the bytes were read at when they come from a decided
  * referendum's history. They're decoded with that block's runtime: a later
  * upgrade can re-index or reshape calls, so today's metadata could misread
- * them as a different call. Omit it for a live referendum.
+ * them as a different call. Omit it for a live referendum: its decode is
+ * keyed on the connected spec version, so an upgrade decodes it again.
  */
 export function useInlineCall(
   bytes: Uint8Array | null | undefined,
@@ -91,8 +93,16 @@ export function useInlineCall(
   // History comes from the archive endpoint, so its old runtimes do too.
   const archiveApi = useArchiveApi(target)
   const apiQuery = atBlock != null ? archiveApi : liveApi
+  const liveSpec = useSpecVersion(target)
+  const specVersion = atBlock != null ? null : liveSpec
   return useQuery<DecodedPreimage | null>({
-    queryKey: ["inline-call", target.id, atBlock ?? null, bytes ? u8aToHex(bytes) : null],
+    queryKey: [
+      "inline-call",
+      target.id,
+      atBlock ?? null,
+      specVersion,
+      bytes ? u8aToHex(bytes) : null,
+    ],
     queryFn: async () => {
       const api = apiQuery.data
       if (!api || !bytes) return null
@@ -107,7 +117,7 @@ export function useInlineCall(
         bytes,
       }
     },
-    enabled: apiQuery.isSuccess && !!bytes,
+    enabled: apiQuery.isSuccess && !!bytes && (atBlock != null || specVersion != null),
     staleTime: Infinity,
   })
 }
