@@ -171,6 +171,9 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   cut after four lines; the rest of the card never changes size. The image
   lives at `/og/referendum/<network>/<index>`, so a Canary page shows the
   Canary referendum.
+  The site's other pages (home, proposals, treasury, docs, create) share
+  the same frame with a short line at the bottom instead of the old
+  subtitle and EGOV1 badge.
 - **Runtime upgrades in an open tab:** tracks, spend tiers, the support
   denominator and treasury constants are keyed on the runtime's spec
   version and refresh when it changes, instead of keeping the old values

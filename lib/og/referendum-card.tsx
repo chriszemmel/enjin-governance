@@ -5,9 +5,8 @@
  * rest is fixed so a long title never squeezes the facts.
  */
 
-import { readFile } from "node:fs/promises"
-import { join } from "node:path"
 import { ImageResponse } from "next/og"
+import { loadOgFonts } from "./fonts"
 import { type CardFact, fitTitle } from "./referendum-facts"
 
 export type ReferendumCard = {
@@ -24,24 +23,6 @@ const E_PATH =
   "M232 116C136 116 96 157.017 96 212L96 300C96 354.983 136 396 232 396L325 396C412 396 416 385.501 416 368C416 348.001 408 340 388 340L232 340C184 340 160 316.055 160 292L160 284L388 284C404 284 416 273.5 416 256C416 238.5 404 228 388 228L160 228L160 220C160 195.945 184 172 232 172L388 172C408 172 416 163.999 416 144C416 126.499 412 116 325 116L232 116Z"
 const DISC =
   "M0 256C0 114.615 114.615 0 256 0C397.385 0 512 114.615 512 256C512 397.385 397.385 512 256 512C114.615 512 0 397.385 0 256Z"
-
-let fonts: Promise<{ name: string; data: Buffer; weight: 500 | 600; style: "normal" }[]> | null = null
-
-/** Inter (latin, OFL), read once per server instance. */
-function loadFonts() {
-  fonts ??= Promise.all(
-    ([500, 600] as const).map(async (weight) => ({
-      name: "Inter",
-      weight,
-      style: "normal" as const,
-      data: await readFile(join(process.cwd(), `lib/og/fonts/inter-latin-${weight}-normal.woff`)),
-    })),
-  ).catch((err: unknown) => {
-    fonts = null
-    throw err
-  })
-  return fonts
-}
 
 export async function renderReferendumCard(
   card: ReferendumCard,
@@ -149,7 +130,7 @@ export async function renderReferendumCard(
         </div>
       </div>
     ),
-    { ...SIZE, fonts: await loadFonts(), headers },
+    { ...SIZE, fonts: await loadOgFonts(), headers },
   )
 }
 

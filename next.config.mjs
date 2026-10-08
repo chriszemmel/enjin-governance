@@ -55,6 +55,7 @@ const nextConfig = {
   // The referendum share image reads its Inter fonts from disk at run time.
   outputFileTracingIncludes: {
     "/og/referendum/[network]/[index]": ["./lib/og/fonts/*.woff"],
+    "/**/opengraph-image*": ["./lib/og/fonts/*.woff"],
   },
 
   // Empty turbopack config silences the "no turbopack config" warning under
