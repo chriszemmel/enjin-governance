@@ -100,6 +100,10 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   the Destroying state can't vote or delegate. The vote panel lists such a
   pool disabled with a note and falls back to ENJ; on 1070 it can still
   vote.
+- **Every admin origin in the advanced composer:** StakingAdmin,
+  TreasuryAdmin, LeaseAdmin, FellowshipAdmin, AuctionAdmin,
+  MultiTokensAdmin, FuelTanksAdmin, WhitelistAdmin and ParachainsAdmin join
+  GeneralAdmin, each mapped to its track and listed in track order.
 
 ## 1.9
 

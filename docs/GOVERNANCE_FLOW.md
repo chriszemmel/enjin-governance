@@ -502,10 +502,16 @@ pickOriginForAmount(amount, tiers) →
 - When a runtime upgrade changes `Spender`, add its spec version to
   `ENJIN_SPEND_LIMITS` before the upgrade is applied.
 
-The advanced composer offers these origins (`SUBMIT_ORIGINS` in
-`lib/governance/proposal-calls.ts`): `Root`, `WhitelistedCaller`,
-`ReferendumCanceller`, `ReferendumKiller`, `GeneralAdmin` and the treasury
-origins up to `BigSpender`. Cancel defaults to `ReferendumCanceller` and
+The advanced composer offers every origin that has a referenda track
+(`SUBMIT_ORIGINS` in `lib/governance/proposal-calls.ts`, each with its
+track's name), in track order: `Root`, `WhitelistedCaller`,
+`ReferendumCanceller`, `ReferendumKiller`, the admin origins
+(`StakingAdmin`, `TreasuryAdmin`, `LeaseAdmin`, `FellowshipAdmin`,
+`GeneralAdmin`, `AuctionAdmin`, `MultiTokensAdmin`, `FuelTanksAdmin`,
+`WhitelistAdmin`, `ParachainsAdmin`) and the treasury origins from
+`SmallTipper` to `BigSpender`. `Emergency` and the fellowship ranks are in
+the runtime's `Origins` enum but have no referenda track, so they are left
+out. Cancel defaults to `ReferendumCanceller` and
 kill to `ReferendumKiller`; every other kind defaults to `Root`. A treasury
 spend in the advanced composer still takes its origin from the amount, and
 can reach `TreasuryAdmin`. An origin that is too weak for the call only

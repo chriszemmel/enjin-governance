@@ -318,15 +318,15 @@ export default function AdvancedCreatePage() {
   // selected origin (defaulting to the kind's suggestion via the dropdown's
   // initial index).
   const tierTable = treasuryTiers.table
-  const resolvedOrigin = useMemo<{ origin: unknown; label: string } | null>(() => {
+  const resolvedOrigin = useMemo<{ origin: unknown; label: string; track: string } | null>(() => {
     if (kind === "treasurySpend") {
       if (spec?.kind !== "treasurySpend" || !tierTable) return null
       const tier = pickOriginForAmount(spec.amount, tierTable.tiers)
       if (!tier) return null
-      return { origin: { Origins: tier.origin }, label: tier.origin }
+      return { origin: { Origins: tier.origin }, label: tier.origin, track: tier.origin }
     }
     const picked = SUBMIT_ORIGINS[originIdx] ?? SUBMIT_ORIGINS[0]
-    return { origin: picked.origin, label: picked.label }
+    return { origin: picked.origin, label: picked.label, track: picked.track }
   }, [kind, spec, originIdx, tierTable])
 
   const enactmentError = validateEnactment(enactment, {
@@ -507,7 +507,7 @@ export default function AdvancedCreatePage() {
   }, [filingCosts, mode, preview, callAlreadyNoted, draft, chain.id, proposalId])
   const decisionTrack =
     mode === "new" && resolvedOrigin
-      ? findTrackByName(tracksQuery.data ?? [], resolvedOrigin.label)
+      ? findTrackByName(tracksQuery.data ?? [], resolvedOrigin.track)
       : null
   const balanceError =
     filingNeeds && balanceQuery.data != null && balanceQuery.data < filingNeeds.total

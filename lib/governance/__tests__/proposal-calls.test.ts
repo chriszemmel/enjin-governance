@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest"
 import type { ApiPromise } from "@polkadot/api"
 import { hexToU8a, stringToHex } from "@polkadot/util"
+import { formatTrackName } from "@/lib/governance/display"
 import {
   buildProposalCall,
   PROPOSAL_KIND_META,
+  SUBMIT_ORIGINS,
   type ProposalCallSpec,
   type ProposalKind,
 } from "@/lib/governance/proposal-calls"
+import { canonicalTrackName } from "@/lib/governance/tracks"
 
 /**
  * buildProposalCall routes each curated proposal kind to the right pallet call
@@ -140,5 +143,67 @@ describe("PROPOSAL_KIND_META", () => {
       { kind: "rawCall", callHex: "0x" },
     ]
     expect(specs).toHaveLength(7)
+  })
+})
+
+describe("SUBMIT_ORIGINS", () => {
+  // Every origin with a referenda track on Enjin 1070 and 1080 (the
+  // `Origins` enum minus Emergency and the fellowship ranks), by track id.
+  const TRACKS: [string, number][] = [
+    ["root", 0],
+    ["whitelisted_caller", 1],
+    ["referendum_canceller", 2],
+    ["referendum_killer", 3],
+    ["staking_admin", 100],
+    ["treasury_admin", 101],
+    ["lease_admin", 102],
+    ["fellowship_admin", 103],
+    ["general_admin", 104],
+    ["auction_admin", 105],
+    ["multi_tokens_admin", 106],
+    ["fuel_tanks_admin", 107],
+    ["whitelist_admin", 111],
+    ["parachains_admin", 112],
+    ["small_tipper", 200],
+    ["big_tipper", 201],
+    ["small_spender", 202],
+    ["medium_spender", 203],
+    ["big_spender", 204],
+  ]
+
+  it("offers one origin per track, in track order", () => {
+    expect(SUBMIT_ORIGINS.map((o) => o.track)).toEqual(TRACKS.map(([name]) => name))
+  })
+
+  it("includes the admin origins", () => {
+    const labels = SUBMIT_ORIGINS.map((o) => o.label)
+    for (const admin of ["StakingAdmin", "TreasuryAdmin", "FellowshipAdmin", "GeneralAdmin"]) {
+      expect(labels).toContain(admin)
+    }
+    expect(labels).not.toContain("Emergency")
+  })
+
+  it("names each origin after its track", () => {
+    for (const o of SUBMIT_ORIGINS) {
+      expect(canonicalTrackName(o.label)).toBe(canonicalTrackName(o.track))
+      const expected = o.label === "Root" ? { System: "Root" } : { Origins: o.label }
+      expect(o.origin).toEqual(expected)
+    }
+  })
+
+  it("formats the labels for display", () => {
+    const shown = Object.fromEntries(SUBMIT_ORIGINS.map((o) => [o.label, formatTrackName(o.label)]))
+    expect(shown.MultiTokensAdmin).toBe("Multi Tokens Admin")
+    expect(shown.FuelTanksAdmin).toBe("Fuel Tanks Admin")
+    expect(shown.StakingAdmin).toBe("Staking Admin")
+    expect(shown.Root).toBe("Root")
+    expect(new Set(Object.values(shown)).size).toBe(SUBMIT_ORIGINS.length)
+  })
+
+  it("lists every suggested origin", () => {
+    for (const meta of Object.values(PROPOSAL_KIND_META)) {
+      if (!meta.suggestedOrigin) continue
+      expect(SUBMIT_ORIGINS.some((o) => JSON.stringify(o.origin) === JSON.stringify(meta.suggestedOrigin))).toBe(true)
+    }
   })
 })
