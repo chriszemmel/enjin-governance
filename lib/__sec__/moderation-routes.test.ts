@@ -88,7 +88,10 @@ vi.mock("@/lib/db/moderation", () => ({
   },
   closeReports: async (...a: unknown[]) => void mod.closed.push(a),
   setSuspension: async (key: string, until: Date | null) => void mod.suspensions.set(key, until),
-  getSuspension: async () => null,
+  getSuspension: async (key: string) => {
+    const until = mod.suspensions.get(key)
+    return until && until.getTime() > Date.now() ? until : null
+  },
   getSetting: async (k: string) => mod.settings.get(k) ?? null,
   saveSetting: async (k: string, v: unknown) => void mod.settings.set(k, v),
   scanChecksToday: async () => 12,
@@ -174,6 +177,16 @@ describe("reports", () => {
     expect(mod.reports).toMatchObject([
       { targetId: FILE, proposalId: PID, severity: "high", source: "user" },
     ])
+  })
+
+  it("is refused while the reporter's posting is paused, and sends no notice", async () => {
+    signIn(USER)
+    mod.suspensions.set(`0x${publicKeyOf(USER)}`, new Date(Date.now() + 86_400_000))
+    const body = { target_type: "attachment", target_id: FILE, category: "spam" }
+    const res = await REPORT(post("https://gov.test/api/moderation/reports", body))
+    expect(res.status).toBe(403)
+    expect(mod.reports).toHaveLength(0)
+    expect(mod.notices).toHaveLength(0)
   })
 
   it("notify moderators once, without the reporter or their note", async () => {

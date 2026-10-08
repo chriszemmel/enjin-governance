@@ -42,7 +42,18 @@ describe("isPublicReadableKey", () => {
 
   it("rejects path traversal and absolute paths", () => {
     expect(isPublicReadableKey("proposals/../secrets/x")).toBe(false)
+    expect(isPublicReadableKey("proposals/enjin-relay/u/media/..")).toBe(false)
+    expect(isPublicReadableKey("proposals/..")).toBe(false)
     expect(isPublicReadableKey("/proposals/enjin-relay/u/proposal.json")).toBe(false)
     expect(isPublicReadableKey("proposals\\..\\x")).toBe(false)
+  })
+
+  it("serves an upload whose name contains double dots (it is a name, not a traversal)", () => {
+    // uniqueMediaName keeps dots and ownMediaKey accepts "a..b.pdf", so such a
+    // file is stored and pinned in the proposal JSON; it must stay readable.
+    expect(isPublicReadableKey("proposals/enjin-relay/u/media/ab12cd34-report..v2.pdf")).toBe(true)
+    expect(
+      isPublicReadableKey("proposals/enjin-relay/u/media/ab12cd34-.._.._x.png.thumb.webp"),
+    ).toBe(true)
   })
 })

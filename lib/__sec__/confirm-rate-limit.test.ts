@@ -21,6 +21,7 @@ vi.mock("@/lib/db/client", () => ({ isDbConfigured: () => true }))
 vi.mock("@/lib/r2/client", () => ({ isR2Configured: () => true }))
 vi.mock("@/lib/r2/upload", async () => await import("./fake-bucket"))
 vi.mock("@/lib/moderation/auto-flag", () => ({ flagText: () => undefined }))
+vi.mock("@/lib/moderation/suspension", () => ({ postingSuspendedResponse: async () => null }))
 // No metadata on chain yet: a retryable 409 after one chain read.
 vi.mock("@/lib/chain/api", () => ({
   getApi: async () => {

@@ -386,11 +386,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     put = await putJson(key, proposalJson)
   } catch (e) {
+    console.error("[proposals/draft] R2 upload failed", e instanceof Error ? e.message : String(e))
     return NextResponse.json(
-      {
-        ok: false,
-        error: `R2 upload failed: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "Storage error - the draft was not saved. Try again." },
       { status: 502 },
     )
   }

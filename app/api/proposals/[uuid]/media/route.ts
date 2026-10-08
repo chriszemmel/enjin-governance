@@ -284,11 +284,9 @@ export async function POST(
       precomputed_sha256_matches: result.sha256 === sha256Hex(body),
     })
   } catch (e) {
+    console.error("[proposals/media] R2 upload failed", e instanceof Error ? e.message : String(e))
     return NextResponse.json(
-      {
-        ok: false,
-        error: `R2 upload failed: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "Storage error - the file was not saved. Try again." },
       { status: 502 },
     )
   }

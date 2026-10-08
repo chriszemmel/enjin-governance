@@ -148,6 +148,9 @@ const PUBLIC_READ_PREFIXES = ["proposals/", "user-avatars/"]
 
 export function isPublicReadableKey(key: string): boolean {
   if (!key) return false
-  if (key.includes("..") || key.includes("\\") || key.startsWith("/")) return false
+  // Traversal is a ".." segment; a name like "report..v2.pdf" is an ordinary upload
+  // (uniqueMediaName keeps dots), and must stay servable.
+  if (key.includes("\\") || key.startsWith("/")) return false
+  if (key.split("/").some((s) => s === "..")) return false
   return PUBLIC_READ_PREFIXES.some((prefix) => key.startsWith(prefix))
 }

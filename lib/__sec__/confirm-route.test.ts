@@ -28,6 +28,7 @@ const db = vi.hoisted(() => ({
   row: null as Record<string, unknown> | null,
   attached: [] as unknown[],
 }))
+const pause = vi.hoisted(() => ({ until: null as Date | null }))
 
 vi.mock("@/lib/auth/current-user", () => ({
   getCurrentUser: async () => ({
@@ -43,6 +44,18 @@ vi.mock("@/lib/r2/client", () => ({
 }))
 vi.mock("@/lib/r2/upload", async () => await import("./fake-bucket"))
 vi.mock("@/lib/moderation/auto-flag", () => ({ flagText: () => undefined }))
+vi.mock("@/lib/moderation/suspension", async () => {
+  const { NextResponse } = await import("next/server")
+  return {
+    postingSuspendedResponse: async () =>
+      pause.until
+        ? NextResponse.json(
+            { ok: false, error: "Posting is paused for this account." },
+            { status: 403 },
+          )
+        : null,
+  }
+})
 vi.mock("@/lib/chain/api", () => ({
   getApi: async () => ({
     query: {
@@ -140,8 +153,16 @@ describe("confirm", () => {
       preimage_hash: lookup.hash,
       preimage_len: lookup.len,
     }
+    pause.until = null
     chain.metadata = expectedMetadataHash(current.url, current.sha)
     chain.history = null
+  })
+
+  it("is refused while the proposer's posting is paused (it would publish the draft)", async () => {
+    chain.ref = ongoing(ALICE, lookup)
+    pause.until = new Date(Date.now() + 86_400_000)
+    expect((await confirm()).status).toBe(403)
+    expect(db.attached).toHaveLength(0)
   })
 
   it("links a referendum the proposer filed with the draft's call", async () => {

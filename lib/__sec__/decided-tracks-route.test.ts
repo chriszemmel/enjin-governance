@@ -57,4 +57,13 @@ describe("decided-tracks route", () => {
   it("refuses an unknown chain", async () => {
     expect((await call("nope")).status).toBe(400)
   })
+
+  it("refuses prototype property names, which are not chains either", async () => {
+    // `"constructor" in CHAINS` is true; the route must check own properties,
+    // or it reads `undefined.rpc` and connects to the provider's default
+    // endpoint (ws://127.0.0.1:9944) for ten seconds.
+    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect((await call(name)).status, name).toBe(400)
+    }
+  })
 })

@@ -216,10 +216,9 @@ export async function DELETE(
     const removed = await softDeleteComment(parsed.data, me.id)
     return NextResponse.json({ ok: removed })
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Unknown error"
-    console.error("DELETE /api/comments/[id] failed", e)
+    console.error("DELETE /api/comments/[id] failed", e instanceof Error ? e.message : String(e))
     return NextResponse.json(
-      { ok: false, error: message },
+      { ok: false, error: "The comment could not be deleted - try again." },
       { status: 500 },
     )
   }

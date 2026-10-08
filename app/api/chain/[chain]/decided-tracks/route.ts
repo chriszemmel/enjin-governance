@@ -26,7 +26,7 @@ const BUDGET_MS = 40_000
  */
 export async function GET(_req: Request, context: { params: Promise<{ chain: string }> }) {
   const { chain: chainId } = await context.params
-  if (!(chainId in CHAINS)) {
+  if (!Object.hasOwn(CHAINS, chainId)) {
     return NextResponse.json({ error: "Unknown chain" }, { status: 400 })
   }
   const chain = CHAINS[chainId as ChainId]

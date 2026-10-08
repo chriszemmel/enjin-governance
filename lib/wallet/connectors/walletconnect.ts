@@ -326,14 +326,36 @@ function approvedChainsFromSession(session: {
  * a request. Falls back to null if the wallet didn't provide one; the
  * caller can then default to `enjinwallet://`.
  */
-function nativeRedirectFromPeer(meta: unknown): string | null {
+// Custom app schemes ("enjinwallet:", "novawallet:") and https. The value is
+// rendered as a link, so "javascript:", "data:" and the like must never pass.
+// "https:" or a custom app scheme of at least three characters.
+const REDIRECT_SCHEME = /^[a-z][a-z0-9+.-]{2,}:$/
+const FORBIDDEN_SCHEMES = new Set([
+  "javascript:",
+  "data:",
+  "vbscript:",
+  "file:",
+  "blob:",
+  "http:",
+  "about:",
+])
+
+export function nativeRedirectFromPeer(meta: unknown): string | null {
   if (!meta || typeof meta !== "object") return null
   const m = meta as Record<string, unknown>
   const redirect = m.redirect as Record<string, unknown> | undefined
   if (!redirect) return null
   const native = redirect.native
-  if (typeof native === "string" && native.length > 0) return native
-  return null
+  if (typeof native !== "string" || native.length === 0 || native.length > 512) return null
+  if (/[\s\u0000-\u001f\u007f]/.test(native)) return null
+  let protocol: string
+  try {
+    protocol = new URL(native).protocol.toLowerCase()
+  } catch {
+    return null
+  }
+  if (FORBIDDEN_SCHEMES.has(protocol) || !REDIRECT_SCHEME.test(protocol)) return null
+  return native
 }
 
 /**

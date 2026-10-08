@@ -9,11 +9,14 @@ test.use({ moderationRole: "admin", viewport: { width: 1280, height: 900 } })
 test("Hide in the moderation queue needs a reason and posts it", async ({ page }) => {
   await page.goto("/moderation")
 
-  // The first item opens by itself, its reason taken from the automatic check.
-  const reason = page.getByPlaceholder("Reason (public)")
-  await expect(reason).toHaveValue(QUEUE_ITEMS.automatic.details[0].explanation, {
+  // The first item opens by itself. The automatic check's sentence is shown
+  // for the moderator but never pre-filled as the public reason: the model
+  // reads the reported content, so that text is not the moderator's to publish.
+  await expect(page.getByText(QUEUE_ITEMS.automatic.details[0].explanation)).toBeVisible({
     timeout: 30_000,
   })
+  const reason = page.getByPlaceholder("Reason (public)")
+  await expect(reason).toHaveValue("")
 
   // A user report comes without a reason.
   const item = QUEUE_ITEMS.reported

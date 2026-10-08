@@ -429,11 +429,9 @@ export async function PATCH(
   try {
     put = await putJson(existing.json_key, proposalJson)
   } catch (e) {
+    console.error("[proposals/edit] R2 upload failed", e instanceof Error ? e.message : String(e))
     return NextResponse.json(
-      {
-        ok: false,
-        error: `R2 upload failed: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "Storage error - the edit was not saved. Try again." },
       { status: 502 },
     )
   }
@@ -449,11 +447,9 @@ export async function PATCH(
       jsonSha256: put.sha256,
     })
   } catch (e) {
+    console.error("[proposals/edit] db update failed", e instanceof Error ? e.message : String(e))
     return NextResponse.json(
-      {
-        ok: false,
-        error: `Db update failed: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "Database error - the edit was not saved. Try again." },
       { status: 502 },
     )
   }

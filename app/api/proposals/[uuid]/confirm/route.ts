@@ -36,6 +36,7 @@ import {
 import { getReferendum, getReferendumHistory } from "@/lib/governance/referenda"
 import type { OngoingStatus } from "@/lib/governance/types"
 import { flagText } from "@/lib/moderation/auto-flag"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { isR2Configured } from "@/lib/r2/client"
 import { keyFromPublicUrl, ownMediaKey, proposalIndexRedirectKey } from "@/lib/r2/paths"
 import { putJson } from "@/lib/r2/upload"
@@ -323,6 +324,9 @@ export async function POST(
       { status: 401 },
     )
   }
+  // Linking publishes the draft, so a paused account can't do it either.
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   // Every call below reads the chain; cap them per account.
   const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalConfirm, identity: me.id })
@@ -456,10 +460,13 @@ export async function POST(
       blockNumber: parsed.block_number ?? null,
     })
   } catch (e) {
+    const cause = e instanceof Error ? e.message : String(e)
+    console.error("[proposals/confirm] db update failed", cause)
     return NextResponse.json(
       {
         ok: false,
-        error: `Db update failed: ${e instanceof Error ? e.message : String(e)}`,
+        error: "Database error - the proposal was not linked. Try again.",
+        retryable: true,
       },
       { status: 502 },
     )

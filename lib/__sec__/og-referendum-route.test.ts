@@ -38,6 +38,8 @@ describe("referendum share image route", () => {
   it("refuses unknown or disabled networks and bad numbers without reading anything", async () => {
     for (const [network, index] of [
       ["nope", "1"],
+      ["constructor", "1"],
+      ["__proto__", "1"],
       ["enjin-matrix", "1"],
       ["enjin-relay", "-1"],
       ["enjin-relay", "1e3"],

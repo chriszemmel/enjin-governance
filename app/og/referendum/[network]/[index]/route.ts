@@ -19,7 +19,7 @@ export const maxDuration = 30
  */
 export async function GET(_req: Request, context: { params: Promise<{ network: string; index: string }> }) {
   const { network, index: rawIndex } = await context.params
-  const chain = network in CHAINS ? CHAINS[network as ChainId] : null
+  const chain = Object.hasOwn(CHAINS, network) ? CHAINS[network as ChainId] : null
   // Only the canonical form ("15", not "015" or "1.5e1"): one cache entry each.
   const index = /^(0|[1-9]\d*)$/.test(rawIndex) ? parseReferendumIndex(rawIndex) : null
   if (!chain?.enabled || index == null) {

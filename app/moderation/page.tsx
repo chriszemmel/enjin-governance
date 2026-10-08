@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Bot, Eye, FileText, Loader2, ShieldCheck, Trash2, UserX } from "lucide-react"
 import { toast } from "sonner"
@@ -243,11 +243,6 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
   const [suspendDays, setSuspendDays] = useState(7)
   const auto = item.details[0]
   const author = item.target_type === "comment" ? item.comment_author : item.proposer_address
-
-  useEffect(() => {
-    // Pre-fill the reason from the automatic check, still editable.
-    if (auto?.explanation) setReason(auto.explanation)
-  }, [auto?.explanation])
 
   const apply = () => {
     if (!action) return

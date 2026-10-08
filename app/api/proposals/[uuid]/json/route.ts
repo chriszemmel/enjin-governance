@@ -81,11 +81,10 @@ export async function GET(
   try {
     upstream = await fetch(row.json_url, { cache: "no-store" })
   } catch (e) {
+    const cause = e instanceof Error ? e.message : String(e)
+    console.error("[proposals/json] upstream fetch failed", cause)
     return NextResponse.json(
-      {
-        ok: false,
-        error: `Upstream fetch failed: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "The proposal file could not be read. Try again." },
       { status: 502 },
     )
   }

@@ -62,7 +62,7 @@ function EditProposalPageInner() {
   const requestedNetwork = searchParams.get("network") as ChainId | null
   useEffect(() => {
     if (!requestedNetwork) return
-    if (!(requestedNetwork in CHAINS)) return
+    if (!Object.hasOwn(CHAINS, requestedNetwork)) return
     setActiveChain(requestedNetwork)
   }, [requestedNetwork, setActiveChain])
 
