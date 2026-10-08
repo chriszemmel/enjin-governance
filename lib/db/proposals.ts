@@ -31,7 +31,6 @@ export type ProposalRow = {
   json_url: string
   json_key: string
   json_sha256: string
-  proposer_signature: string | null
   preimage_hash: string | null
   preimage_len: number | null
   remark_payload: string | null
@@ -63,7 +62,6 @@ export type CreateProposalDraft = {
   jsonUrl: string
   jsonKey: string
   jsonSha256: string
-  proposerSignature: string | null
   preimageHash: string | null
   preimageLen: number | null
   remarkPayload: string | null
@@ -78,14 +76,14 @@ export async function insertProposalDraft(
       id, network, proposer_user_id, proposer_address,
       title, summary, body_markdown,
       track, beneficiary, amount_planck,
-      json_url, json_key, json_sha256, proposer_signature,
+      json_url, json_key, json_sha256,
       preimage_hash, preimage_len, remark_payload,
       status
     ) VALUES (
       ${d.id}, ${d.network}, ${d.proposerUserId}, ${d.proposerAddress},
       ${d.title}, ${d.summary}, ${d.bodyMarkdown},
       ${d.track}, ${d.beneficiary}, ${d.amountPlanck?.toString() ?? null},
-      ${d.jsonUrl}, ${d.jsonKey}, ${d.jsonSha256}, ${d.proposerSignature},
+      ${d.jsonUrl}, ${d.jsonKey}, ${d.jsonSha256},
       ${d.preimageHash}, ${d.preimageLen}, ${d.remarkPayload},
       'draft'
     )

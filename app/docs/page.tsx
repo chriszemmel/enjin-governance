@@ -127,9 +127,13 @@ export default function DocsPage() {
             <p>
               The proposer separately places the per-track decision deposit
               (any account can pay it) - it is never part of the
-              submission batch. Both the submission and decision deposits
-              refund automatically when the referendum reaches a terminal
-              state. Voters cast <Code>convictionVoting.vote</Code> over the
+              submission batch. Neither deposit comes back by itself: once
+              the referendum concludes, anyone can submit{" "}
+              <Code>referenda.refundDecisionDeposit</Code>, and{" "}
+              <Code>referenda.refundSubmissionDeposit</Code> if it was
+              approved or cancelled. A rejected or timed-out referendum keeps
+              its submission deposit reserved for good; a killed one forfeits
+              both. Voters cast <Code>convictionVoting.vote</Code> over the
               decision period; the chain dispatches the noted call at
               enactment if approval and support curves are satisfied.
             </p>
@@ -485,6 +489,8 @@ export default function DocsPage() {
               The vote panel automatically detects every pool you hold sENJ
               in and lets you pick which source to vote from. When you have
               no sENJ, the selector hides and you just vote with liquid ENJ.
+              From runtime 1080, a pool that is being destroyed is listed but
+              can&apos;t be picked: its sENJ can no longer vote or delegate.
               Conviction multipliers and lock periods apply the same way to
               either source.
             </p>
@@ -846,8 +852,9 @@ export default function DocsPage() {
             <ul className="list-disc pl-5 space-y-1">
               <li>
                 <strong>Prepare period</strong> - from submission until
-                a decision can start. Decision deposit must be placed before
-                it expires or the referendum times out.
+                a decision can start. Deciding also needs the decision
+                deposit; without it the referendum times out after{" "}
+                <Code>referenda.undecidingTimeout</Code>.
               </li>
               <li>
                 <strong>Decision period</strong> - voting is open;
@@ -881,8 +888,9 @@ export default function DocsPage() {
             <ul className="list-disc pl-5 space-y-1">
               <li>
                 <strong>Don&apos;t place the decision deposit</strong> -
-                the referendum times out after the prepare period. Deposits
-                refund.
+                the referendum times out after{" "}
+                <Code>referenda.undecidingTimeout</Code>. The submission
+                deposit then stays reserved for good.
               </li>
               <li>
                 <strong>Self-NAY</strong> - vote against your own

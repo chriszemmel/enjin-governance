@@ -299,9 +299,11 @@ export default function TreasuryPage() {
                   <code className="font-mono text-foreground">referenda.submit</code>.
                 </li>
                 <li>
-                  Submission reserves a small refundable deposit; the per-track
-                  decision deposit is larger and also refundable on outcome.
-                  Both amounts are read live from the chain on each proposal.
+                  Submission reserves a deposit that comes back only if the
+                  referendum is approved or cancelled. The per-track decision
+                  deposit, needed before deciding starts, can be placed by
+                  anyone and is refundable once the referendum concludes. Both
+                  amounts are read live from the chain.
                 </li>
                 <li>
                   Approved spends are paid to the beneficiary automatically

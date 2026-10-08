@@ -29,11 +29,13 @@ import {
 import { EnactmentField } from "@/components/create/enactment-field"
 import { MarkdownEditor, type MarkdownEditorHandle } from "@/components/create/markdown-editor"
 import { VoterPreview } from "@/components/create/voter-preview"
+import { FilingCosts } from "@/components/create/filing-costs"
 import { StepBar, type DraftResponse } from "@/components/create/create-ui"
 import { cn } from "@/lib/utils"
 import { subscanExtrinsicUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
-import { parseTokenAmount } from "@/lib/chain/format"
+import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
+import { env } from "@/lib/env"
 import {
   encodeForChain,
   inspectAddress,
@@ -51,6 +53,11 @@ import { attachMetadataToExisting, buildProposalBatch } from "@/lib/governance/p
 import { extractReferendumIndex } from "@/lib/governance/referenda"
 import { canInline, hashCall, noteWouldAbort } from "@/lib/governance/preimage"
 import {
+  envelopeBytes,
+  estimateEnvelopeBytes,
+  filingRequirement,
+} from "@/lib/governance/filing-deposits"
+import {
   DEFAULT_ENACTMENT,
   resolveEnactment,
   validateEnactment,
@@ -59,11 +66,13 @@ import {
 import { formatTrackName } from "@/lib/governance/display"
 import type { ProposalCallMeta } from "@/lib/governance/proposal-metadata"
 import { markdownForAttachment, resolveProposalMedia } from "@/lib/governance/proposal-media"
-import { findTrack } from "@/lib/governance/tracks"
+import { findTrack, findTrackByName } from "@/lib/governance/tracks"
 import { pickOriginForAmount } from "@/lib/governance/treasury"
 import { confirmWithRetry } from "@/lib/governance/confirm-client"
 import { useApi } from "@/lib/query/hooks/use-api"
+import { useBalance } from "@/lib/query/hooks/use-balance"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
+import { useFilingCosts } from "@/lib/query/hooks/use-filing-costs"
 import {
   useEnvelopeNoted,
   usePreimage,
@@ -167,6 +176,8 @@ export default function AdvancedCreatePage() {
   const tracksQuery = useTracks()
   const { status: walletStatus, session, activeAddress } = useWallet()
   const isConnected = walletStatus === "connected" && !!activeAddress
+  const balanceQuery = useBalance(activeAddress)
+  const filingCosts = useFilingCosts()
   const walletMeta = walletDisplayFor(session ?? null)
   const sign = useSignFlow()
   const { ensureSignedIn, signInModal } = useEnsureSignedIn({
@@ -307,15 +318,15 @@ export default function AdvancedCreatePage() {
   // selected origin (defaulting to the kind's suggestion via the dropdown's
   // initial index).
   const tierTable = treasuryTiers.table
-  const resolvedOrigin = useMemo<{ origin: unknown; label: string } | null>(() => {
+  const resolvedOrigin = useMemo<{ origin: unknown; label: string; track: string } | null>(() => {
     if (kind === "treasurySpend") {
       if (spec?.kind !== "treasurySpend" || !tierTable) return null
       const tier = pickOriginForAmount(spec.amount, tierTable.tiers)
       if (!tier) return null
-      return { origin: { Origins: tier.origin }, label: tier.origin }
+      return { origin: { Origins: tier.origin }, label: tier.origin, track: tier.origin }
     }
     const picked = SUBMIT_ORIGINS[originIdx] ?? SUBMIT_ORIGINS[0]
-    return { origin: picked.origin, label: picked.label }
+    return { origin: picked.origin, label: picked.label, track: picked.track }
   }, [kind, spec, originIdx, tierTable])
 
   const enactmentError = validateEnactment(enactment, {
@@ -469,6 +480,50 @@ export default function AdvancedCreatePage() {
     }
   }, [])
 
+  // ---- deposits ---------------------------------------------------------------
+  // What the batch reserves (see filingRequirement): the submission deposit
+  // for a new referendum, a preimage deposit for a call that doesn't ride
+  // inline and isn't noted yet, and one for the EGOV1 envelope (its length
+  // estimated until the details are staged), plus fees and the minimum
+  // balance. The track's decision deposit is shown, not required.
+  const preimageStatusQuery = usePreimageStatus(
+    mode === "new" && preview && !preview.inline ? preview.hash : null,
+  )
+  const callAlreadyNoted = noteWouldAbort(preimageStatusQuery.data)
+  const filingNeeds = useMemo(() => {
+    const { submissionDeposit, preimageRate } = filingCosts
+    if (submissionDeposit == null || !preimageRate) return null
+    if (mode === "new" && (!preview || preview.error)) return null
+    return filingRequirement({
+      submissionDeposit: mode === "new" ? submissionDeposit : 0n,
+      rate: preimageRate,
+      callLen: mode === "new" && preview && !preview.inline && !callAlreadyNoted ? preview.len : null,
+      envelopeLen: draft
+        ? envelopeBytes(draft.remark_payload)
+        : estimateEnvelopeBytes(env.NEXT_PUBLIC_APP_URL, chain.id, proposalId),
+      feeAllowance: filingCosts.feeAllowance,
+      existentialDeposit: filingCosts.existentialDeposit,
+    })
+  }, [filingCosts, mode, preview, callAlreadyNoted, draft, chain.id, proposalId])
+  const decisionTrack =
+    mode === "new" && resolvedOrigin
+      ? findTrackByName(tracksQuery.data ?? [], resolvedOrigin.track)
+      : null
+  const balanceError =
+    filingNeeds && balanceQuery.data != null && balanceQuery.data < filingNeeds.total
+      ? `Need at least ${formatTokenAmount(filingNeeds.total, chain)} free to cover the deposits, fees and the minimum balance (you have ${formatTokenAmount(balanceQuery.data, chain)}).`
+      : null
+  const filingCostsCard = filingNeeds && (
+    <FilingCosts
+      requirement={filingNeeds}
+      chain={chain}
+      balanceFree={balanceQuery.data ?? null}
+      decisionDeposit={decisionTrack?.decisionDeposit ?? null}
+      trackLabel={resolvedOrigin ? formatTrackName(resolvedOrigin.label) : null}
+      submits={mode === "new"}
+    />
+  )
+
   // ---- validation ------------------------------------------------------------
   const detailsError = (() => {
     const t = title.trim()
@@ -496,6 +551,7 @@ export default function AdvancedCreatePage() {
     isConnected &&
     !detailsError &&
     !callError &&
+    !balanceError &&
     callMeta != null &&
     !staging &&
     !preparing &&
@@ -572,10 +628,6 @@ export default function AdvancedCreatePage() {
   useEffect(() => {
     if (referendumCountQuery.data != null) referendumIndexRef.current = referendumCountQuery.data
   }, [referendumCountQuery.data])
-  const preimageStatusQuery = usePreimageStatus(
-    mode === "new" && preview && !preview.inline ? preview.hash : null,
-  )
-  const callAlreadyNoted = noteWouldAbort(preimageStatusQuery.data)
   const skipNoteRef = useRef(false)
   useEffect(() => {
     skipNoteRef.current = callAlreadyNoted
@@ -1087,9 +1139,10 @@ export default function AdvancedCreatePage() {
 
           {step === "create" && (
             <>
-              {isConnected && (detailsError || callError) && (
+              {isConnected && filingCostsCard && <div className="mb-4">{filingCostsCard}</div>}
+              {isConnected && (detailsError || callError || balanceError) && (
                 <p className="text-[11px] text-muted-foreground mb-2">
-                  {callError ?? detailsError}
+                  {callError ?? detailsError ?? balanceError}
                 </p>
               )}
               <button
@@ -1187,6 +1240,8 @@ export default function AdvancedCreatePage() {
                 </p>
               </Section>
 
+              {filingCostsCard && <div className="mb-4">{filingCostsCard}</div>}
+
               {submittedIndex != null ? (
                 <div className="rounded-2xl bg-emerald-500/5 border border-emerald-500/30 p-5 space-y-3">
                   <p className="text-sm font-semibold text-foreground">
@@ -1247,7 +1302,8 @@ export default function AdvancedCreatePage() {
                   <button
                     type="button"
                     onClick={() => void guarded(submit)}
-                    disabled={tx.isSubmitting || preparing}
+                    disabled={tx.isSubmitting || preparing || !!balanceError}
+                    title={balanceError ?? undefined}
                     className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-all disabled:opacity-50"
                   >
                     {(tx.isSubmitting || preparing) && <Loader2 className="w-4 h-4 animate-spin" />}

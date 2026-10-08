@@ -26,8 +26,10 @@ Skip this section if you already know OpenGov.
 - **Enactment** - when a passed call runs: `After n` blocks (clamped by the
   runtime to the track's minimum) or `At` a block height.
 - **Submission deposit** - reserved when the referendum is filed.
+  Refundable only if the referendum is approved or cancelled.
 - **Decision deposit** - per track and larger. Anyone can place it. Until
-  it is placed, the referendum cannot start deciding.
+  it is placed, the referendum cannot start deciding. Refundable once the
+  referendum concludes, unless it was killed.
 - **Conviction** - multiplies a vote's weight in exchange for a lock:
   `None` counts 0.1x with no lock, `Locked1x` to `Locked6x` count 1x to 6x.
 - **Metadata** - an optional preimage hash bound to a referendum with
@@ -500,10 +502,16 @@ pickOriginForAmount(amount, tiers) →
 - When a runtime upgrade changes `Spender`, add its spec version to
   `ENJIN_SPEND_LIMITS` before the upgrade is applied.
 
-The advanced composer offers these origins (`SUBMIT_ORIGINS` in
-`lib/governance/proposal-calls.ts`): `Root`, `WhitelistedCaller`,
-`ReferendumCanceller`, `ReferendumKiller`, `GeneralAdmin` and the treasury
-origins up to `BigSpender`. Cancel defaults to `ReferendumCanceller` and
+The advanced composer offers every origin that has a referenda track
+(`SUBMIT_ORIGINS` in `lib/governance/proposal-calls.ts`, each with its
+track's name), in track order: `Root`, `WhitelistedCaller`,
+`ReferendumCanceller`, `ReferendumKiller`, the admin origins
+(`StakingAdmin`, `TreasuryAdmin`, `LeaseAdmin`, `FellowshipAdmin`,
+`GeneralAdmin`, `AuctionAdmin`, `MultiTokensAdmin`, `FuelTanksAdmin`,
+`WhitelistAdmin`, `ParachainsAdmin`) and the treasury origins from
+`SmallTipper` to `BigSpender`. `Emergency` and the fellowship ranks are in
+the runtime's `Origins` enum but have no referenda track, so they are left
+out. Cancel defaults to `ReferendumCanceller` and
 kill to `ReferendumKiller`; every other kind defaults to `Root`. A treasury
 spend in the advanced composer still takes its origin from the amount, and
 can reach `TreasuryAdmin`. An origin that is too weak for the call only
@@ -516,7 +524,12 @@ fails at enactment, after the full vote, so the composer warns about it.
 - **Decision deposit** - the track's `decisionDeposit`, reserved from
   whoever places it.
 - **Preimage deposits** - one per noted preimage, so a proposal holds up
-  to two: the call and the envelope. They can be reclaimed with
+  to two: the call and the envelope. The runtime prices them per byte
+  (`base + perByte × length`); Enjin exposes no constant for it, so the
+  app reads it with a dry run of `preimage.notePreimage` (DryRunApi, from
+  spec 1080) and otherwise uses its table per spec: 1.0016 ENJ + 0.000025
+  ENJ per byte on 1070, 1 ENJ + 0.001 ENJ per byte on 1080
+  (`lib/governance/filing-deposits.ts`). They can be reclaimed with
   `preimage.unnotePreimage` while the preimage is `Unrequested`.
   `setMetadata` doesn't request the envelope, so it stays `Unrequested`.
   Unnoting it removes the bytes that `MetadataOf` points to: the app still
@@ -528,19 +541,46 @@ fails at enactment, after the full vote, so the composer warns about it.
   is also `Unrequested` on Enjin's runtime; the panel holds it back as
   "In use by a referendum" (`lib/governance/deposits.ts`).
 
-The treasury wizard only lets a proposer continue when their free balance
-covers the submission deposit, the track's decision deposit and 0.01 of a
-token for fees.
+The treasury wizard and the advanced composer show what a filing batch
+reserves and only let a proposer continue when their free balance covers
+it (`filingRequirement`): the submission deposit, the preimage deposits for
+the call (unless inline or already noted) and for the EGOV1 envelope (its
+length estimated from the app URL until the draft is staged), 0.01 of a
+token for the fee, and `balances.existentialDeposit`, which must stay free
+while deposits are reserved. The track's decision deposit is shown, not
+required: deciding needs it, but anyone can place it later.
 
-The Reserved deposits panel on `/account`
-(`components/governance/reserved-deposits-panel.tsx`) lists the
+| Spec | Submission deposit | Preimage deposit |
+|---|---|---|
+| 1070 | 0.025 ENJ | 1.0016 ENJ + 0.000025 ENJ per byte |
+| 1080 | 1,000 ENJ | 1 ENJ + 0.001 ENJ per byte |
+
+Spec 1080 also raises the decision deposits (Root 2.5M ENJ, BigSpender
+250k, MediumSpender 37.5k, SmallSpender 12.5k, BigTipper 5k, SmallTipper
+2.5k ENJ). The app reads the submission and decision deposits from the
+runtime's constants, so this table is for reference only.
+
+Refunds follow pallet_referenda (`canRefundDeposit` in
+`lib/governance/deposits.ts`); neither deposit comes back by itself, and
+anyone can submit the refund for the original depositor:
+
+| Status | `refundSubmissionDeposit` | `refundDecisionDeposit` |
+|---|---|---|
+| Ongoing | No (`BadStatus`) | No (`Unfinished`) |
+| Approved, Cancelled | Yes | Yes |
+| Rejected, TimedOut | No (`BadStatus`): stays reserved for good | Yes |
+| Killed | Slashed | Slashed |
+
+The proposal page and the Reserved deposits panel on `/account`
+(`components/governance/reserved-deposits-panel.tsx`) offer Refund only
+where the runtime accepts it, and say why a rejected or timed-out
+referendum's submission deposit stays reserved. The panel lists the
 connected account's deposits with `getReferendumDepositsFor` and
 `getPreimageDepositsFor` (`lib/governance/deposits.ts`) and reclaims them
 with `referenda.refundSubmissionDeposit`,
-`referenda.refundDecisionDeposit` or `preimage.unnotePreimage`. A killed
-referendum has no deposits left to refund; they were slashed. A reserved
-deposit is separate from a conviction lock: unlocking votes never frees
-it.
+`referenda.refundDecisionDeposit` or `preimage.unnotePreimage`. A
+reserved deposit is separate from a conviction lock: unlocking votes
+never frees it.
 
 ## Conviction voting
 
@@ -574,6 +614,13 @@ which is a triple map of `(account, track, currency)`. `listVotesOnPoll`
 reads it from the key, and on runtimes with `voteManager` it also reads
 `voteManager.voteCurrencies`. One account can hold separate ENJ and sENJ
 votes on the same referendum.
+
+From spec 1080, sENJ of a pool that is being destroyed (pool state
+`Destroying`) can no longer vote or delegate; spec 1070 still accepts it.
+`getStakedEnjBalances` reports each pool's state, and the vote panel lists
+such a pool disabled with a note (`senjCanVote` in
+`lib/governance/staking-pools.ts`). The delegation form only delegates
+liquid ENJ, so it has no pool to pick.
 
 ### Lock periods
 

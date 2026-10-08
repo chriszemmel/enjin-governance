@@ -60,12 +60,12 @@ async function seed(sql: Sql) {
   await sql`
     INSERT INTO proposals (id, network, referendum_index, proposer_user_id, proposer_address, title,
                            summary, body_markdown, track, beneficiary, amount_planck, json_url, json_key,
-                           json_sha256, proposer_signature, preimage_hash, preimage_len, remark_payload,
+                           json_sha256, preimage_hash, preimage_len, remark_payload,
                            tx_hash, block_hash, block_number, status, created_at, edited_at, edit_count,
                            withdrawn_at, withdrawn_reason)
     VALUES (${p1}, 'enjin-relay', 42, ${alice!.id}, ${address(1)}, 'Fund the thing', 'Short.', ${TRICKY},
             'treasurer', ${address(3)}, ${AMOUNT}, ${`https://gov.test/r/${p1Key}`}, ${p1Key},
-            ${"a".repeat(64)}, '0xsig', '0xpre', 1234, 'EGOV1:{}', '0xtx', '0xblock', ${BIG_BLOCK},
+            ${"a".repeat(64)}, '0xpre', 1234, 'EGOV1:{}', '0xtx', '0xblock', ${BIG_BLOCK},
             'on_chain', '2026-01-02 03:04:05.123456+00', '2026-01-03 00:00:00+00', 2,
             '2026-02-01 00:00:00.000001+00', 'Changed my mind')`
   const p2 = randomUUID()

@@ -4,6 +4,8 @@ import { useState } from "react"
 import { Loader2, Undo2 } from "lucide-react"
 import { toast } from "sonner"
 import { subscanExtrinsicUrl, type ChainConfig } from "@/lib/chain/chains"
+import { canRefundDeposit, depositHold, type DepositKind } from "@/lib/governance/deposits"
+import type { ReferendumStatusType } from "@/lib/governance/types"
 import {
   buildRefundDecisionDeposit,
   buildRefundSubmissionDeposit,
@@ -17,22 +19,42 @@ import { WalletModal } from "@/components/wallet/wallet-modal"
 
 type Props = {
   referendumIndex: number
-  kind: "decision" | "submission"
+  kind: DepositKind
   chain: ChainConfig
 }
 
 /**
- * Refund a submission or decision deposit on a referendum that has
- * reached a terminal state (Approved / Rejected / TimedOut / Cancelled).
- * Anyone can submit the call - the deposit returns to whichever address
- * originally placed it, not the caller. So we surface this button to
- * every visitor.
+ * What a held deposit on a referendum in `status` allows: the Refund button
+ * when the runtime refunds it (canRefundDeposit), otherwise why it stays -
+ * a rejected or timed-out referendum keeps its submission deposit, a killed
+ * one slashed both. Nothing while the referendum is ongoing.
+ */
+export function DepositRefundAction({
+  status,
+  ...props
+}: Props & { status: ReferendumStatusType }) {
+  if (canRefundDeposit(props.kind, status)) return <RefundDepositButton {...props} />
+  const hold = status === "Ongoing" ? null : depositHold(props.kind, status)
+  if (!hold) return null
+  return (
+    <p className="text-[11px] text-muted-foreground leading-relaxed">
+      <span className="text-foreground">{hold.label}.</span> {hold.reason}
+    </p>
+  )
+}
+
+/**
+ * Refund a submission or decision deposit the runtime will release (see
+ * canRefundDeposit: the submission deposit only for Approved or Cancelled,
+ * the decision deposit once concluded). Anyone can submit the call - the
+ * deposit returns to whichever address originally placed it, not the
+ * caller. So we surface this button to every visitor.
  *
  * Self-contained (own sign modal) for stable single-card use, e.g. the
  * proposal detail page. The account page's deposits list uses its own
  * panel-level flow instead, because list rows unmount on refetch.
  */
-export function RefundDepositButton({ referendumIndex, kind, chain }: Props) {
+function RefundDepositButton({ referendumIndex, kind, chain }: Props) {
   const { status: walletStatus, session: walletSession } = useWallet()
   const [walletOpen, setWalletOpen] = useState(false)
   const isConnected = walletStatus === "connected"

@@ -97,10 +97,27 @@ function asNumericString(x: unknown): string {
   return s.replace(/[^0-9]/g, "") || "0"
 }
 
+/**
+ * First Enjin runtime spec in which sENJ of a pool being destroyed (pool
+ * state `Destroying`) can no longer vote or delegate. Spec 1070 still
+ * accepts it.
+ */
+export const DESTROYING_POOL_VOTING_ENDS_SPEC = 1080
+
+/**
+ * Whether sENJ of a pool in `poolState` can vote or delegate on a runtime
+ * at `specVersion`. Only a Destroying pool on spec 1080 or later can't.
+ */
+export function senjCanVote(poolState: string | null, specVersion: number): boolean {
+  return poolState !== "Destroying" || specVersion < DESTROYING_POOL_VOTING_ENDS_SPEC
+}
+
 export type StakedEnjHolding = {
   poolId: number
   /** Pool name from chain state, or null. */
   poolName: string | null
+  /** Pool state (Open / Blocked / Destroying), or null when unreadable. See senjCanVote. */
+  poolState: string | null
   /** User's sENJ balance for this pool (raw planck units). */
   senjBalance: bigint
   /**
@@ -221,6 +238,7 @@ export async function getStakedEnjBalances(
         return {
           poolId,
           poolName: poolMeta?.name ?? null,
+          poolState: poolMeta?.state ?? null,
           senjBalance,
           realEnjBalance,
           stakeFactorNum: num,

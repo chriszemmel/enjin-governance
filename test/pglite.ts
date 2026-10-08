@@ -321,7 +321,6 @@ export function draftFixture(over: Partial<CreateProposalDraft> = {}): CreatePro
     jsonUrl: `https://cdn.example/${key}`,
     jsonKey: key,
     jsonSha256: "a".repeat(64),
-    proposerSignature: null,
     preimageHash: null,
     preimageLen: null,
     remarkPayload: null,

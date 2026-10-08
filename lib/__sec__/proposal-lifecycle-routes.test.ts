@@ -285,7 +285,6 @@ describe("by-index", () => {
       referendum_index: 7,
       title: "Relay 7",
       proposer_user_id: "internal-user-uuid",
-      proposer_signature: "0xsig",
       remark_payload: "EGOV1:...",
       last_error: "internal note",
     })

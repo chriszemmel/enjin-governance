@@ -19,6 +19,7 @@ import { Compose } from "@/components/create/compose"
 import { Stage } from "@/components/create/stage"
 import { SignAndDone } from "@/components/create/sign-and-done"
 import { PlaceDepositButton } from "@/components/governance/place-deposit-button"
+import { FilingCosts } from "@/components/create/filing-costs"
 import { WizardFooter } from "@/components/create/wizard-footer"
 import {
   StepBar,
@@ -28,6 +29,7 @@ import {
 import { subscanExtrinsicUrl, subscanReferendumUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
+import { env } from "@/lib/env"
 import {
   encodeForChain,
   inspectAddress,
@@ -36,6 +38,11 @@ import {
 } from "@/lib/chain/ss58"
 import { extractReferendumIndex } from "@/lib/governance/referenda"
 import { hashCall, noteWouldAbort } from "@/lib/governance/preimage"
+import {
+  envelopeBytes,
+  estimateEnvelopeBytes,
+  filingRequirement,
+} from "@/lib/governance/filing-deposits"
 import { formatTrackName } from "@/lib/governance/display"
 import { maxTreasurySpend, pickOriginForAmount } from "@/lib/governance/treasury"
 import {
@@ -44,6 +51,7 @@ import {
 } from "@/lib/governance/submit-treasury-proposal"
 import { useApi } from "@/lib/query/hooks/use-api"
 import { useBalance } from "@/lib/query/hooks/use-balance"
+import { useFilingCosts } from "@/lib/query/hooks/use-filing-costs"
 import { useEnsureSignedIn } from "@/lib/wallet/use-ensure-signed-in"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
@@ -114,6 +122,7 @@ function CreatePageInner() {
   const treasuryTiers = useTreasuryTiers()
   const treasuryBalanceQuery = useBalance(chain.treasuryAddress)
   const currentBlockQuery = useCurrentBlock()
+  const filingCosts = useFilingCosts()
 
   const [enactment, setEnactment] = useState<EnactmentChoice>(DEFAULT_ENACTMENT)
   const [step, setStep] = useState<WizardStep>("create")
@@ -339,35 +348,6 @@ function CreatePageInner() {
     return findTrackByName(tracksQuery.data, pickedTier.origin)
   }, [tracksQuery.data, pickedTier])
 
-  // Submission deposit from referenda pallet consts (always-on small
-  // amount that gets reserved on submit and refunded once decided).
-  const submissionDeposit = useMemo<bigint | null>(() => {
-    const api = apiQuery.data as ApiPromise | undefined
-    if (!api?.consts?.referenda?.submissionDeposit) return null
-    try {
-      const codec = api.consts.referenda.submissionDeposit as unknown as {
-        toString(): string
-      }
-      return BigInt(codec.toString())
-    } catch {
-      return null
-    }
-  }, [apiQuery.data])
-
-  // Anti-spam balance gate. The proposer must hold the submission
-  // deposit (reserved immediately) + the track's decision deposit
-  // (anyone can place it later, but requiring the proposer to be able
-  // to cover it themselves screens out spam) + a small fee buffer.
-  const FEE_BUFFER_PLANCK = 10n ** BigInt(chain.decimals - 2) // 0.01 of one token
-  const requiredPlanck: bigint | null =
-    submissionDeposit != null && trackForOrigin
-      ? submissionDeposit + trackForOrigin.decisionDeposit + FEE_BUFFER_PLANCK
-      : null
-  const balanceSufficient =
-    requiredPlanck == null ||
-    balanceQuery.data == null ||
-    balanceQuery.data >= requiredPlanck
-
   // preimage preview (computed locally, no network)
   const preimagePreview = useMemo(() => {
     const api = apiQuery.data as ApiPromise | undefined
@@ -400,6 +380,31 @@ function CreatePageInner() {
   // still takes the note (see noteWouldAbort).
   const preimageStatusQuery = usePreimageStatus(preimagePreview?.preimageHash ?? null)
   const preimageAlreadyNoted = noteWouldAbort(preimageStatusQuery.data)
+
+  // Balance gate: the batch reserves the submission deposit and a preimage
+  // deposit for each of the call and the EGOV1 envelope (priced per byte by
+  // the chain), and pays a fee; the existential deposit must stay free. The
+  // envelope's length is estimated until the draft is staged. The track's
+  // decision deposit is shown but not required: anyone can place it later.
+  const filingNeeds = useMemo(() => {
+    const { submissionDeposit, preimageRate } = filingCosts
+    if (submissionDeposit == null || !preimageRate || !preimagePreview) return null
+    return filingRequirement({
+      submissionDeposit,
+      rate: preimageRate,
+      callLen: preimageAlreadyNoted ? null : preimagePreview.preimageLen,
+      envelopeLen: draft
+        ? envelopeBytes(draft.remark_payload)
+        : estimateEnvelopeBytes(env.NEXT_PUBLIC_APP_URL, chain.id, proposalId),
+      feeAllowance: filingCosts.feeAllowance,
+      existentialDeposit: filingCosts.existentialDeposit,
+    })
+  }, [filingCosts, preimagePreview, preimageAlreadyNoted, draft, chain.id, proposalId])
+  const requiredPlanck = filingNeeds?.total ?? null
+  const balanceSufficient =
+    requiredPlanck == null ||
+    balanceQuery.data == null ||
+    balanceQuery.data >= requiredPlanck
 
   // Authoritative "should we skip notePreimage?" decision used by the build
   // closure at submit time. The status query is 30s-stale: if it read
@@ -507,7 +512,7 @@ function CreatePageInner() {
   }
   if (!balanceSufficient && requiredPlanck != null && balanceQuery.data != null) {
     missingReasons.push(
-      `Need at least ${formatTokenAmount(requiredPlanck, chain)} to cover the submission deposit, decision deposit, and fees (you have ${formatTokenAmount(balanceQuery.data, chain)})`,
+      `Need at least ${formatTokenAmount(requiredPlanck, chain)} free to cover the submission deposit, the preimage deposits, fees and the minimum balance (you have ${formatTokenAmount(balanceQuery.data, chain)})`,
     )
   }
   if (enactmentError) {
@@ -917,6 +922,18 @@ function CreatePageInner() {
           />
         )}
 
+        {step === "create" && isConnected && filingNeeds && (
+          <div className="mt-5">
+            <FilingCosts
+              requirement={filingNeeds}
+              chain={chain}
+              balanceFree={balanceQuery.data ?? null}
+              decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
+              trackLabel={pickedTier ? formatTrackName(pickedTier.origin) : null}
+            />
+          </div>
+        )}
+
         {step === "review" && draft && pickedTier && parsedAmount && beneficiary && (
           <Stage
             draft={draft}
@@ -937,10 +954,18 @@ function CreatePageInner() {
             preimageLen={preimagePreview?.preimageLen ?? 0}
             preimageAlreadyNoted={preimageAlreadyNoted}
             metadataHash={metadataHash}
-            decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
             enactmentText={enactmentLabel(enactment)}
-            chainTicker={chain.ticker}
-            chainDecimals={chain.decimals}
+            costs={
+              filingNeeds && (
+                <FilingCosts
+                  requirement={filingNeeds}
+                  chain={chain}
+                  balanceFree={balanceQuery.data ?? null}
+                  decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
+                  trackLabel={formatTrackName(pickedTier.origin)}
+                />
+              )
+            }
           />
         )}
 

@@ -27,6 +27,7 @@ import {
   type Conviction,
 } from "@/lib/governance/types"
 import { decodeCurrency } from "@/lib/governance/vote-decode"
+import { senjCanVote } from "@/lib/governance/staking-pools"
 import { useApi } from "@/lib/query/hooks/use-api"
 import { useBalance } from "@/lib/query/hooks/use-balance"
 import { useMyVotesOnPoll } from "@/lib/query/hooks/use-my-votes"
@@ -65,7 +66,10 @@ export function VotingPanel({
   const chain = useActiveChain()
   const queryClient = useQueryClient()
   // Conviction locks run in the runtime's voteLockingPeriod on every track.
-  const voteLockingPeriod = getVoteLockingPeriod(useApi().data)
+  const api = useApi().data
+  const voteLockingPeriod = getVoteLockingPeriod(api)
+  // Decides whether sENJ of a pool being destroyed can still vote.
+  const specVersion = api?.runtimeVersion.specVersion.toNumber() ?? 0
   const { status: walletStatus, activeAddress, session: walletSession } = useWallet()
   const { short: addressShort } = useDisplayAddress()
   const walletMeta = walletDisplayFor(walletSession ?? null)
@@ -114,9 +118,10 @@ export function VotingPanel({
       return
     }
     const match = stakedHoldings.find((h) => h.poolId === currency.poolId)
-    if (!match) {
-      // The pool dropped out of holdings (transfer? unstake?) - fall
-      // back to ENJ rather than leaving a stale option selected.
+    if (!match || !senjCanVote(match.poolState, specVersion)) {
+      // The pool dropped out of holdings (transfer? unstake?), or is being
+      // destroyed - fall back to ENJ rather than leaving a stale option
+      // selected.
       setCurrency({ kind: "Enj", freeBalance: balanceQuery.data ?? null })
       return
     }
@@ -132,7 +137,7 @@ export function VotingPanel({
         realEnjBalance: match.realEnjBalance,
       })
     }
-  }, [balanceQuery.data, stakedHoldings, currency])
+  }, [balanceQuery.data, stakedHoldings, currency, specVersion])
 
   // Match an on-chain vote to the form's currently selected source so
   // the form reads as a "Change vote" for that source. With multi-
@@ -478,6 +483,7 @@ export function VotingPanel({
                   chain={chain}
                   freeEnjBalance={balanceQuery.data ?? null}
                   stakedHoldings={stakedHoldings}
+                  specVersion={specVersion}
                   selected={currency}
                   onChange={(next) => {
                     setCurrency(next)
