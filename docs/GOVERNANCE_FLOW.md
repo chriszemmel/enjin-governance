@@ -609,6 +609,13 @@ reads it from the key, and on runtimes with `voteManager` it also reads
 `voteManager.voteCurrencies`. One account can hold separate ENJ and sENJ
 votes on the same referendum.
 
+From spec 1080, sENJ of a pool that is being destroyed (pool state
+`Destroying`) can no longer vote or delegate; spec 1070 still accepts it.
+`getStakedEnjBalances` reports each pool's state, and the vote panel lists
+such a pool disabled with a note (`senjCanVote` in
+`lib/governance/staking-pools.ts`). The delegation form only delegates
+liquid ENJ, so it has no pool to pick.
+
 ### Lock periods
 
 `CONVICTION_LOCK_PERIODS` in `lib/governance/types.ts` gives the lock

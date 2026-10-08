@@ -489,6 +489,8 @@ export default function DocsPage() {
               The vote panel automatically detects every pool you hold sENJ
               in and lets you pick which source to vote from. When you have
               no sENJ, the selector hides and you just vote with liquid ENJ.
+              From runtime 1080, a pool that is being destroyed is listed but
+              can&apos;t be picked: its sENJ can no longer vote or delegate.
               Conviction multipliers and lock periods apply the same way to
               either source.
             </p>

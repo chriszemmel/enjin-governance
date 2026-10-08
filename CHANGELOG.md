@@ -96,6 +96,10 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   spec 1080 it reaches 250,000 ENJ for BigSpender. The review step no
   longer says the submission deposit is refunded when the referendum is
   decided: it comes back only if the referendum is approved or cancelled.
+- **Pools being destroyed:** from spec 1080, sENJ of a nomination pool in
+  the Destroying state can't vote or delegate. The vote panel lists such a
+  pool disabled with a note and falls back to ENJ; on 1070 it can still
+  vote.
 
 ## 1.9
 
