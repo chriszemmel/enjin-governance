@@ -80,6 +80,23 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   a request is larger than the treasury holds, the proposal page flags an
   ongoing spend above its track's limit, and `/docs` shows the limits per
   spec. (#9)
+- **Support is measured like the runtime does it:** against active
+  issuance (total minus inactive) on spec 1070, against total issuance
+  from 1080. Mainnet showed about 28% too little support: about 575M of
+  the 2,029M ENJ is inactive.
+- **Enact and Payout follow the chain:** an approved referendum's Enact
+  stage stays in progress until the scheduler runs the call (mainnet #12
+  was enacted a day after approval), read from `scheduler.lookup`, with
+  the executed block and result from the archive; a failed call shows as
+  failed. While confirming, the estimate uses the requested enactment
+  (`After` / `At`) and the track minimum. A treasury `spend_local` gets a
+  payout line: next spend period, then paid, from `treasury.proposals`.
+  The lifecycle card lists each event with its block and time, like
+  Subscan, and fits a 360 px screen.
+- **Runtime upgrades in an open tab:** tracks, spend tiers, the support
+  denominator and treasury constants are keyed on the runtime's spec
+  version and refresh when it changes, instead of keeping the old values
+  until a reload.
 
 ## 1.9
 
