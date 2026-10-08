@@ -447,35 +447,67 @@ be valid for the active chain.
 
 ## Origins and treasury tiers
 
-`lib/governance/treasury.ts` maps an amount to the smallest treasury origin
-that covers it:
+Each treasury origin can authorize a spend up to a fixed limit, set by the
+runtime's `Spender` EnsureOrigin (relaychain
+`runtime/common/src/governance/origins.rs`, the treasury's `SpendOrigin`).
+If the amount exceeds the origin's limit, `spend_local` fails with
+`InsufficientPermission` at enactment, after the full vote. The limits
+aren't in metadata or `api.consts`, so `ENJIN_SPEND_LIMITS` in
+`lib/governance/treasury.ts` copies them from the runtime source, one
+table per runtime spec version. The enjin and canary runtimes both take
+`Spender` from `runtime/common`, so one table per spec covers both
+networks.
 
-| Origin | Maximum spend |
-|---|---|
-| `SmallTipper` | 250 ENJ |
-| `BigTipper` | 1,000 ENJ |
-| `SmallSpender` | 10,000 ENJ |
-| `MediumSpender` | 100,000 ENJ |
-| `BigSpender` | 1,000,000 ENJ |
+| Origin | Spec 1070 (v1.7.0) | Spec 1080 (v1.8.0) |
+|---|---|---|
+| `SmallTipper` | 100 ENJ | 2,500 ENJ |
+| `BigTipper` | 5,000 ENJ | 10,000 ENJ |
+| `SmallSpender` | 50,000 ENJ | 50,000 ENJ |
+| `MediumSpender` | 250,000 ENJ | 250,000 ENJ |
+| `BigSpender` | 2,500,000 ENJ | 2,500,000 ENJ |
+| `TreasuryAdmin` | 25,000,000 ENJ | 25,000,000 ENJ |
 
-- `pickOriginForAmount(amount, tiers = ENJIN_TREASURY_TIERS)` returns the
-  first tier that covers the amount, or `null` when none does. The
-  composers block a `null` rather than fall back to another origin.
-- The caps are a static table. The runtime doesn't expose its per-origin
-  spend limits in metadata, so they can't be read from chain. Enjin has no
-  `Treasurer` origin, so `BigSpender` is the top tier, and 1,000,000 ENJ is
-  a product cap, not a chain value.
+```ts
+tiers = treasuryTiersForSpec(api.runtimeVersion.specVersion).tiers
+pickOriginForAmount(amount, tiers) →
+  the first tier (smallest first) with amount ≤ tier.maxAmount
+  : null   // above the top tier's limit - rejected at compose time
+```
+
+- `useTreasuryTiers` (`lib/query/hooks/use-treasury-tiers.ts`) reads the
+  connected runtime's `specVersion` and picks the table with
+  `treasuryTiersForSpec`. It holds each origin to the lowest limit across
+  that spec and every later listed one, so a referendum filed before a
+  listed upgrade still enacts after it.
+- A spec missing from the list (newer than every entry, or between two)
+  uses the nearest older table, flagged unverified: the wizard, the
+  advanced composer and `/treasury` warn. A spec older than every entry
+  gets no table, and no spend can be filed.
+- `TreasuryAdmin` is Enjin's counterpart to Polkadot's `Treasurer` (there
+  is no origin by that name): the largest `Spender` entry and the
+  treasury's `RejectOrigin`. It is the top tier; a larger amount returns
+  `null`, and the composers block it rather than fall back to an origin
+  that can't authorize the spend. Its decision deposit is much larger than
+  the other tiers'.
 - `assertTierCoversAmount` re-checks at build time, so a referendum is
   never filed under an origin the table says is too small.
+- `spend_local` doesn't check the treasury balance. The wizard warns,
+  without blocking, when a request is larger than the treasury holds: an
+  approved spend is paid at a later spend period, once the treasury can
+  cover it in full.
+- The proposal page warns when an ongoing `spend_local` is above its
+  track's limit, e.g. one filed before these limits were in place.
+- When a runtime upgrade changes `Spender`, add its spec version to
+  `ENJIN_SPEND_LIMITS` before the upgrade is applied.
 
 The advanced composer offers these origins (`SUBMIT_ORIGINS` in
 `lib/governance/proposal-calls.ts`): `Root`, `WhitelistedCaller`,
-`ReferendumCanceller`, `ReferendumKiller`, `GeneralAdmin` and the five
-treasury origins. Cancel defaults to `ReferendumCanceller` and kill to
-`ReferendumKiller`; every other kind defaults to `Root`. A treasury spend in the
-advanced composer still takes its origin from the amount. An origin that
-is too weak for the call only fails at enactment, after the full vote, so
-the composer warns about it.
+`ReferendumCanceller`, `ReferendumKiller`, `GeneralAdmin` and the treasury
+origins up to `BigSpender`. Cancel defaults to `ReferendumCanceller` and
+kill to `ReferendumKiller`; every other kind defaults to `Root`. A treasury
+spend in the advanced composer still takes its origin from the amount, and
+can reach `TreasuryAdmin`. An origin that is too weak for the call only
+fails at enactment, after the full vote, so the composer warns about it.
 
 ## Deposits
 

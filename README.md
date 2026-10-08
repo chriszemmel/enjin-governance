@@ -164,7 +164,7 @@
   `MetadataOf` binding carries an `EGOV1:{"u":"…","h":"…"}` envelope so any
   third party can rebuild the proposal corpus by resolving it through the
   preimage pallet. Auto-picks the smallest origin tier that covers the amount (capped
-  at BigSpender / 1,000,000 ENJ); the beneficiary can be any address, and the
+  at TreasuryAdmin / 25,000,000 ENJ); the beneficiary can be any address, and the
   enactment moment is selectable (as-soon-as-possible / delay / at a block).
 - **General + admin proposals** - a separate `/create/advanced` composer files
   any proposal under a chosen track origin: cancel / kill a referendum,
