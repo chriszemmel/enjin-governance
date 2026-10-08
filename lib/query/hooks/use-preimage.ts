@@ -160,7 +160,9 @@ export function usePreimageStatus(
  * batch with AlreadyNoted); setMetadata binds the same hash either way. A
  * `Requested` envelope still takes the note (see noteWouldAbort).
  * `skipRef` feeds the synchronous build closure; `refresh` re-reads the
- * chain right before signing and after a failed attempt.
+ * chain right before signing and after a failed attempt, and returns the
+ * status (the last known one if the read failed, undefined if none). `hash`
+ * is the envelope's blake2-256, the hash setMetadata binds.
  */
 export function useEnvelopeNoted(remarkPayload: string | null | undefined) {
   const hash = useMemo(
@@ -173,12 +175,16 @@ export function useEnvelopeNoted(remarkPayload: string | null | undefined) {
     skipRef.current = noteWouldAbort(query.data)
   }, [query.data])
   const { refetch } = query
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<PreimageStatus | undefined> => {
     try {
-      skipRef.current = noteWouldAbort((await refetch()).data)
+      // A failed read still carries the last known status.
+      const status = (await refetch()).data
+      skipRef.current = noteWouldAbort(status)
+      return status
     } catch {
       // keep the last known answer
+      return undefined
     }
   }, [refetch])
-  return { skipRef, refresh }
+  return { hash, skipRef, refresh }
 }

@@ -33,7 +33,7 @@ import { FilingCosts } from "@/components/create/filing-costs"
 import { StepBar, type DraftResponse } from "@/components/create/create-ui"
 import { cn } from "@/lib/utils"
 import { subscanExtrinsicUrl } from "@/lib/chain/chains"
-import { useActiveChain } from "@/lib/chain/use-chain"
+import { getActiveChain, useActiveChain } from "@/lib/chain/use-chain"
 import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
 import { env } from "@/lib/env"
 import {
@@ -69,6 +69,12 @@ import { markdownForAttachment, resolveProposalMedia } from "@/lib/governance/pr
 import { findTrack, findTrackByName } from "@/lib/governance/tracks"
 import { pickOriginForAmount } from "@/lib/governance/treasury"
 import { confirmWithRetry } from "@/lib/governance/confirm-client"
+import {
+  chainSubmissionReader,
+  findLandedSubmission,
+  stagedForMismatch,
+  type StagedFor,
+} from "@/lib/governance/submission-checks"
 import { useApi } from "@/lib/query/hooks/use-api"
 import { useBalance } from "@/lib/query/hooks/use-balance"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
@@ -83,7 +89,7 @@ import { useReferendum } from "@/lib/query/hooks/use-referendum"
 import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
-import { useExtrinsic } from "@/lib/query/hooks/use-tx"
+import { useExtrinsic, type TxStatus } from "@/lib/query/hooks/use-tx"
 import { useWallet } from "@/lib/wallet/use-wallet"
 import { useSignFlow } from "@/lib/wallet/use-sign-flow"
 import { useEnsureSignedIn } from "@/lib/wallet/use-ensure-signed-in"
@@ -206,6 +212,10 @@ export default function AdvancedCreatePage() {
   // The batch finalised, but no Submitted event named the new referendum:
   // signing again would file a duplicate, so the button goes away.
   const [indexLost, setIndexLost] = useState(false)
+  // A retry found that an earlier attempt's batch had already landed.
+  const [recovered, setRecovered] = useState(false)
+  // Why the pre-sign check refused to sign (shown like a failed tx).
+  const [precheckError, setPrecheckError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   // Proposal details - the EGOV1 record every proposal type now carries.
@@ -215,6 +225,9 @@ export default function AdvancedCreatePage() {
   const [body, setBody] = useState("")
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([])
   const [draft, setDraft] = useState<DraftResponse | null>(null)
+  // The network and account the draft was staged for: signing is refused
+  // once either changed.
+  const [stagedFor, setStagedFor] = useState<StagedFor | null>(null)
   const [staging, setStaging] = useState(false)
   const editorRef = useRef<MarkdownEditorHandle>(null)
   const media = useMemo(
@@ -594,6 +607,7 @@ export default function AdvancedCreatePage() {
         return
       }
       setDraft((await res.json()) as DraftResponse)
+      setStagedFor({ network: chain.id, proposer: ownAddress ?? activeAddress })
       setStep("review")
       window.scrollTo({ top: 0, behavior: "smooth" })
     } catch (e) {
@@ -637,12 +651,57 @@ export default function AdvancedCreatePage() {
   // What the in-flight batch was built from (see BuiltSubmission).
   const builtRef = useRef<BuiltSubmission | null>(null)
 
+  // Link the draft to its referendum on this site: once the batch
+  // finalises, or when a retry finds that an earlier attempt had landed
+  // (`landedIn` null: no tx coordinates then).
+  const linkReferendum = useCallback(
+    async (
+      draftId: string,
+      index: number,
+      landedIn: { txHash: string; blockHash: string } | null,
+    ) => {
+      setLinkState({ kind: "linking" })
+      let blockNumber: number | null = null
+      if (landedIn) {
+        try {
+          const api = apiQuery.data as ApiPromise | undefined
+          const header = api ? await api.rpc.chain.getHeader(landedIn.blockHash) : null
+          blockNumber = header
+            ? (header as unknown as { number: { toNumber(): number } }).number.toNumber()
+            : null
+        } catch {
+          // best-effort
+        }
+      }
+      const error = await confirmWithRetry(
+        draftId,
+        {
+          referendum_index: index,
+          tx_hash: landedIn?.txHash ?? null,
+          block_hash: landedIn?.blockHash ?? null,
+          block_number: blockNumber,
+        },
+        () => ensureSignedIn({ fresh: true }),
+      ).catch((e) => formatError(e))
+      setLinkState(error ? { kind: "failed", message: error } : { kind: "linked" })
+      // The proposal page and the drafts lists read the row this just linked.
+      void queryClient.invalidateQueries({ queryKey: ["proposal-metadata"] })
+      void queryClient.invalidateQueries({ queryKey: ["my-drafts"] })
+    },
+    [apiQuery.data, ensureSignedIn, queryClient],
+  )
+
   const tx = useExtrinsic({
     // The referendum index is written to our DB on success, so wait for
     // finality (a reorg could otherwise pin the wrong index).
     resolveOn: "finalized",
     build: (api) => {
-      if (!draft) throw new Error("Review the proposal before submitting.")
+      if (!draft || !stagedFor) throw new Error("Review the proposal before submitting.")
+      const moved = stagedForMismatch(stagedFor, {
+        network: getActiveChain().id,
+        address: activeAddress,
+      })
+      if (moved) throw new Error(moved)
       if (mode === "existing") {
         const { calls } = attachMetadataToExisting(api, {
           remarkPayload: draft.remark_payload,
@@ -684,31 +743,7 @@ export default function AdvancedCreatePage() {
         setLinkState({ kind: "misbound", earlierIndex: built.referendumIndex })
         return
       }
-      setLinkState({ kind: "linking" })
-      let blockNumber: number | null = null
-      try {
-        const api = apiQuery.data as ApiPromise | undefined
-        const header = api ? await api.rpc.chain.getHeader(blockHash) : null
-        blockNumber = header
-          ? (header as unknown as { number: { toNumber(): number } }).number.toNumber()
-          : null
-      } catch {
-        // best-effort
-      }
-      const error = await confirmWithRetry(
-        built.draft.id,
-        {
-          referendum_index: index,
-          tx_hash: txHash,
-          block_hash: blockHash,
-          block_number: blockNumber,
-        },
-        () => ensureSignedIn({ fresh: true }),
-      ).catch((e) => formatError(e))
-      setLinkState(error ? { kind: "failed", message: error } : { kind: "linked" })
-      // The proposal page and the drafts lists read the row this just linked.
-      void queryClient.invalidateQueries({ queryKey: ["proposal-metadata"] })
-      void queryClient.invalidateQueries({ queryKey: ["my-drafts"] })
+      await linkReferendum(built.draft.id, index, { txHash, blockHash })
     },
     onStatus(status) {
       // One of the two preimages is already on chain: re-read both so the
@@ -731,6 +766,7 @@ export default function AdvancedCreatePage() {
       setWalletOpen(true)
       return
     }
+    setPrecheckError(null)
     if (mode === "new") {
       // Read fresh what the batch depends on. A failed status read keeps the
       // last answer; a failed count read leaves no index, so the build
@@ -739,7 +775,48 @@ export default function AdvancedCreatePage() {
       if (status.isSuccess) skipNoteRef.current = noteWouldAbort(status.data)
       const count = await referendumCountQuery.refetch()
       referendumIndexRef.current = count.isSuccess ? count.data : null
-      await envelopeNoted.refresh()
+      const envelope = await envelopeNoted.refresh()
+      // The envelope already on chain may be an earlier attempt of this
+      // very batch that landed while its status updates were lost (the
+      // lost-contact timeout). Signing again would file a second
+      // referendum, so link the one it filed instead. The build refuses a
+      // switched account or network, so this only runs for the staged one.
+      const api = apiQuery.data as ApiPromise | undefined
+      const referendumCount = referendumIndexRef.current
+      if (
+        envelope !== "Missing" &&
+        api &&
+        draft &&
+        stagedFor &&
+        envelopeNoted.hash &&
+        referendumCount != null &&
+        !stagedForMismatch(stagedFor, { network: getActiveChain().id, address: activeAddress })
+      ) {
+        let landed: number | null
+        try {
+          landed = await findLandedSubmission(chainSubmissionReader(api), {
+            envelopeHash: envelopeNoted.hash,
+            proposer: stagedFor.proposer,
+            referendumCount,
+          })
+        } catch (e) {
+          const message = `Couldn't check whether an earlier attempt already filed this proposal, so nothing was signed. Try again in a moment. (${formatError(e)})`
+          setPrecheckError(message)
+          sign.open()
+          if (!sign.isWalletConnect) {
+            toast.error("Submission failed", { id: "adv-tx", description: message })
+          }
+          return
+        }
+        if (landed != null) {
+          sign.close()
+          setStep("submit")
+          setRecovered(true)
+          setSubmittedIndex(landed)
+          await linkReferendum(draft.id, landed, null)
+          return
+        }
+      }
     }
     // "existing" signs straight from the tap (no network wait, so mobile
     // wallets still open by themselves); it uses the envelope status read
@@ -747,7 +824,24 @@ export default function AdvancedCreatePage() {
     setStep("submit")
     sign.open()
     void tx.submit()
-  }, [isConnected, mode, preimageStatusQuery, referendumCountQuery, envelopeNoted, sign, tx])
+  }, [
+    isConnected,
+    mode,
+    preimageStatusQuery,
+    referendumCountQuery,
+    envelopeNoted,
+    apiQuery.data,
+    draft,
+    stagedFor,
+    activeAddress,
+    linkReferendum,
+    sign,
+    tx,
+  ])
+  // What the sign dialog shows: a refused pre-sign check reads as a failed attempt.
+  const signStatus: TxStatus = precheckError
+    ? { kind: "error", message: precheckError }
+    : tx.status
 
   const meta = PROPOSAL_KIND_META[kind]
   const readOnly = !isConnected || step !== "create"
@@ -1249,6 +1343,11 @@ export default function AdvancedCreatePage() {
                       ? `Referendum #${submittedIndex} submitted`
                       : `Details added to referendum #${submittedIndex}`}
                   </p>
+                  {recovered && (
+                    <p className="text-xs text-muted-foreground">
+                      An earlier attempt had already filed it, so nothing was signed again.
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     {linkState.kind === "linking" && "Linking the details on this site…"}
                     {linkState.kind === "linked" &&
@@ -1337,7 +1436,7 @@ export default function AdvancedCreatePage() {
         walletName={walletMeta.name}
         walletIcon={walletMeta.icon}
         subtitle="Approve the proposal in your wallet"
-        status={tx.status}
+        status={signStatus}
         deepLinkUrl={sign.deepLinkUrl}
         explorerUrl={
           tx.status.kind === "in-block" || tx.status.kind === "finalized"
@@ -1350,10 +1449,12 @@ export default function AdvancedCreatePage() {
         // links the details, and a Done at in-block invited leaving first,
         // before the link ever runs.
         onClose={sign.close}
-        // The form is locked from Review on, so a retry re-reads the chain
-        // and resends the same call and draft.
+        // The form is locked from Review on, so a retry re-reads the chain,
+        // links the referendum if the last attempt landed after all, and
+        // otherwise resends the same call and draft.
         onRetry={() => {
           tx.reset()
+          setPrecheckError(null)
           void guarded(submit)
         }}
       />
