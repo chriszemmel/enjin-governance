@@ -29,14 +29,18 @@ async function importAndInit() {
     )
   }
   const { SignClient } = await import("@walletconnect/sign-client")
+  // The page's own origin, not NEXT_PUBLIC_APP_URL: wallets compare the
+  // metadata URL with the origin Reown verifies, so a preview deployment
+  // has to announce its own domain.
+  const origin = typeof window === "undefined" ? env.NEXT_PUBLIC_APP_URL : window.location.origin
   const client = await SignClient.init({
     projectId: env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
     relayUrl: env.NEXT_PUBLIC_WALLETCONNECT_RELAY_URL,
     metadata: {
       name: APP_NAME,
       description: APP_DESCRIPTION,
-      url: env.NEXT_PUBLIC_APP_URL,
-      icons: [`${env.NEXT_PUBLIC_APP_URL}/favicon.svg`],
+      url: origin,
+      icons: [`${origin}/favicon.svg`],
     },
   })
 

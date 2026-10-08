@@ -197,11 +197,14 @@ apply there. So:
 3. Copy the project ID into `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`.
 4. Under **Allowed Domains**, add:
    - your production domain,
-   - `*.vercel.app` for preview deployments,
+   - `*.vercel.app` for preview deployments (or each preview's branch URL,
+     e.g. `enjin-governance-git-release-v20-<team>.vercel.app`, if the
+     wildcard isn't accepted),
    - `localhost:3000` for local development.
 
-Without your domain in this list, the WalletConnect modal refuses to load
-the app's metadata.
+Without a domain in this list, WalletConnect can't open a session from it.
+The app announces the page's own origin to the wallet, so previews and
+production each show their real domain.
 
 ## Upstash Redis (rate limits)
 

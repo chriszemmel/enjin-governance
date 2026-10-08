@@ -366,10 +366,14 @@ whatever its peer metadata says; it has advertised an Ethereum icon.
    NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID="32-char-hex"
    ```
    `NEXT_PUBLIC_WALLETCONNECT_RELAY_URL` is optional and defaults to
-   `wss://relay.walletconnect.com`. `NEXT_PUBLIC_APP_URL` is sent to the
-   wallet as the app's URL and icon location.
-3. In production, add your domain under **Allowed Domains** in the Reown
-   dashboard.
+   `wss://relay.walletconnect.com`. The page's own origin is sent to the
+   wallet as the app's URL and icon location, so a preview deployment
+   announces its own domain.
+3. Add every domain that should connect under **Allowed Domains** in the
+   Reown dashboard: production, the preview domains (for example
+   `*.vercel.app`, or the branch URL
+   `<project>-git-<branch>-<team>.vercel.app`) and `localhost:3000`. A
+   domain missing from the list can't open a WalletConnect session.
 
 Without a project id, extension wallets still work, and both WalletConnect
 entries show as not installed. See [`ENVIRONMENT.md`](ENVIRONMENT.md) and
