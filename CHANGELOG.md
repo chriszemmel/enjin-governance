@@ -76,7 +76,7 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   noted again). The advanced composer refuses to sign without a fresh
   referendum count, ignores a double tap while signing in or saving,
   links the draft its batch was built with, and shows success at
-  finality, when the details are linked. A sign-in for another account no
+  finality, then links the details. A sign-in for another account no
   longer counts. Advanced drafts can be cancelled, then deleted, from
   `/account`. (#8)
 - **Treasury tiers follow the runtime's spend limits** for spec 1070 and
@@ -116,6 +116,16 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   TreasuryAdmin, LeaseAdmin, FellowshipAdmin, AuctionAdmin,
   MultiTokensAdmin, FuelTanksAdmin, WhitelistAdmin and ParachainsAdmin join
   GeneralAdmin, each mapped to its track and listed in track order.
+- **No duplicate referenda on Retry:** when a batch landed but its status
+  updates were lost, Retry in either composer finds the referendum it
+  filed and links it instead of filing it again with a second deposit.
+  Neither composer signs once the account or network changed after
+  Review.
+- **Sign-in and drafts:** closing the WalletConnect sign-in dialog no
+  longer locks the advanced composer. A draft whose batch landed can't be
+  cancelled (link it instead). `/account` and `/treasury` find the drafts
+  of extension accounts, and the drafts panel offers sign-in when the
+  session is for another account.
 
 ## 1.9
 

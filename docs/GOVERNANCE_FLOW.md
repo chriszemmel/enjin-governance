@@ -271,12 +271,22 @@ The builders are `buildTreasuryProposal` in
   accepted, and it may not hold the bytes yet. The envelope can already
   exist if someone copied it. On an `AlreadyNoted` error both statuses are
   read again, so the retry skips the right call.
+- **Already landed.** A batch whose status updates were lost (the 90 s
+  timeout) may still have landed. So when the envelope is already noted,
+  the composers first read the last 20 referenda for one whose metadata is
+  this envelope and whose submission deposit this account holds
+  (`findLandedSubmission` in `lib/governance/submission-checks.ts`). They
+  link the draft to it and show success instead of filing it twice. If
+  the chain can't be read, they don't sign.
+- **Same account and network.** The batch is only built for the network
+  and account the draft was staged for (`stagedForMismatch`).
 
 The user signs once. The hook resolves on finalisation and reads the new
 index from the `referenda.Submitted` event (`extractReferendumIndex`). The
-sign dialog shows success only then, when the details get linked. The
-advanced composer links the draft its batch was built with, and its form
-stays locked from Review on, so Retry resends the same call and draft.
+sign dialog shows success then, at finality, and the details are linked
+right after it. The advanced composer links the draft its batch was built
+with, and its form stays locked from Review on, so Retry resends the same
+call and draft.
 
 ### 4. Link the draft to its referendum
 
@@ -349,7 +359,9 @@ The schema also has `submitted` and `failed`; the drafts lists still show
   drafts. Drafts from the advanced composer can't be resumed in the
   treasury wizard; the drafts lists offer them Cancel, then Delete.
 - **Cancel** (`POST /api/proposals/<id>/cancel`) sets the status to
-  `cancelled`. It is refused for `on_chain` rows.
+  `cancelled`. It is refused for `on_chain` rows and, so they can still be
+  linked, for drafts whose envelope (any version) is already on chain. The
+  on-chain check fails closed.
 - **Delete** (`DELETE /api/proposals/<id>`) removes the row and the
   proposal's whole R2 folder: every JSON version and every upload. It is
   refused for `on_chain` rows and for drafts whose envelope (any version)
