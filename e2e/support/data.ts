@@ -13,6 +13,32 @@ export const REFERENDUM = 13
 export const PROPOSAL_ID = "7d9c2f4e-1b3a-4c5d-9e8f-0a1b2c3d4e5f"
 export const PROPOSAL_PATH = `/proposals/${REFERENDUM}?network=${NETWORK}`
 
+/**
+ * Referendum 13's call as Subscan decodes it: treasury.spend_local of
+ * 1 cENJ to cnUUyvyp…19oK4Y. The page decodes the call from its noted
+ * preimage first; this answer keeps the treasury summary and the payout
+ * line in place should that preimage ever be unnoted (it is Unrequested,
+ * so its depositor can remove it).
+ */
+export const SUBSCAN_REFERENDUM = {
+  referendum_index: REFERENDUM,
+  track: 200,
+  pre_image: {
+    hash: "0x51f0c4022de9976528c6c572625e931632b642db9f39ade8bfce35113fa080c6",
+    len: 44,
+    call_module: "Treasury",
+    call_name: "spend_local",
+    params: [
+      { name: "amount", type: "compact<U128>", value: "1000000000000000000" },
+      {
+        name: "beneficiary",
+        type: "sp_runtime:multiaddress:MultiAddress",
+        value: { Id: "0x8479a417eeb967cf40035f6df3e578f4283ece543ba4ce1c8f3466be108c1150" },
+      },
+    ],
+  },
+}
+
 /** The fake wallet's address: a random throwaway key, nothing is ever signed. */
 export const ME = "cnSWX418aRiAqxBfE35gEkUH9f16RQfGjSXF4jMAY9XAxnKrq"
 /** The same key in Canary Matrixchain format (SS58 prefix 9030). */

@@ -75,9 +75,11 @@ function installFakeWallet(address: string) {
 /**
  * Opens Canary referendum 13 with its test metadata. The chain part is
  * real, so the first load waits for the RPC connection. It also waits for
- * the treasury summary: it comes with the call, decoded after the archive
- * history, and pushes everything below it (the EGOV1 header and its menu)
- * down, so a test that clicks there first could hit a moving target.
+ * the treasury summary: it comes with the decoded call (after the archive
+ * history) and pushes everything below it, the EGOV1 header and its menu
+ * included, down - a test that clicked there first could hit a moving
+ * target. The mocked Subscan answer keeps the summary there even without
+ * the call's preimage.
  */
 export async function openProposal(page: Page) {
   await page.goto(PROPOSAL_PATH)
