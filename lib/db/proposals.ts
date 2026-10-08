@@ -305,14 +305,20 @@ export async function markProposalCancelled(
   return rows[0] ?? null
 }
 
+/**
+ * A proposer's rows on one network. The address is matched exactly, so
+ * `addresses` lists every format it may be stored in (see the by-proposer
+ * route).
+ */
 export async function listProposalsByProposer(
   network: string,
-  address: string,
+  addresses: readonly string[],
 ): Promise<ProposalRow[]> {
+  if (addresses.length === 0) return []
   const sql = getSql()
   return (await sql`
     SELECT * FROM proposals
-    WHERE network = ${network} AND proposer_address = ${address}
+    WHERE network = ${network} AND proposer_address = ANY(${addresses as string[]})
     ORDER BY created_at DESC
     LIMIT 50
   `) as ProposalRow[]

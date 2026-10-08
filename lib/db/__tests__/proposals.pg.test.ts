@@ -322,14 +322,19 @@ describe("attachments", () => {
 })
 
 describe("lookups", () => {
-  it("by proposer: that network and address only, newest first", async () => {
+  it("by proposer: that network and addresses only, newest first", async () => {
     const me = address(1)
     const first = await insertProposalDraft(draftFixture({ proposerAddress: me }))
     const second = await insertProposalDraft(draftFixture({ proposerAddress: me }))
+    const third = await insertProposalDraft(draftFixture({ proposerAddress: address(3) }))
     await insertProposalDraft(draftFixture({ proposerAddress: address(2) }))
     await insertProposalDraft(draftFixture({ proposerAddress: me, network: "canary-relay" }))
-    const rows = await listProposalsByProposer("enjin-relay", me)
+    const rows = await listProposalsByProposer("enjin-relay", [me])
     expect(rows.map((r) => r.id)).toEqual([second.id, first.id])
+    // Any of several stored forms.
+    const both = await listProposalsByProposer("enjin-relay", [me, address(3)])
+    expect(both.map((r) => r.id)).toEqual([third.id, second.id, first.id])
+    expect(await listProposalsByProposer("enjin-relay", [])).toEqual([])
   })
 
   it("by index: only linked rows of that network", async () => {

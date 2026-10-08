@@ -2,9 +2,9 @@
  * Proposal lifecycle and lookup routes: cancel and withdraw are for the
  * proposer only (matched by public key, whatever address format), cancel
  * stops once the proposal is on chain - even if it gets there between the
- * check and the write - and the lookups never show someone's unsigned
- * drafts or internal columns. Real route handlers and ownership checks;
- * only I/O (session, DB) is mocked.
+ * check and the write, or only its envelope did - and the lookups never
+ * show someone's unsigned drafts or internal columns. Real route handlers
+ * and ownership checks; only I/O (session, DB, bucket, chain) is mocked.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
@@ -17,6 +17,8 @@ const auth = vi.hoisted(() => ({
   user: null as null | { id: string; address: string },
   fail: false,
 }))
+// The envelopes (url) noted on chain; `down` = the chain can't be read.
+const chain = vi.hoisted(() => ({ noted: new Set<string>(), down: false }))
 
 vi.mock("@/lib/auth/current-user", () => ({
   getCurrentUser: async () => {
@@ -32,10 +34,24 @@ vi.mock("@/lib/db/client", () => ({
 }))
 vi.mock("@/lib/db/moderation", async () => await import("./fake-moderation"))
 vi.mock("@/lib/db/proposals", async () => await import("./fake-db"))
+vi.mock("@/lib/r2/client", () => ({
+  isR2Configured: () => true,
+  publicAssetBase: () => "https://fake.local/r",
+  r2PublicBase: () => "https://pub.r2.dev",
+}))
+vi.mock("@/lib/r2/upload", async () => await import("./fake-bucket"))
+vi.mock("@/lib/governance/envelope-status", () => ({
+  isEnvelopeOnChain: async (_network: string, url: string) => {
+    if (chain.down) throw new Error("rpc down")
+    return chain.noted.has(url)
+  },
+}))
 
+import * as bucketMod from "./fake-bucket"
 import * as db from "./fake-db"
 import * as mod from "./fake-moderation"
 import { publicKeyOf } from "@/lib/chain/ss58"
+import { proposalJsonKey, proposalJsonVersionKey } from "@/lib/r2/paths"
 import { __resetRateLimitStore, RATE_LIMITS } from "@/lib/rate-limit"
 import { POST as CANCEL } from "@/app/api/proposals/[uuid]/cancel/route"
 import { POST as WITHDRAW } from "@/app/api/proposals/[uuid]/withdraw/route"
@@ -49,6 +65,8 @@ const MISSING = "99999999-9999-4999-8999-999999999999"
 
 /** The same wallet in the Enjin Matrixchain format. */
 const asMatrix = (address: string) => encodeAddress(decodeAddress(address), 1110)
+/** The same wallet in the generic Substrate format an extension hands out. */
+const asGeneric = (address: string) => encodeAddress(decodeAddress(address), 42)
 const signIn = (address: string) => {
   auth.user = { id: `user-${address.slice(0, 6)}`, address }
 }
@@ -75,6 +93,9 @@ const row = (id = PID) => db.proposals.get(id)!
 beforeEach(() => {
   db.reset()
   mod.resetModeration()
+  bucketMod.resetBucket()
+  chain.noted.clear()
+  chain.down = false
   auth.user = null
   auth.fail = false
   // The real limiter, in-process: no shared KV store in tests.
@@ -155,6 +176,42 @@ describe("cancel", () => {
     signIn(BOB)
     seed({ id: PID, proposer_address: BOB })
     expect((await cancel(PID)).status).toBe(200)
+  })
+
+  describe("a draft whose batch landed but was never linked", () => {
+    const ownKey = proposalJsonKey(NET, PID)
+    beforeEach(() => {
+      seed({ id: PID, json_key: ownKey })
+      bucketMod.bucket.set(ownKey, { body: "CURRENT", contentType: "application/json" })
+      signIn(ALICE)
+    })
+
+    it("is refused while its envelope is on chain, so it can still be linked", async () => {
+      chain.noted.add(row().json_url)
+      const res = await cancel(PID)
+      expect(res.status).toBe(409)
+      expect(((await res.json()) as { error: string }).error).toMatch(/Link it to its referendum/)
+      expect(row()).toMatchObject({ status: "draft", last_error: null })
+    })
+
+    it("is refused when an older staged version is the one on chain", async () => {
+      const older = proposalJsonVersionKey(NET, PID, "a".repeat(64))
+      bucketMod.bucket.set(older, { body: "OLDER", contentType: "application/json" })
+      chain.noted.add(`https://fake.local/r/${older}`)
+      expect((await cancel(PID)).status).toBe(409)
+      expect(row().status).toBe("draft")
+    })
+
+    it("fails closed when the chain can't be read", async () => {
+      chain.down = true
+      expect((await cancel(PID)).status).toBe(503)
+      expect(row()).toMatchObject({ status: "draft", last_error: null })
+    })
+
+    it("cancels once no version is on chain", async () => {
+      expect((await cancel(PID)).status).toBe(200)
+      expect(row().status).toBe("cancelled")
+    })
   })
 
   it("refuses when the proposal reaches the chain between the check and the write", async () => {
@@ -400,6 +457,7 @@ describe("by-proposer", () => {
 
   it("validates the address and the network", async () => {
     expect((await list("abc")).res.status).toBe(400)
+    expect((await list(`${ALICE.slice(0, -1)}x`)).res.status).toBe(400)
     expect((await list(ALICE, null)).res.status).toBe(400)
     expect((await list(ALICE, "polkadot")).res.status).toBe(400)
   })
@@ -411,6 +469,25 @@ describe("by-proposer", () => {
     // The proposer, signed in with another network's format of the same key.
     signIn(asMatrix(ALICE))
     expect(titles((await list(ALICE)).items)).toEqual(statuses.map((s) => `Alice ${s}`).sort())
+  })
+
+  it("finds the proposer's rows whatever format the address comes in", async () => {
+    // An extension account, in its own format: the rows are stored in the
+    // network's.
+    signIn(asGeneric(ALICE))
+    expect(titles((await list(asGeneric(ALICE))).items)).toEqual(
+      statuses.map((s) => `Alice ${s}`).sort(),
+    )
+    // An older advanced draft that kept the wallet's own format.
+    seed({
+      id: "55555555-5555-4555-8555-555555555555",
+      proposer_address: asGeneric(ALICE),
+      title: "Alice legacy",
+    })
+    expect(titles((await list(ALICE)).items)).toContain("Alice legacy")
+    expect(titles((await list(asMatrix(ALICE))).items)).toContain("Alice legacy")
+    // Another wallet's rows never match.
+    expect((await list(BOB)).items).toEqual([])
   })
 
   it("treats a failed session lookup as signed out", async () => {

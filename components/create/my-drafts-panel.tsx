@@ -13,6 +13,7 @@ import {
 } from "@/lib/query/hooks/use-my-drafts"
 import { useMe } from "@/lib/query/hooks/use-session"
 import { formatError } from "@/lib/utils/format-error"
+import { isSessionFor } from "@/lib/wallet/use-ensure-signed-in"
 
 type Props = {
   address: string | null
@@ -50,8 +51,9 @@ export function MyDraftsPanel({ address, network, ensureSignedIn }: Props) {
   )
 
   if (!address) return null
-  // Drafts are private: signed out, the list can't include them.
-  if (me.data === null && ensureSignedIn) {
+  // Drafts are private: signed out, or signed in as another account, the
+  // list can't include them.
+  if (me.data !== undefined && !isSessionFor(me.data, address) && ensureSignedIn) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface-1 px-4 py-2.5 text-xs text-muted-foreground">
         <span>Saved drafts are private. Sign in to see yours.</span>
