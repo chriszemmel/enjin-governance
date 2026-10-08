@@ -23,7 +23,7 @@ type ModelInfo = {
 
 /**
  * The models the automatic checks can use (Anthropic list prices,
- * September 2026). This table is the one place to change when a newer
+ * October 2026). This table is the one place to change when a newer
  * model comes out: add its entry with its prices and what its API
  * accepts, move `recommended` to it, and set `offered: false` on the one
  * it replaces. Admins who had picked a model that is no longer offered
@@ -35,9 +35,9 @@ export const SCAN_MODELS = {
     label: "Claude Haiku 4.5",
     inputPerMTok: 1,
     outputPerMTok: 5,
-    note: "Fastest and cheapest. Reads screenshots well; fine for clear-cut checks.",
-    offered: true,
-    recommended: true,
+    note: "Replaced by Haiku 5.5.",
+    offered: false,
+    recommended: false,
     effort: false,
     refusalFallback: false,
   },
@@ -45,8 +45,8 @@ export const SCAN_MODELS = {
     label: "Claude Sonnet 5",
     inputPerMTok: 2,
     outputPerMTok: 10,
-    note: "Middle ground: better on subtle scams, about twice the cost of Haiku.",
-    offered: true,
+    note: "Replaced by Sonnet 5.5.",
+    offered: false,
     recommended: false,
     effort: true,
     refusalFallback: false,
@@ -55,11 +55,43 @@ export const SCAN_MODELS = {
     label: "Claude Opus 5",
     inputPerMTok: 5,
     outputPerMTok: 25,
-    note: "Most careful judgement, about five times the cost of Haiku.",
-    offered: true,
+    note: "Replaced by Opus 5.5.",
+    offered: false,
     recommended: false,
     effort: true,
     refusalFallback: true,
+  },
+  "claude-haiku-5-5": {
+    label: "Claude Haiku 5.5",
+    // Prompts over 100,000 tokens cost more ($0.50 / $2.50); a check is far smaller.
+    inputPerMTok: 0.1,
+    outputPerMTok: 0.5,
+    note: "Fastest and cheapest, about a tenth of the cost of Haiku 4.5. Reads screenshots well; fine for clear-cut checks.",
+    offered: true,
+    recommended: true,
+    effort: true,
+    refusalFallback: false,
+  },
+  "claude-sonnet-5-5": {
+    label: "Claude Sonnet 5.5",
+    inputPerMTok: 2,
+    outputPerMTok: 10,
+    note: "Middle ground: better on subtle scams, about twenty times the cost of Haiku 5.5.",
+    offered: true,
+    recommended: false,
+    effort: true,
+    refusalFallback: false,
+  },
+  "claude-opus-5-5": {
+    label: "Claude Opus 5.5",
+    inputPerMTok: 4,
+    outputPerMTok: 20,
+    note: "Most careful judgement, about forty times the cost of Haiku 5.5.",
+    offered: true,
+    recommended: false,
+    effort: true,
+    // Not confirmed for 5.5 yet: a refusal is reported as such instead.
+    refusalFallback: false,
   },
 } satisfies Record<string, ModelInfo>
 

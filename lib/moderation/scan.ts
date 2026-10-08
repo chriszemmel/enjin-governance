@@ -132,7 +132,7 @@ export function buildScanRequest(
   const format = { type: "json_schema" as const, schema: OUTPUT_SCHEMA }
   const base = {
     model,
-    max_tokens: 2048,
+    max_tokens: 4096,
     system: POLICY,
     messages: [{ role: "user" as const, content }],
   }

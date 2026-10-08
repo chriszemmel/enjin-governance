@@ -45,7 +45,7 @@ function inputs(o: Overrides = {}): StatusInputs {
     scan: {
       apiKey: true,
       settings: { ...DEFAULT_SCAN_SETTINGS, enabled: true },
-      savedModel: "claude-haiku-4-5",
+      savedModel: "claude-haiku-5-5",
       checksToday: 12,
       health: { state: "ok" },
       ...o.scan,
@@ -224,7 +224,7 @@ describe("automatic checks", () => {
   })
 
   it("flags a saved model that is no longer offered", () => {
-    expect(hint({}, "scan-model")).toBe("Claude Haiku 4.5, offered.")
+    expect(hint({}, "scan-model")).toBe("Claude Haiku 5.5, offered.")
     const retired = { scan: { savedModel: "claude-haiku-3" } }
     expect(level(retired, "scan-model")).toBe("warning")
     expect(hint(retired, "scan-model")).toContain("claude-haiku-3")

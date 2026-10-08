@@ -134,7 +134,7 @@ beforeEach(() => {
   })
   mod.settings.set("content_scan", {
     enabled: true,
-    model: "claude-haiku-4-5",
+    model: "claude-haiku-5-5",
     images: true,
     pdfs: true,
     proposals: true,

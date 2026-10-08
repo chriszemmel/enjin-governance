@@ -52,8 +52,8 @@ describe("scanPlan", () => {
     Object.assign(new Error('relation "moderation_settings" does not exist'), { code: "42P01" })
 
   it("checks with the chosen model while under the daily limit", async () => {
-    state.stored = { ...DEFAULT_SCAN_SETTINGS, enabled: true, model: "claude-opus-5" }
-    expect((await scanPlan("images"))?.model).toBe("claude-opus-5")
+    state.stored = { ...DEFAULT_SCAN_SETTINGS, enabled: true, model: "claude-opus-5-5" }
+    expect((await scanPlan("images"))?.model).toBe("claude-opus-5-5")
   })
 
   it("skips everything without an API key or while switched off", async () => {
@@ -85,11 +85,11 @@ describe("scanPlan", () => {
   it("keeps the last settings it read through a database error, and retries soon", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-09-26T09:00:00Z"))
-    expect((await scanPlan("images"))?.model).toBe("claude-haiku-4-5")
+    expect((await scanPlan("images"))?.model).toBe("claude-haiku-5-5")
     vi.setSystemTime(new Date("2026-09-26T09:00:31Z"))
     state.failRead = new Error("Connection terminated unexpectedly")
     // Still on: a short outage must not switch the checks off.
-    expect((await scanPlan("images"))?.model).toBe("claude-haiku-4-5")
+    expect((await scanPlan("images"))?.model).toBe("claude-haiku-5-5")
     state.failRead = null
     state.stored = { ...DEFAULT_SCAN_SETTINGS, enabled: false }
     vi.setSystemTime(new Date("2026-09-26T09:00:37Z"))
@@ -116,7 +116,7 @@ describe("scanPlan", () => {
     state.stored = { ...DEFAULT_SCAN_SETTINGS, enabled: true, model: "claude-retired-1" }
     const loaded = await loadScanSettings()
     expect(loaded.savedModel).toBe("claude-retired-1")
-    expect(loaded.settings.model).toBe("claude-haiku-4-5")
+    expect(loaded.settings.model).toBe("claude-haiku-5-5")
     state.stored = null
     expect(await loadScanSettings()).toEqual({ settings: DEFAULT_SCAN_SETTINGS, savedModel: null })
     state.failRead = new Error("down")
@@ -124,11 +124,11 @@ describe("scanPlan", () => {
   })
 
   it("applies a saved change at once on this instance", async () => {
-    expect((await scanPlan("images"))?.model).toBe("claude-haiku-4-5")
+    expect((await scanPlan("images"))?.model).toBe("claude-haiku-5-5")
     await saveScanSettings(
-      { ...DEFAULT_SCAN_SETTINGS, enabled: true, model: "claude-sonnet-5" },
+      { ...DEFAULT_SCAN_SETTINGS, enabled: true, model: "claude-sonnet-5-5" },
       "0xab",
     )
-    expect((await scanPlan("images"))?.model).toBe("claude-sonnet-5")
+    expect((await scanPlan("images"))?.model).toBe("claude-sonnet-5-5")
   })
 })

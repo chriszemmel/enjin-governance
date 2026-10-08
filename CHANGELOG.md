@@ -178,6 +178,12 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   denominator and treasury constants are keyed on the runtime's spec
   version and refresh when it changes, instead of keeping the old values
   until a reload.
+- **Content checks on the 5.5 models:** Claude Haiku 5.5 is the new default
+  (about a tenth of the cost of Haiku 4.5), with Sonnet 5.5 and Opus 5.5 as
+  the other choices. A saved Haiku 4.5, Sonnet 5 or Opus 5 moves to Haiku
+  5.5 until an admin picks again; their past usage keeps its cost. The
+  check allows 4,096 output tokens, since Haiku 5.5 thinks by default and
+  thinking counts toward the limit.
 
 ## 1.9
 

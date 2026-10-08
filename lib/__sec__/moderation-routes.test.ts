@@ -411,7 +411,7 @@ describe("content-check settings", () => {
         headers: { "content-type": "application/json" },
       }),
     )
-  const wanted = { ...DEFAULT_SCAN_SETTINGS, enabled: true, model: "claude-sonnet-5" }
+  const wanted = { ...DEFAULT_SCAN_SETTINGS, enabled: true, model: "claude-sonnet-5-5" }
 
   it("are for admins only", async () => {
     expect((await SETTINGS()).status).toBe(401)
@@ -439,7 +439,7 @@ describe("content-check settings", () => {
     }
     expect(body.settings).toEqual(wanted)
     expect(body.checks_today).toBe(12)
-    // 92k in at $1 + 6k out at $5 per million tokens.
+    // Past usage on a replaced model: 92k in at $1 + 6k out at $5 per million tokens.
     expect(body.month[0]!.cost_usd).toBeCloseTo(0.122)
     expect(JSON.stringify(body)).not.toContain("ANTHROPIC")
   })
