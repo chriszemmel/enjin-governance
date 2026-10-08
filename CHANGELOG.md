@@ -56,6 +56,30 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   wallet dialog loads only when it's opened.
 - **Accessibility:** names for the vote carousel buttons, focus that
   stays in dialogs, and stronger contrast in the light theme.
+- **Runtime upgrades** are filed as `system.authorizeUpgrade(code_hash)`
+  on Root, with the hash pasted or computed in the browser from the
+  `.wasm`; once enacted, anyone applies the file with
+  `system.applyAuthorizedUpgrade`. `system.setCode` and the wasm upload
+  are gone from the advanced composer. The proposal page shows the code
+  hash for both kinds. (#8)
+- **Inline proposals** (calls of 128 bytes or less) are decoded on the
+  proposal page from the referendum itself; a decided one with the runtime
+  of the block it was read at. (#8)
+- **Submitting is sturdier:** a batch leaves out a preimage note only
+  when an account already noted those bytes (a requested preimage is
+  noted again). The advanced composer refuses to sign without a fresh
+  referendum count, ignores a double tap while signing in or saving,
+  links the draft its batch was built with, and shows success at
+  finality, when the details are linked. A sign-in for another account no
+  longer counts. Advanced drafts can be cancelled, then deleted, from
+  `/account`. (#8)
+- **Treasury tiers follow the runtime's spend limits** for spec 1070 and
+  1080 (SmallTipper was offered up to 250 ENJ but mainnet allows 100, so
+  such spends failed at enactment). TreasuryAdmin is the top tier at
+  25,000,000 ENJ. An unlisted runtime gets a warning, the wizard warns when
+  a request is larger than the treasury holds, the proposal page flags an
+  ongoing spend above its track's limit, and `/docs` shows the limits per
+  spec. (#9)
 
 ## 1.9
 
