@@ -268,7 +268,9 @@ describe("backup round trip", () => {
     expect(await rowsOf(target.pg, "comments")).toEqual(await rowsOf(source.pg, "comments"))
   })
 
-  it("refuses a database without the schema, in words", async () => {
+  // Starts a fresh, unmigrated PGlite on top of a backup run, which can take
+  // longer than the default 5 s on a loaded machine.
+  it("refuses a database without the schema, in words", { timeout: 20_000 }, async () => {
     const files = await backup()
     const empty = await PGlite.create()
     try {
