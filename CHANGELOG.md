@@ -159,8 +159,10 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   longer carries its track on chain, so the treasury page counted 0
   approved and 0 rejected. Tracks of decided referenda are read from the
   archive one at a time from their raw storage (no old runtime metadata
-  needed), kept in the browser, and shown on their cards; without an
-  archive the counts say "-" instead of leaving them out.
+  needed) by the server, which caches them for good and serves them from
+  the CDN, so a phone gets the counts in a couple of seconds without any
+  archive read of its own. What the server can't supply the browser reads
+  itself, with retries; only if that fails too do the counts say "-".
 - **Runtime upgrades in an open tab:** tracks, spend tiers, the support
   denominator and treasury constants are keyed on the runtime's spec
   version and refresh when it changes, instead of keeping the old values
