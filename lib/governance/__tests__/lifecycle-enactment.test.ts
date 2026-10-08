@@ -262,7 +262,13 @@ describe("Payout of #12's spend_local", () => {
       { status: "executed", block: ENACTED, ok: true },
       { status: "pending", proposalIndex: 6 },
     )
-    expect(lc.payout).toEqual({ state: "active", block: PAYOUT, approx: false, proposalIndex: 6 })
+    expect(lc.payout).toEqual({
+      state: "active",
+      block: PAYOUT,
+      approx: false,
+      proposalIndex: 6,
+      since: ENACTED,
+    })
     expect(lc.timeline.at(-1)).toMatchObject({
       id: "payout",
       block: PAYOUT,

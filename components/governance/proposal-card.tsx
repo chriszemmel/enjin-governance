@@ -55,8 +55,8 @@ export function ProposalCard({
   // anymore" signal from the author, mirrored on the detail page's banner.
   const isWithdrawn = data?.withdrawn_at != null
 
-  const submittedBlock =
-    status.type === "Ongoing" ? status.submitted : status.type === "Killed" ? status.at : status.at
+  // Submitted while ongoing; once decided, the block it ended at.
+  const submittedBlock = status.type === "Ongoing" ? status.submitted : status.at
   const isOngoing = status.type === "Ongoing"
 
   return (
@@ -118,9 +118,14 @@ export function ProposalCard({
         <LifecycleMini referendum={referendum} track={track ?? null} className="mb-4" />
       )}
 
-      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <BlockTime block={submittedBlock} showBlock />
-      </div>
+      {/* An Approved card's line above already dates it. */}
+      {status.type !== "Approved" && (
+        <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <span>
+            {isOngoing ? "Submitted" : "Ended"} <BlockTime block={submittedBlock} />
+          </span>
+        </div>
+      )}
     </Link>
   )
 }

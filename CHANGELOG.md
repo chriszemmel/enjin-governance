@@ -141,9 +141,16 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   the executed block and result from the archive; a failed call shows as
   failed. While confirming, the estimate uses the requested enactment
   (`After` / `At`) and the track minimum. A treasury `spend_local` gets a
-  payout line: next spend period, then paid, from `treasury.proposals`.
-  The lifecycle card lists each event with its block and time, like
-  Subscan, and fits a 360 px screen.
+  payout step: next spend period, then paid, from `treasury.proposals`.
+- **A calmer lifecycle card:** while anything is still to come it leads
+  with the time left (to vote, to confirm, to enactment, to the payout)
+  and lists Prepare, Decide, Confirm, Enact and the payout with one date
+  each, estimates marked "≈". Confirmation starts where the runtime's alarm
+  says rather than at a guess. Once everything has happened the card folds
+  to one line ("Paid out 30,000 ENJ", "Enacted on Aug 24"), with every
+  event and its block behind Details. Proposal cards say "Voting" or
+  "Confirming" with the time left, an approved one its approval date, and
+  drop the block number from the footer. Fits a 360 px screen.
 - **Runtime upgrades in an open tab:** tracks, spend tiers, the support
   denominator and treasury constants are keyed on the runtime's spec
   version and refresh when it changes, instead of keeping the old values

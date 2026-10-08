@@ -4,7 +4,7 @@ import { expect, openProposal, test } from "./support/test"
 // 1 cENJ: approved at 17,387,342, enacted by the scheduler at 17,387,352
 // (approval + the track's 10-block minimum enactment), and its treasury
 // proposal #2 paid at a later spend period. All of it is settled history,
-// read from the Canary RPC and archive node. The payout line needs the call
+// read from the Canary RPC and archive node. The payout needs the call
 // decoded from its preimage, as the page's treasury summary does.
 for (const width of [360, 390, 1280]) {
   test.describe(`${width} px`, () => {
@@ -13,17 +13,16 @@ for (const width of [360, 390, 1280]) {
       ...(width < 400 ? { isMobile: true, hasTouch: true } : {}),
     })
 
-    test("lifecycle shows the enactment and payout of an approved spend, within the screen", async ({
+    test("a paid-out spend folds to one line and opens to its events, within the screen", async ({
       page,
     }) => {
       await openProposal(page)
+      // All of it has happened, so the card is one line until opened.
       const card = page.getByRole("region", { name: "Lifecycle" })
-      await expect(card.getByText("Approved and enacted on chain.")).toBeVisible({
-        timeout: 60_000,
-      })
-
-      // Four stage columns, no fifth one for the payout.
-      await expect(card.locator("ol").first().locator(":scope > li")).toHaveCount(4)
+      const details = card.getByRole("button", { name: /Details/ })
+      await expect(details).toContainText("Paid out 1 cENJ", { timeout: 60_000 })
+      await expect(details).toContainText("treasury proposal #2")
+      await details.click()
 
       const timeline = card.getByRole("list", { name: "Timeline" })
       const row = (label: string) =>
@@ -33,7 +32,6 @@ for (const width of [360, 390, 1280]) {
       await expect(row("Executed")).toContainText("#17,387,352")
       await expect(row("Executed")).not.toContainText("≈")
       await expect(row("Paid out")).toBeVisible()
-      await expect(card.getByText("Paid out · treasury proposal #2")).toBeVisible()
 
       // Nothing sticks out: not the page, the card, or any timeline row.
       const overflow = await page.evaluate(

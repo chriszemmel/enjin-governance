@@ -175,3 +175,58 @@ describe("getLifecycle - overall progress", () => {
     expect(lc.overallProgress).toBeCloseTo(0.375, 3)
   })
 })
+
+describe("getLifecycle - projected completion", () => {
+  const deciding = (over: Partial<OngoingStatus> = {}) =>
+    ongoing({
+      decisionDeposit: { who: "y", amount: 1n },
+      deciding: { since: 1100, confirming: null },
+      ...over,
+    })
+  const expected = (ref: Referendum) =>
+    Object.fromEntries(
+      getLifecycle(ref, track, 1600).stages.map((s) => [s.id, [s.expectedEnd, s.expectedApprox]]),
+    )
+
+  it("projects confirm, enact and payout from the end of the decide period", () => {
+    const lc = getLifecycle(deciding(), track, 1600, {
+      spend: { spendPeriod: 250, payout: { status: "unknown" } },
+    })
+    expect(lc.confirmStartsAt).toBeNull()
+    expect(expected(deciding())).toEqual({
+      prepare: [1100, false],
+      decide: [2100, false],
+      confirm: [2200, true],
+      enact: [2300, true],
+    })
+    expect(lc.payout).toMatchObject({ state: "upcoming", block: 2500, approx: true })
+  })
+
+  it("takes the confirm start from the alarm when it falls before the period ends", () => {
+    // Relay #14: the runtime's alarm sits where the support curve meets the tally.
+    const ref = deciding({ alarm: { when: 1800 } })
+    expect(getLifecycle(ref, track, 1600).confirmStartsAt).toBe(1800)
+    expect(expected(ref)).toMatchObject({ confirm: [1900, true], enact: [2000, true] })
+  })
+
+  it("ignores an alarm that is just the end of the decide period", () => {
+    const ref = deciding({ alarm: { when: 2100 } })
+    expect(getLifecycle(ref, track, 1600).confirmStartsAt).toBeNull()
+  })
+
+  it("uses the chain's blocks once confirming, and honours a fixed enactment block", () => {
+    const ref = deciding({
+      deciding: { since: 1100, confirming: 1700 },
+      enactment: { type: "At", block: 5000 },
+      alarm: { when: 1700 },
+    })
+    const lc = getLifecycle(ref, track, 1650)
+    expect(lc.confirmStartsAt).toBeNull()
+    expect(Object.fromEntries(lc.stages.map((s) => [s.id, s.expectedEnd]))).toEqual({
+      prepare: 1100,
+      decide: 1600,
+      confirm: 1700,
+      enact: 5000,
+    })
+  })
+})

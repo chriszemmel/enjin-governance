@@ -54,6 +54,14 @@ export type LifecycleStage = {
   endBlock: number | null
   /** Length of the stage in blocks: from the chain when known, else the track config. */
   durationBlocks: number
+  /**
+   * Block the stage completes at: `endBlock` once the chain fixes it, else a
+   * projection from the track periods (`expectedApprox`). For Decide, the
+   * block it handed over to Confirm. Null when it can't be told.
+   */
+  expectedEnd: number | null
+  /** `expectedEnd` is a projection that holds only if the referendum passes. */
+  expectedApprox: boolean
   state: LifecycleStageState
   /** 0..1 - only meaningful when state === "active". */
   progress: number
@@ -91,6 +99,8 @@ export type PayoutView = {
   approx: boolean
   /** The treasury proposal index, when known. */
   proposalIndex: number | null
+  /** Active: the block the call was enacted at, where the wait began. */
+  since?: number | null
 }
 
 export type Lifecycle = {
@@ -110,6 +120,12 @@ export type Lifecycle = {
   terminal: "approved" | "rejected" | "cancelled" | "timedout" | "killed" | null
   /** True when the deciding stage is blocked on the decision deposit being placed. */
   awaitingDecisionDeposit: boolean
+  /**
+   * While deciding: the block the runtime will start confirming at, from its
+   * alarm (the point where the support curve meets the current tally). Null
+   * when confirming already, or when the alarm is just the end of the period.
+   */
+  confirmStartsAt: number | null
   /** Events with their blocks, oldest first. */
   timeline: TimelineEvent[]
   /** Null unless the call is a treasury spend_local (`LifecycleContext.spend`). */
@@ -238,6 +254,20 @@ function buildOngoingLifecycle(
   const awaitingDecisionDeposit =
     status.decisionDeposit == null && status.deciding == null
 
+  // While deciding, the alarm is the earlier of the period's end and the
+  // block where the support curve falls to the current tally: from there
+  // the referendum confirms unless the votes change.
+  const alarm = status.alarm?.when ?? null
+  const confirmStartsAt =
+    status.deciding != null && confirmEnd == null && alarm != null && alarm < decideEnd
+      ? alarm
+      : null
+  // If it passes: approved when its confirm period ends (at the latest one
+  // period after Decide does), enacted per the runtime's formula, paid at
+  // the next spend period.
+  const expectedConfirmEnd = confirmEnd ?? (confirmStartsAt ?? decideEnd) + conf
+  const expectedEnact = enactmentBlock(status.enactment, expectedConfirmEnd, minEnact)
+
   // Decide which stage is currently active.
   const now = currentBlock ?? prepareStart
   let activeStageId: LifecycleStageId
@@ -256,20 +286,35 @@ function buildOngoingLifecycle(
     start: number | null,
     end: number | null,
     duration: number,
-  ) => buildStage(id, start, end, duration, activeStageId, now, currentBlock)
+    expected: number | null,
+    approx: boolean,
+  ) => ({
+    ...buildStage(id, start, end, duration, activeStageId, now, currentBlock),
+    expectedEnd: expected,
+    expectedApprox: approx,
+  })
 
   const stages: LifecycleStage[] = [
     // Prepare really ends when deciding starts (later, when the deposit or
     // a deciding slot came late).
-    stage("prepare", prepareStart, status.deciding?.since ?? prepareEnd, prep),
+    stage(
+      "prepare",
+      prepareStart,
+      status.deciding?.since ?? prepareEnd,
+      prep,
+      status.deciding?.since ?? prepareEnd,
+      status.deciding == null,
+    ),
     stage(
       "decide",
       status.deciding != null ? decideStart : null,
       status.deciding != null ? decideEnd : null,
       dec,
+      confirmStart ?? decideEnd,
+      status.deciding == null,
     ),
-    stage("confirm", confirmStart, confirmEnd, conf),
-    stage("enact", enactStart, enactEnd, enactDuration),
+    stage("confirm", confirmStart, confirmEnd, conf, expectedConfirmEnd, confirmEnd == null),
+    stage("enact", enactStart, enactEnd, enactDuration, expectedEnact, true),
   ]
 
   const timeline: TimelineEvent[] = [
@@ -301,9 +346,9 @@ function buildOngoingLifecycle(
   let payout: PayoutView | null = null
   if (context.spend) {
     const sp = context.spend.spendPeriod
-    const block = enactEnd != null && sp ? nextSpendPeriodBlock(enactEnd, sp) : null
+    const block = sp ? nextSpendPeriodBlock(expectedEnact, sp) : null
     payout = { state: "upcoming", block, approx: true, proposalIndex: null }
-    if (block != null) {
+    if (block != null && confirmEnd != null) {
       timeline.push({ id: "payout", label: "Payout", block, approx: true, status: "upcoming" })
     }
   }
@@ -314,6 +359,7 @@ function buildOngoingLifecycle(
     overallProgress: computeOverallProgress(stages),
     terminal: null,
     awaitingDecisionDeposit,
+    confirmStartsAt,
     timeline,
     payout,
   }
@@ -353,6 +399,8 @@ function buildStage(
     startBlock,
     endBlock,
     durationBlocks,
+    expectedEnd: endBlock,
+    expectedApprox: false,
     state,
     progress,
   }
@@ -428,6 +476,8 @@ function buildTerminalLifecycle(
     startBlock,
     endBlock,
     durationBlocks,
+    expectedEnd: endBlock,
+    expectedApprox: false,
     state,
     progress: state === "done" || state === "failed" ? 1 : 0,
   })
@@ -504,6 +554,8 @@ function buildTerminalLifecycle(
           startBlock: decidedAt,
           endBlock: enactment.block,
           durationBlocks: duration,
+          expectedEnd: enactment.block,
+          expectedApprox: false,
           state: "active",
           progress,
         }
@@ -539,7 +591,11 @@ function buildTerminalLifecycle(
         break
       }
       default: {
-        enact = fixed("enact", "unknown", decidedAt, null, estimate != null ? estimate - decidedAt : minEnact)
+        enact = {
+          ...fixed("enact", "unknown", decidedAt, null, estimate != null ? estimate - decidedAt : minEnact),
+          expectedEnd: estimate,
+          expectedApprox: true,
+        }
         enactEvent = {
           id: "enactment",
           label: "Enactment",
@@ -564,6 +620,7 @@ function buildTerminalLifecycle(
     overallProgress: computeOverallProgress(stages),
     terminal,
     awaitingDecisionDeposit: false,
+    confirmStartsAt: null,
     timeline,
     payout,
   }
@@ -598,6 +655,7 @@ function approvedPayout(
         block: sp && from != null ? nextSpendPeriodBlock(from, sp) : null,
         approx: false,
         proposalIndex: spend.payout.proposalIndex,
+        since: enactedAt,
       }
     }
     case "paid":
