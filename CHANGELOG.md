@@ -166,8 +166,9 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
 - **A share image per referendum:** links to a referendum now unfurl with
   its own card - number, track, title, and the amount it requests or what
   it does in words ("Runtime upgrade", "Batch · 4 calls"). Only stable
-  facts, no status or tally, so each card is drawn once and cached for a
-  day. Short titles are set large, long ones step down to a floor and are
+  facts, no status or tally, so each card is drawn rarely: the CDN keeps it
+  for 15 minutes, short enough that a title moderators hide leaves link
+  previews soon. Short titles are set large, long ones step down to a floor and are
   cut after four lines; the rest of the card never changes size. The image
   lives at `/og/referendum/<network>/<index>`, so a Canary page shows the
   Canary referendum.
@@ -184,7 +185,6 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   5.5 until an admin picks again; their past usage keeps its cost. The
   check allows 4,096 output tokens, since Haiku 5.5 thinks by default and
   thinking counts toward the limit.
-
 - **The Moderation menu entry without the reload:** after signing in, a
   moderator or admin sees Moderation at once instead of after a reload (the
   role was cached from before the sign-in). The browser also remembers which
@@ -192,6 +192,13 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   as soon as such a wallet connects, before it signs in. Nobody else sees it,
   and the server is never asked about a wallet that hasn't signed in; the
   page and its routes still need the sign-in.
+- **Hidden text stays hidden in the API:** `/api/proposals/by-index` and
+  `by-indices` leave out the title, summary and text of a proposal that
+  moderators hid or removed, and say so in a `moderation` field, as the
+  comments route already did. Cards fall back to "Referendum #N". The
+  pinned JSON under `/r` stays public by design, since its hash is on
+  chain. Personal answers (`/api/auth/me`, `/api/users/me` and a
+  proposer's own list) are sent with `Cache-Control: private, no-store`.
 
 ## 1.9
 

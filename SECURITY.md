@@ -255,6 +255,12 @@ deposits panel on `/account` guards against that
   legal takedowns), pause a wallet's posting, manage roles and change the
   content-check settings. Nobody can edit someone else's text, and nothing
   touches on-chain data or the stored proposal JSON.
+- **Hidden means hidden in the API too.** The proposal lookups
+  (`/api/proposals/by-index`, `by-indices`) leave out the text of a
+  proposal that moderators hid or removed, like the comments route does for
+  comments; the share image follows within 15 minutes. The proposal JSON
+  under `/r` stays public by design: its hash is on chain, and moderation
+  never changes on-chain data.
 - **Public log.** Every action needs a reason and appears at
   `/moderation-log` with the moderator's handle or short address. Reporters
   are never shown.

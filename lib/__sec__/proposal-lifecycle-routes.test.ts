@@ -358,7 +358,63 @@ describe("by-index", () => {
     const body = (await res.json()) as Record<string, unknown>
     expect(body).toMatchObject({ ok: true, id: PID, title: "Relay 7", network: NET })
     expect(Object.keys(body).sort()).toEqual(PUBLIC_FIELDS)
+    expect(body.moderation).toBeNull()
     expect((await get("8")).status).toBe(404)
+  })
+
+  const moderate = (state: "hidden" | "removed" | "blurred", reason = "Phishing link") =>
+    mod.states.set(mod.stateKey("proposal", PID), {
+      target_type: "proposal",
+      target_id: PID,
+      proposal_id: PID,
+      state,
+      reason,
+      source: "moderator",
+      updated_at: new Date(),
+    })
+
+  it("leaves out the text of a hidden or removed proposal, keeping the rest", async () => {
+    for (const state of ["hidden", "removed"] as const) {
+      seed({
+        id: PID,
+        status: "on_chain",
+        referendum_index: 7,
+        title: "Claim your airdrop",
+        summary: "Connect your wallet",
+        body_markdown: "https://evil.example",
+        edit_count: 2,
+        withdrawn_at: new Date("2026-10-01T00:00:00Z"),
+      })
+      moderate(state)
+      const body = (await (await get("7")).json()) as Record<string, unknown>
+      expect(body).toMatchObject({
+        title: null,
+        summary: null,
+        body_markdown: "",
+        moderation: { state, reason: "Phishing link" },
+        edit_count: 2,
+        referendum_index: 7,
+      })
+      expect(body.withdrawn_at).not.toBeNull()
+      expect(JSON.stringify(body)).not.toMatch(/airdrop|Connect your wallet|evil\.example/)
+    }
+  })
+
+  it("keeps a blurred proposal's text, with its state", async () => {
+    seed({ id: PID, status: "on_chain", referendum_index: 7, title: "Relay 7" })
+    moderate("blurred", "Graphic image")
+    const body = (await (await get("7")).json()) as Record<string, unknown>
+    expect(body).toMatchObject({ title: "Relay 7", moderation: { state: "blurred" } })
+  })
+
+  it("answers 503 when the moderation state can't be read, but not before migration 011", async () => {
+    seed({ id: PID, status: "on_chain", referendum_index: 7, title: "Relay 7" })
+    mod.faults.states = new Error("db down")
+    expect((await get("7")).status).toBe(503)
+    mod.faults.states = mod.missingTable()
+    const res = await get("7")
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { title: string }).title).toBe("Relay 7")
   })
 })
 
@@ -374,6 +430,7 @@ const PUBLIC_FIELDS = [
   "id",
   "json_sha256",
   "json_url",
+  "moderation",
   "network",
   "ok",
   "proposer_address",
@@ -425,6 +482,29 @@ describe("by-indices", () => {
     expect(body.proposals.map((p) => p.id)).toEqual([PID])
     expect(Object.keys(body.proposals[0]!).sort()).toEqual(PUBLIC_FIELDS.filter((f) => f !== "ok"))
   })
+
+  it("leaves out the text of hidden proposals only", async () => {
+    const other = "33333333-3333-4333-8333-333333333333"
+    seed({ id: PID, status: "on_chain", referendum_index: 7, title: "Hidden one", body_markdown: "secret" })
+    seed({ id: other, status: "on_chain", referendum_index: 8, title: "Visible one" })
+    mod.states.set(mod.stateKey("proposal", PID), {
+      target_type: "proposal",
+      target_id: PID,
+      proposal_id: PID,
+      state: "hidden",
+      reason: "Scam",
+      source: "moderator",
+      updated_at: new Date(),
+    })
+    const body = (await (await batch({ network: NET, indices: [7, 8] })).json()) as {
+      proposals: Record<string, unknown>[]
+    }
+    const byId = new Map(body.proposals.map((p) => [p.id, p]))
+    expect(byId.get(PID)).toMatchObject({ title: null, body_markdown: "", moderation: { state: "hidden" } })
+    expect(byId.get(other)).toMatchObject({ title: "Visible one", moderation: null })
+    mod.faults.states = new Error("db down")
+    expect((await batch({ network: NET, indices: [7, 8] })).status).toBe(503)
+  })
 })
 
 describe("by-proposer", () => {
@@ -454,6 +534,14 @@ describe("by-proposer", () => {
     )
   })
   const titles = (items: Record<string, unknown>[]) => items.map((i) => i.title).sort()
+
+  it("is never cached, since the owner sees more than anyone else", async () => {
+    signIn(ALICE)
+    const { res } = await list(ALICE)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("cache-control")).toBe("private, no-store")
+    expect((await list("abc")).res.headers.get("cache-control")).toBe("private, no-store")
+  })
 
   it("validates the address and the network", async () => {
     expect((await list("abc")).res.status).toBe(400)

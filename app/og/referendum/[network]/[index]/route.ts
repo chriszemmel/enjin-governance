@@ -13,9 +13,10 @@ export const maxDuration = 30
  *
  * The network is part of the path (unlike a route's opengraph-image) so a
  * Canary page's preview shows the Canary referendum. The image holds only
- * stable facts, so the CDN keeps it for a day; one read of the database and
- * the chain per referendum and day. A card the chain couldn't fill in time
- * is kept for five minutes only.
+ * stable facts, but its title can change: moderators may hide it or the
+ * proposer edit it. So the CDN keeps it for 15 minutes (and serves the old
+ * one for up to an hour while it redraws), not a day. A card the chain
+ * couldn't fill in time is kept for five minutes only.
  */
 export async function GET(_req: Request, context: { params: Promise<{ network: string; index: string }> }) {
   const { network, index: rawIndex } = await context.params
@@ -28,7 +29,7 @@ export async function GET(_req: Request, context: { params: Promise<{ network: s
   const card = await loadReferendumCard(chain, index)
   return renderReferendumCard(card, {
     "Cache-Control": card.complete
-      ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
+      ? "public, max-age=300, s-maxage=900, stale-while-revalidate=3600"
       : "public, max-age=60, s-maxage=300",
   })
 }

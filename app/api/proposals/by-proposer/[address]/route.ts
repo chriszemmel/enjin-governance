@@ -20,6 +20,7 @@ import type { ChainId } from "@/lib/chain/chains"
 import { encodeForChain, initializeWasm, isValidSs58, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { listProposalsByProposer } from "@/lib/db/proposals"
+import { noStore } from "@/lib/http/no-store"
 
 export const runtime = "nodejs"
 
@@ -49,7 +50,7 @@ const NETWORK_VALUES = [
   "canary-matrix",
 ] as const
 
-export async function GET(
+async function getHandler(
   request: NextRequest,
   context: { params: Promise<{ address: string }> },
 ): Promise<NextResponse> {
@@ -105,3 +106,6 @@ export async function GET(
       })),
   })
 }
+
+// Personal: depends on the session cookie.
+export const GET = noStore(getHandler)

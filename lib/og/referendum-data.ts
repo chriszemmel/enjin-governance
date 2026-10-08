@@ -5,7 +5,7 @@
  * still renders with the number.
  *
  * Only stable facts are read - no status, tally or time - so the image can
- * be cached for a day.
+ * be cached on the CDN.
  */
 
 import "server-only"

@@ -11,6 +11,7 @@ import {
 import { updateProfile } from "@/lib/db/users"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { noStore } from "@/lib/http/no-store"
 
 export const runtime = "nodejs"
 
@@ -23,7 +24,7 @@ const patchSchema = z.object({
   handle: z.string().min(3).max(32).nullable().optional(),
 })
 
-export async function GET(): Promise<NextResponse> {
+async function getHandler(): Promise<NextResponse> {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ ok: false }, { status: 401 })
   return NextResponse.json({
@@ -39,7 +40,7 @@ export async function GET(): Promise<NextResponse> {
   })
 }
 
-export async function PATCH(request: NextRequest): Promise<NextResponse> {
+async function patchHandler(request: NextRequest): Promise<NextResponse> {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ ok: false }, { status: 401 })
   const suspended = await postingSuspendedResponse(me)
@@ -126,3 +127,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     )
   }
 }
+
+// Personal: depends on the session cookie.
+export const GET = noStore(getHandler)
+export const PATCH = noStore(patchHandler)

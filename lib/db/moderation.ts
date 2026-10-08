@@ -89,6 +89,17 @@ export async function getState(
   return rows[0] ?? null
 }
 
+/** Non-visible states of these proposals' own text (not their media or comments). */
+export async function listProposalTextStates(proposalIds: string[]): Promise<ModerationStateRow[]> {
+  if (proposalIds.length === 0) return []
+  return (await getSql()`
+    SELECT * FROM moderation_state
+     WHERE target_type = 'proposal'
+       AND state <> 'visible'
+       AND target_id = ANY(${proposalIds})
+  `) as ModerationStateRow[]
+}
+
 /**
  * Non-visible states of a proposal, its attachments and its comments.
  * Uploads checked before their draft existed carry no proposal_id, so

@@ -194,6 +194,13 @@ export async function listStatesForProposal(proposalId: string): Promise<StateRo
   )
 }
 
+export async function listProposalTextStates(proposalIds: string[]): Promise<StateRow[]> {
+  if (faults.states) throw faults.states
+  return [...states.values()].filter(
+    (s) => s.target_type === "proposal" && s.state !== "visible" && proposalIds.includes(s.target_id),
+  )
+}
+
 export async function setState(a: {
   targetType: ModerationTarget
   targetId: string

@@ -564,7 +564,9 @@ describe("GET /api/auth/me and POST /api/auth/logout", () => {
   }
 
   it("needs a live session cookie", async () => {
-    expect((await ME()).status).toBe(401)
+    const out = await ME()
+    expect(out.status).toBe(401)
+    expect(out.headers.get("cache-control")).toBe("private, no-store")
     io.jar.set(SESSION_COOKIE, "f".repeat(64))
     expect((await ME()).status).toBe(401)
   })
@@ -574,6 +576,8 @@ describe("GET /api/auth/me and POST /api/auth/logout", () => {
     await signIn(w)
     const res = await ME()
     expect(res.status).toBe(200)
+    // Personal: no browser or shared cache keeps it.
+    expect(res.headers.get("cache-control")).toBe("private, no-store")
     const body = await res.json()
     expect(Object.keys(body.user).sort()).toEqual(
       ["address", "avatar_url", "bio", "display_name", "handle", "id"].sort(),

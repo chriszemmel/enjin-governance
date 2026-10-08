@@ -3,7 +3,7 @@
  * big the title can be and what the call does in a few words. Pure, so the
  * layout rules are unit tested.
  *
- * The image is static per referendum (it's cached for a day and never
+ * The image is static per referendum (it's cached on the CDN and never
  * shows status, tally or time), so everything here is stable for a given
  * referendum: its title, number, track and call.
  */

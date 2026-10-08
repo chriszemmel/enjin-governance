@@ -250,7 +250,7 @@ function EditForm({
   onSaved: () => void
   detailHref: string
 }) {
-  const [title, setTitle] = useState(metadata.title)
+  const [title, setTitle] = useState(metadata.title ?? "")
   const [summary, setSummary] = useState(metadata.summary ?? "")
   const [bodyMarkdown, setBodyMarkdown] = useState(metadata.body_markdown)
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([])
@@ -278,7 +278,7 @@ function EditForm({
   useEffect(() => {
     if (seeded || !jsonQuery.data) return
     const json = jsonQuery.data
-    setTitle(json.title ?? metadata.title)
+    setTitle(json.title ?? metadata.title ?? "")
     setSummary(json.summary ?? metadata.summary ?? "")
     setBodyMarkdown(json.body_markdown ?? metadata.body_markdown)
     setAttachments(
@@ -307,7 +307,7 @@ function EditForm({
 
   const dirty =
     seeded &&
-    (title !== (jsonQuery.data?.title ?? metadata.title) ||
+    (title !== (jsonQuery.data?.title ?? metadata.title ?? "") ||
       summary !== (jsonQuery.data?.summary ?? metadata.summary ?? "") ||
       bodyMarkdown !==
         (jsonQuery.data?.body_markdown ?? metadata.body_markdown) ||

@@ -196,9 +196,11 @@ describe("GET /api/users/me", () => {
     expect((await ME()).status).toBe(401)
   })
 
-  it("returns only the public profile fields", async () => {
+  it("returns only the public profile fields, never cached", async () => {
     signIn()
-    const body = await (await ME()).json()
+    const res = await ME()
+    expect(res.headers.get("cache-control")).toBe("private, no-store")
+    const body = await res.json()
     expect(Object.keys(body.user).sort()).toEqual(PUBLIC_FIELDS)
     expect(JSON.stringify(body)).not.toMatch(/sessionTokenHash|avatar_key|private\.png/)
   })
@@ -206,7 +208,9 @@ describe("GET /api/users/me", () => {
 
 describe("PATCH /api/users/me", () => {
   it("needs a session", async () => {
-    expect((await patch({ bio: "hi" })).status).toBe(401)
+    const res = await patch({ bio: "hi" })
+    expect(res.status).toBe(401)
+    expect(res.headers.get("cache-control")).toBe("private, no-store")
     expect(io.updates).toEqual([])
   })
 

@@ -16,7 +16,8 @@ export type ProposalMetadata = {
   id: string
   network: string
   referendum_index: number
-  title: string
+  /** Null (with an empty body) when moderators hid or removed the text. */
+  title: string | null
   summary: string | null
   body_markdown: string
   track: string | null
@@ -30,6 +31,8 @@ export type ProposalMetadata = {
   edit_count: number
   withdrawn_at: string | null
   withdrawn_reason: string | null
+  /** Set when moderators changed how the text is shown. */
+  moderation?: { state: string; reason: string | null } | null
   created_at: string
 }
 
