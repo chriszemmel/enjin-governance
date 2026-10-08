@@ -23,5 +23,6 @@ export const queryKeys = {
     count: (chain: ChainId) => ["referenda", chain, "count"] as const,
   },
 
-  tracks: (chain: ChainId) => ["tracks", chain] as const,
+  /** Track table per runtime: an upgrade changes the spec, and so the key. */
+  tracks: (chain: ChainId, specVersion: number | null) => ["tracks", chain, specVersion] as const,
 } as const
