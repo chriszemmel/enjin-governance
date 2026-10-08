@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { SignerPayloadJSON } from "@polkadot/types/types"
-import { toRequestPayload } from "@/lib/wallet/connectors/walletconnect"
+import { describeRelayRefusal, toRequestPayload } from "@/lib/wallet/connectors/walletconnect"
 
 /**
  * Enjin Wallet rejects a `polkadot_signTransaction` request with
@@ -74,5 +74,37 @@ describe("toRequestPayload", () => {
     const out = toRequestPayload(PAYLOAD)
     expect(Object.keys(out)).toContain("mode")
     expect(Object.keys(out)).toContain("tip")
+  })
+})
+
+describe("describeRelayRefusal", () => {
+  const ORIGIN = "https://preview.example.vercel.app"
+  const ID = "0123456789abcdef0123456789abcdef"
+
+  it("names the origin and the project when the relay refuses the site", () => {
+    const msg = describeRelayRefusal(
+      "WebSocket connection closed abnormally with code: 3000 (Unauthorized: origin not allowed)",
+      ORIGIN,
+      ID,
+    )
+    expect(msg).toContain(ORIGIN)
+    expect(msg).toContain("…abcdef")
+    expect(msg).toContain("allowed domains")
+  })
+
+  it("points at the env var when the relay rejects the project id", () => {
+    const msg = describeRelayRefusal(
+      "WebSocket connection closed abnormally with code: 3000 (Unauthorized: invalid key)",
+      ORIGIN,
+      ID,
+    )
+    expect(msg).toContain("NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID")
+    expect(msg).toContain("…abcdef")
+  })
+
+  it("passes any other reason through", () => {
+    expect(describeRelayRefusal("socket hang up", ORIGIN, ID)).toBe(
+      "WalletConnect closed the connection: socket hang up",
+    )
   })
 })

@@ -126,6 +126,11 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   cancelled (link it instead). `/account` and `/treasury` find the drafts
   of extension accounts, and the drafts panel offers sign-in when the
   session is for another account.
+- **WalletConnect on other domains:** the app announces the page's own
+  origin to wallets, so a preview deployment no longer claims to be the
+  production site. When the relay refuses the connection, the error says
+  why (the site isn't in the Reown project's allowed domains, or the
+  project id is wrong) instead of a generic timeout.
 - **Support is measured like the runtime does it:** against active
   issuance (total minus inactive) on spec 1070, against total issuance
   from 1080. Mainnet showed about 28% too little support: about 575M of

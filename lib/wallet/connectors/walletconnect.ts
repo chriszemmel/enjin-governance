@@ -20,6 +20,14 @@ type SignClientType = Awaited<ReturnType<typeof importAndInit>>
 
 let signClientPromise: Promise<SignClientType> | null = null
 
+/**
+ * The last reason the relay gave for closing the socket. When Reown refuses
+ * a connection it closes with code 3000 and a reason like "Unauthorized:
+ * origin not allowed"; the SDK keeps retrying and `connect` just times out,
+ * so we hold on to the reason and report it instead of the timeout.
+ */
+let lastRelayError: string | null = null
+
 async function importAndInit() {
   if (!env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID) {
     throw new Error(
@@ -42,6 +50,10 @@ async function importAndInit() {
       url: origin,
       icons: [`${origin}/favicon.svg`],
     },
+  })
+
+  client.core.relayer.on("relayer_error", (err: unknown) => {
+    lastRelayError = err instanceof Error ? err.message : String(err)
   })
 
   // Kick the relay socket awake the moment the dapp tab regains
@@ -106,6 +118,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
  */
 function resetSignClient(): void {
   signClientPromise = null
+  lastRelayError = null
   if (typeof window === "undefined") return
   try {
     const keys: string[] = []
@@ -119,6 +132,43 @@ function resetSignClient(): void {
   } catch {
     /* private mode etc. - non-fatal */
   }
+}
+
+/**
+ * Turn the relay's close reason into something an admin can act on. The
+ * project id is public (it ships in the bundle), so naming its last
+ * characters is fine and tells them which Reown project the build uses.
+ */
+export function describeRelayRefusal(
+  reason: string,
+  origin: string,
+  projectId: string | undefined,
+): string {
+  const project = projectId ? `project …${projectId.slice(-6)}` : "the project"
+  if (/origin/i.test(reason)) {
+    return (
+      `WalletConnect refused this site (${origin}). ` +
+      `Add it to the allowed domains of Reown ${project}.`
+    )
+  }
+  if (/key|project/i.test(reason)) {
+    return (
+      `WalletConnect rejected ${project}. Check NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ` +
+      "for this deployment and redeploy."
+    )
+  }
+  return `WalletConnect closed the connection: ${reason}`
+}
+
+function relayRefusal(): Error | null {
+  if (!lastRelayError || typeof window === "undefined") return null
+  return new Error(
+    describeRelayRefusal(
+      lastRelayError,
+      window.location.origin,
+      env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+    ),
+  )
 }
 
 /**
@@ -450,6 +500,7 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       // the same key surface twice (en…/cn…) and cross the per-network
       // handle namespace.
       const { uri, approval } = await (async () => {
+        lastRelayError = null
         try {
           const signClient = await withTimeout(
             getSignClient(),
@@ -470,8 +521,9 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
             "Couldn't start the WalletConnect session. Please try again.",
           )
         } catch (err) {
+          const refused = relayRefusal()
           resetSignClient()
-          throw err
+          throw refused ?? err
         }
       })()
 
