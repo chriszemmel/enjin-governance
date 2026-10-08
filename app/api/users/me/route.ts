@@ -4,10 +4,14 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import {
   displayNameErrorMessage,
   handleErrorMessage,
+  normalizeDisplayName,
   validateDisplayName,
   validateHandle,
 } from "@/lib/auth/handle-blocklist"
 import { updateProfile } from "@/lib/db/users"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { noStore } from "@/lib/http/no-store"
 
 export const runtime = "nodejs"
 
@@ -20,7 +24,7 @@ const patchSchema = z.object({
   handle: z.string().min(3).max(32).nullable().optional(),
 })
 
-export async function GET(): Promise<NextResponse> {
+async function getHandler(): Promise<NextResponse> {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ ok: false }, { status: 401 })
   return NextResponse.json({
@@ -36,9 +40,19 @@ export async function GET(): Promise<NextResponse> {
   })
 }
 
-export async function PATCH(request: NextRequest): Promise<NextResponse> {
+async function patchHandler(request: NextRequest): Promise<NextResponse> {
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ ok: false }, { status: 401 })
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
+
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.profileUpdate, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many profile changes - please wait a few minutes." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    )
+  }
 
   let parsed
   try {
@@ -50,6 +64,9 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     )
   }
 
+  // The handle is checked and stored trimmed; the untrimmed text could
+  // carry invisible padding past the unique index as a look-alike.
+  if (parsed.handle != null) parsed = { ...parsed, handle: parsed.handle.trim() }
   if (parsed.handle != null) {
     const err = validateHandle(parsed.handle)
     if (err) {
@@ -58,15 +75,28 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         { status: 400 },
       )
     }
+    // Handles are unique per network; a row without one (signed in before
+    // sign-in was limited to the relay formats) would sit outside the
+    // unique index, so it can't claim a handle.
+    if (!me.network) {
+      return NextResponse.json(
+        { ok: false, error: "Sign out and sign in again to set a handle." },
+        { status: 409 },
+      )
+    }
   }
+  // Stored as checked: without invisible or direction-control characters
+  // that could make it display as something the check never saw.
   if (parsed.display_name != null) {
-    const err = validateDisplayName(parsed.display_name)
+    const displayName = normalizeDisplayName(parsed.display_name)
+    const err = validateDisplayName(displayName)
     if (err) {
       return NextResponse.json(
         { ok: false, error: displayNameErrorMessage(err) },
         { status: 400 },
       )
     }
+    parsed = { ...parsed, display_name: displayName }
   }
 
   try {
@@ -90,6 +120,14 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
         { status: 409 },
       )
     }
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
+    console.error("[users/me] profile update failed", msg)
+    return NextResponse.json(
+      { ok: false, error: "Could not save your profile - try again." },
+      { status: 500 },
+    )
   }
 }
+
+// Personal: depends on the session cookie.
+export const GET = noStore(getHandler)
+export const PATCH = noStore(patchHandler)

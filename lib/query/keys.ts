@@ -1,6 +1,7 @@
 /**
- * Query key factory. Every key in the app comes from here so we can
- * invalidate by prefix without typos.
+ * Query key factory for the shared chain queries, so they can be
+ * invalidated by prefix without typos. Some feature hooks keep their own
+ * inline keys.
  *
  *   queryClient.invalidateQueries({ queryKey: queryKeys.referenda.all('enjin-relay') })
  */
@@ -22,5 +23,6 @@ export const queryKeys = {
     count: (chain: ChainId) => ["referenda", chain, "count"] as const,
   },
 
-  tracks: (chain: ChainId) => ["tracks", chain] as const,
+  /** Track table per runtime: an upgrade changes the spec, and so the key. */
+  tracks: (chain: ChainId, specVersion: number | null) => ["tracks", chain, specVersion] as const,
 } as const

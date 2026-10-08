@@ -2,7 +2,8 @@
  * Bucket-key conventions for the `enjin-governance` R2 bucket.
  *
  * Layout:
- *   proposals/{network}/{uuid}/proposal.json
+ *   proposals/{network}/{uuid}/proposal-{sha256 prefix}.json   (one per staged version)
+ *   proposals/{network}/{uuid}/proposal.json                   (drafts staged before v1.1)
  *   proposals/{network}/{uuid}/media/{safe-filename}
  *   proposals/{network}/index/{referendum_index}.json
  *   user-avatars/{user_uuid}.png
@@ -27,12 +28,44 @@ export function proposalJsonKey(network: ChainId, proposalUuid: string): string 
   return `proposals/${network}/${proposalUuid}/proposal.json`
 }
 
+/**
+ * Key for one staged version of a proposal's JSON, named after its hash.
+ * Every version gets its own object, so a version that an on-chain
+ * envelope may already point at (a batch still in flight, a second tab)
+ * is never overwritten by a later re-stage.
+ */
+export function proposalJsonVersionKey(
+  network: ChainId,
+  proposalUuid: string,
+  sha256: string,
+): string {
+  return `proposals/${network}/${proposalUuid}/proposal-${sha256.slice(0, 16)}.json`
+}
+
+/** Whether a key is one of a proposal's JSON versions (not media). */
+export function isProposalJsonKey(key: string): boolean {
+  return /\/proposal(-[0-9a-f]{16})?\.json$/.test(key)
+}
+
 export function proposalMediaKey(
   network: ChainId,
   proposalUuid: string,
   filename: string,
 ): string {
   return `proposals/${network}/${proposalUuid}/media/${sanitiseFilename(filename)}`
+}
+
+/**
+ * Name an upload is stored under: a short random prefix plus the sanitised
+ * original name, so two uploads called "image.png" never overwrite each
+ * other (media is cached as immutable, so an overwrite would also keep
+ * serving the old bytes). Capped so the thumbnail key still fits.
+ */
+export function uniqueMediaName(original: string, random: string): string {
+  // Never end in the thumbnail suffix: "x.thumb.webp" would read as the
+  // thumbnail of "x", and a check on one could miss the other.
+  const base = (sanitiseFilename(original).slice(0, 90) || "file").replace(/\.thumb\.webp$/i, "-thumb.webp")
+  return `${random}-${base}`
 }
 
 /** Folder every object of one proposal lives under (JSON + media). */
@@ -70,6 +103,22 @@ export function ownMediaKey(
   return key
 }
 
+/**
+ * Bucket key behind a public object URL, for both `<app>/r/<key>` and
+ * `<bucket-host>/<key>` forms. Proposal JSON only carries attachment URLs,
+ * so resuming a draft re-derives the keys from them.
+ */
+export function keyFromPublicUrl(url: string): string {
+  let path: string
+  try {
+    path = new URL(url).pathname
+  } catch {
+    return url
+  }
+  path = path.replace(/^\/+/, "")
+  return path.startsWith("r/") ? path.slice(2) : path
+}
+
 export function proposalIndexRedirectKey(
   network: ChainId,
   referendumIndex: number,
@@ -92,12 +141,16 @@ export function publicUrlFor(publicBase: string, key: string): string {
  * objects straight from the bucket, so this allowlist is what stops it
  * being an open proxy onto everything in R2: only the genuinely public
  * object families (proposal JSON / media, user avatars) are readable, and
- * any path-traversal attempt is rejected.
+ * any path-traversal attempt is rejected. Admin backups (`backups/`, see
+ * lib/backup/keys.ts) hold personal data and must never be added here.
  */
 const PUBLIC_READ_PREFIXES = ["proposals/", "user-avatars/"]
 
 export function isPublicReadableKey(key: string): boolean {
   if (!key) return false
-  if (key.includes("..") || key.includes("\\") || key.startsWith("/")) return false
+  // Traversal is a ".." segment; a name like "report..v2.pdf" is an ordinary upload
+  // (uniqueMediaName keeps dots), and must stay servable.
+  if (key.includes("\\") || key.startsWith("/")) return false
+  if (key.split("/").some((s) => s === "..")) return false
   return PUBLIC_READ_PREFIXES.some((prefix) => key.startsWith(prefix))
 }

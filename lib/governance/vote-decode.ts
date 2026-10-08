@@ -1,13 +1,15 @@
 /**
  * Decode Enjin / Substrate vote primitives.
  *
- * `vote` byte (in `voteManager.vote` extrinsics, standard variant):
+ * `vote` byte (in `convictionVoting.vote` extrinsics - Enjin's multi-token
+ * fork; `voteManager` on runtimes that have it - standard variant):
  *   bit 7 (0x80) → aye flag (1 = Aye, 0 = Nay)
  *   bits 0-2     → conviction enum (0=None … 6=Locked6x)
  *
  * `currency` arg (Enjin-specific extension to AccountVote):
  *   { Enj: null }                - liquid ENJ
- *   { SEnj: <poolId> }           - staked ENJ from pool #poolId
+ *   { SEnj: { tokenId } }        - staked ENJ from pool #tokenId
+ *                                  (Subscan flattens it to { SEnj: <id> })
  *
  * Subscan tends to return `vote` either as a raw u8 ("130"), a string
  * label ("Aye" / "Nay"), or an object like { aye: true, conviction: 2 }.

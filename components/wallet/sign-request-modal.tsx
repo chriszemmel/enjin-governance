@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react"
 import { isMobileUserAgent } from "@/lib/wallet/deep-link"
+import { useModalFocus } from "@/lib/utils/use-modal-focus"
 import type { TxStatus } from "@/lib/query/hooks/use-tx"
 
 interface SignRequestModalProps {
@@ -76,12 +77,12 @@ interface SignRequestModalProps {
  * broadcast → in-block → finalised, so we don't need to layer toasts on
  * top.
  *
- * The deep link is fired from the button's own click handler
- * (window.location.href, same mechanism the pair flow's Open button
- * uses) - that's the only path iOS Safari reliably honours, because
- * the user-gesture token is alive at the moment of navigation. The WC
- * library's internal redirect is suppressed inside the WC signer to
- * keep this the single deep-link source.
+ * On mobile the deep link is a plain `<a href target="_blank">` the user
+ * taps ("Open in <wallet>", same mechanism as the pair flow's Open
+ * link) - that's the only path iOS Safari reliably honours, because
+ * the navigation happens inside the user's own tap. The WC library's
+ * internal redirect is suppressed inside the WC signer to keep this
+ * the single deep-link source.
  */
 export function SignRequestModal({
   open,
@@ -102,6 +103,8 @@ export function SignRequestModal({
   useEffect(() => {
     setMobile(isMobileUserAgent())
   }, [])
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalFocus(dialogRef, open, onClose)
 
   // Auto-dismiss for `successAt: "in-block"` flows. The cache
   // invalidation already ran in useExtrinsic's fireSuccess, so the page
@@ -167,7 +170,9 @@ export function SignRequestModal({
       />
 
       <div
-        className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden outline-none"
         role="dialog"
         aria-modal="true"
         aria-label={title}

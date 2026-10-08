@@ -21,31 +21,46 @@
  * `signature` field isn't verified - but it can no longer be filed
  * anonymously or under someone else's address.
  *
- * The proposal id must be unused (an existing id is refused before anything
- * is written to R2), and every attachment key must sit in the proposal's own
- * media folder.
+ * An existing id is checked before anything is written to R2: only its own
+ * proposer may re-stage it, only while it is still an unsigned draft whose
+ * envelope hasn't reached the chain, and only from the version the browser
+ * last saw (`expected_sha256`). Every attachment key must sit in the
+ * proposal's own media folder.
  */
 
+import { createHash } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
-import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
+import { initializeWasm, isValidAddressForChain, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import {
   getProposalById,
   insertProposalDraft,
   insertAttachment,
+  replaceAttachments,
+  updateProposalDraft,
   type CreateProposalDraft,
 } from "@/lib/db/proposals"
+import { checkAttachments, listedAttachments } from "@/lib/governance/attachment-check"
+import { anyVersionOnChain, listVersionKeys } from "@/lib/governance/draft-versions"
 import { upsertUserByAddress } from "@/lib/db/users"
-import { isR2Configured } from "@/lib/r2/client"
-import { ownMediaKey, proposalJsonKey } from "@/lib/r2/paths"
-import { putJson } from "@/lib/r2/upload"
+import {
+  isPublicUrlMisconfigured,
+  isR2Configured,
+  PUBLIC_URL_NOT_CONFIGURED,
+  publicAssetBase,
+} from "@/lib/r2/client"
+import { stringifyStable } from "@/lib/r2/json"
+import { ownMediaKey, proposalJsonVersionKey, publicUrlFor } from "@/lib/r2/paths"
+import { putJson, readObjectText } from "@/lib/r2/upload"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import {
   buildRemarkPayload,
   PROPOSAL_SCHEMA,
   PROPOSAL_SCHEMA_VERSION,
+  PROPOSAL_SCHEMA_VERSION_WITH_CALL,
   type ProposalAttachmentMeta,
   type ProposalJson,
 } from "@/lib/governance/proposal-metadata"
@@ -87,6 +102,38 @@ const bodySchema = z.object({
     .nullable(),
   preimage_len: z.number().int().nonnegative().nullable(),
   attachments: z.array(attachmentSchema).max(20).default([]),
+  /** EGOV1 1.2.0: the call being proposed (advanced composer). */
+  call: z
+    .object({
+      section: z.string().regex(/^[A-Za-z0-9_]{1,64}$/),
+      method: z.string().regex(/^[A-Za-z0-9_]{1,64}$/),
+      origin: z.string().min(1).max(80),
+      preimage_hash: z.string().regex(/^0x[0-9a-f]{64}$/),
+      preimage_len: z.number().int().positive(),
+      inline: z.boolean(),
+      code_hash: z.string().regex(/^0x[0-9a-f]{64}$/).nullable().optional(),
+    })
+    .strict()
+    .nullable()
+    .optional(),
+  /** EGOV1 1.2.0: the enactment moment chosen at submission. */
+  enactment: z
+    .object({
+      type: z.enum(["At", "After"]),
+      block: z.number().int().nonnegative(),
+    })
+    .strict()
+    .nullable()
+    .optional(),
+  /**
+   * When re-staging an existing draft: the json_sha256 the browser last saw.
+   * The update only applies if the row still has it.
+   */
+  expected_sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .nullable()
+    .optional(),
 })
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -95,6 +142,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { ok: false, error: "Storage is not configured (set R2_* env vars)" },
       { status: 503 },
     )
+  }
+  // Never build (and pin on chain) file URLs from a localhost base.
+  if (isPublicUrlMisconfigured()) {
+    return NextResponse.json({ ok: false, error: PUBLIC_URL_NOT_CONFIGURED }, { status: 503 })
   }
   if (!isDbConfigured()) {
     return NextResponse.json(
@@ -118,6 +169,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 401 },
     )
   }
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalDraft, identity: me.id })
   if (!rl.allowed) {
@@ -138,6 +191,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
+  // The payout address must already be in this network's own format - the
+  // browser asks before converting, and the server doesn't convert either.
+  if (
+    parsed.beneficiary != null &&
+    !isValidAddressForChain(parsed.beneficiary, parsed.network)
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "Beneficiary must be a valid address for this network." },
+      { status: 400 },
+    )
+  }
+
   // proposal_id is client-minted, and the JSON key is derived from it - so
   // it must be checked BEFORE anything is written. An id that already has a
   // row is someone's existing proposal (or this user's own, already-saved
@@ -152,23 +217,62 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 503 },
     )
   }
+  // An existing id may only be re-staged by its own proposer, while it is
+  // still an unsigned draft on the same network, and only from the version
+  // the browser last saw (two tabs can't silently overwrite each other).
   if (existingRow) {
-    const own = samePublicKey(existingRow.proposer_address, me.address)
-    return NextResponse.json(
-      {
-        ok: false,
-        error: own
-          ? "This draft is already saved. Reload the page and resume it from your drafts."
-          : "This proposal id is already in use.",
-      },
-      { status: own ? 409 : 403 },
-    )
+    if (!samePublicKey(existingRow.proposer_address, me.address)) {
+      return NextResponse.json(
+        { ok: false, error: "This proposal id is already in use." },
+        { status: 403 },
+      )
+    }
+    if (existingRow.status !== "draft" || existingRow.network !== parsed.network) {
+      return NextResponse.json(
+        { ok: false, error: "This proposal can no longer be changed here." },
+        { status: 409 },
+      )
+    }
+    if (parsed.expected_sha256 !== existingRow.json_sha256) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This draft was changed elsewhere. Reload the page and resume it from your drafts.",
+        },
+        { status: 409 },
+      )
+    }
+    // Once a batch signed from any stored version landed, the draft must
+    // be linked to its referendum, not staged again. Fails closed: if the
+    // folder or the chain can't be read, don't write.
+    let anchored: boolean
+    try {
+      anchored = await anyVersionOnChain(existingRow, await listVersionKeys(existingRow))
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Could not reach the chain to check this draft - try again." },
+        { status: 503 },
+      )
+    }
+    if (anchored) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This draft already reached the chain. Link it to its referendum from your drafts instead.",
+        },
+        { status: 409 },
+      )
+    }
   }
 
   // Attachment keys come from the browser and are later deleted from the
   // bucket together with the draft, so each one must live in this
-  // proposal's own media folder.
-  const attachments: { key: string; att: (typeof parsed.attachments)[number] }[] = []
+  // proposal's own media folder. The URL written into the JSON is built from
+  // that key, never taken from the browser, so a proposal can only ever
+  // point at its own files.
+  const claimed: { key: string; att: (typeof parsed.attachments)[number] }[] = []
   for (const att of parsed.attachments) {
     const ownKey = ownMediaKey(att.bucket_key, parsed.network, parsed.proposal_id)
     if (!ownKey) {
@@ -177,14 +281,58 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 400 },
       )
     }
-    attachments.push({ key: ownKey, att })
+    claimed.push({ key: ownKey, att: { ...att, url: publicUrlFor(publicAssetBase(), ownKey) } })
   }
 
-  const key = proposalJsonKey(parsed.network, parsed.proposal_id)
+  // Size, type and hash must be the stored file's own, not just what the
+  // browser says. Compared with the version being replaced, so a file
+  // removed since it was saved can stay listed.
+  let savedJson: string | null = null
+  if (existingRow) {
+    try {
+      savedJson = await readObjectText(existingRow.json_key)
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Could not check the attachments - try again." },
+        { status: 503 },
+      )
+    }
+  }
+  const checked = await checkAttachments(
+    claimed.map(({ key, att }) => ({
+      key,
+      name: att.name,
+      sha256: att.sha256,
+      content_type: att.content_type,
+      size_bytes: att.size_bytes,
+    })),
+    listedAttachments(savedJson),
+  )
+  if (!checked.ok) {
+    return NextResponse.json({ ok: false, error: checked.error }, { status: checked.status })
+  }
+  const attachments = claimed.map(({ key, att }, i) => ({
+    key,
+    att: { ...att, name: checked.attachments[i]!.name },
+  }))
+
+  // The call section describes what the referendum enacts, so it must agree
+  // with the preimage the draft records.
+  if (
+    parsed.call &&
+    (parsed.call.preimage_hash !== parsed.preimage_hash ||
+      parsed.call.preimage_len !== parsed.preimage_len)
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "The call section doesn't match the proposal's preimage." },
+      { status: 400 },
+    )
+  }
+  const withCall = parsed.call != null || parsed.enactment != null
 
   const proposalJson: ProposalJson = {
     schema: PROPOSAL_SCHEMA,
-    version: PROPOSAL_SCHEMA_VERSION,
+    version: withCall ? PROPOSAL_SCHEMA_VERSION_WITH_CALL : PROPOSAL_SCHEMA_VERSION,
     network: parsed.network,
     proposer: parsed.proposer_address,
     title: parsed.title,
@@ -198,8 +346,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             amount_planck: parsed.amount_planck,
           }
         : null,
-    attachments: parsed.attachments.map(
-      (a): ProposalAttachmentMeta => ({
+    attachments: attachments.map(
+      ({ att: a }): ProposalAttachmentMeta => ({
         name: a.name,
         url: a.url,
         sha256: a.sha256,
@@ -207,21 +355,40 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         size_bytes: a.size_bytes,
       }),
     ),
+    ...(withCall ? { call: parsed.call ?? null, enactment: parsed.enactment ?? null } : {}),
     preimage_hash: parsed.preimage_hash,
     preimage_len: parsed.preimage_len,
-    created_at: new Date().toISOString(),
+    created_at: (existingRow?.created_at ?? new Date()).toISOString(),
     signature: null,
   }
+
+  // Each staged version is stored under its own hash-named key and never
+  // overwritten: a batch signed from an earlier version (still in flight,
+  // or from another tab) keeps pointing at exactly the bytes it pinned.
+  const jsonText = stringifyStable(proposalJson)
+  const jsonSha256 = createHash("sha256").update(jsonText, "utf8").digest("hex")
+  if (existingRow && existingRow.json_sha256 === jsonSha256 && existingRow.remark_payload) {
+    // Nothing changed since the saved version - no write needed.
+    return NextResponse.json({
+      ok: true,
+      id: existingRow.id,
+      updated: false,
+      json_url: existingRow.json_url,
+      json_sha256: existingRow.json_sha256,
+      json_size_bytes: Buffer.byteLength(jsonText, "utf8"),
+      remark_payload: existingRow.remark_payload,
+      proposal: proposalJson,
+    })
+  }
+  const key = proposalJsonVersionKey(parsed.network, parsed.proposal_id, jsonSha256)
 
   let put
   try {
     put = await putJson(key, proposalJson)
   } catch (e) {
+    console.error("[proposals/draft] R2 upload failed", e instanceof Error ? e.message : String(e))
     return NextResponse.json(
-      {
-        ok: false,
-        error: `R2 upload failed: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "Storage error - the draft was not saved. Try again." },
       { status: 502 },
     )
   }
@@ -250,10 +417,76 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     jsonUrl: put.url,
     jsonKey: put.key,
     jsonSha256: put.sha256,
-    proposerSignature: null,
     preimageHash: parsed.preimage_hash,
     preimageLen: parsed.preimage_len,
     remarkPayload,
+  }
+
+  if (existingRow) {
+    let updated
+    try {
+      updated = await updateProposalDraft({
+        id: existingRow.id,
+        // The version this request was checked against, above.
+        expectedSha256: existingRow.json_sha256,
+        title: draft.title,
+        summary: draft.summary,
+        bodyMarkdown: draft.bodyMarkdown,
+        track: draft.track,
+        beneficiary: draft.beneficiary,
+        amountPlanck: draft.amountPlanck,
+        jsonUrl: draft.jsonUrl,
+        jsonKey: draft.jsonKey,
+        jsonSha256: draft.jsonSha256,
+        preimageHash: draft.preimageHash,
+        preimageLen: draft.preimageLen,
+        remarkPayload: draft.remarkPayload,
+      })
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: "Could not save the draft - try again." },
+        { status: 503 },
+      )
+    }
+    if (!updated) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "This draft was changed elsewhere. Reload the page and resume it from your drafts.",
+        },
+        { status: 409 },
+      )
+    }
+    // Files this version no longer lists stay in storage: an earlier
+    // version that may already be pinned on chain can still reference them.
+    // Deleting the draft removes its whole folder.
+    try {
+      await replaceAttachments(
+        updated.id,
+        attachments.map(({ key: bucketKey, att }) => ({
+          bucketKey,
+          url: att.url,
+          filename: att.name,
+          contentType: att.content_type,
+          sizeBytes: att.size_bytes,
+          sha256: att.sha256,
+          uploadedBy: proposerUserId,
+        })),
+      )
+    } catch {
+      // Best-effort - the JSON already carries the authoritative list.
+    }
+    return NextResponse.json({
+      ok: true,
+      id: updated.id,
+      updated: true,
+      json_url: put.url,
+      json_sha256: put.sha256,
+      json_size_bytes: put.sizeBytes,
+      remark_payload: remarkPayload,
+      proposal: proposalJson,
+    })
   }
 
   let row
@@ -273,6 +506,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             "Database tables are missing. Apply scripts/004_proposals_comments_profiles.sql to the Neon project (run `pnpm db:migrate` locally, or paste the SQL into the Neon SQL editor).",
         },
         { status: 503 },
+      )
+    }
+    if (/duplicate key/i.test(raw)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "This draft is already saved. Reload the page and resume it from your drafts.",
+        },
+        { status: 409 },
       )
     }
     return NextResponse.json(

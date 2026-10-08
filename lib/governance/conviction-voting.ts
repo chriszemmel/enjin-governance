@@ -1,13 +1,16 @@
 /**
- * Helpers around Enjin's `voteManager` pallet, with a graceful fallback to
- * the stock Substrate `convictionVoting` pallet for any chain that exposes
- * the standard interface (e.g. Polkadot / Kusama, or a future Enjin chain
- * that swaps back).
+ * Helpers around Enjin Relay's vote pallet. Mainnet and canary (both spec
+ * 1070) run `pallet_multi_token_conviction_voting`, a multi-token fork of
+ * stock `pallet_conviction_voting` that is registered as `convictionVoting`
+ * (`api.tx.convictionVoting` / `api.query.convictionVoting`). Neither has a
+ * `voteManager` pallet: the voteManager branches below only serve a runtime
+ * that exposes one, and the arity probes keep stock Substrate (Polkadot /
+ * Kusama) working.
  *
- * Enjin extends the standard AccountVote with a `currency` argument so a
+ * The fork extends the standard calls with a `currency` argument so a
  * single voter can stake either liquid ENJ or staked-ENJ derivatives
  * (sENJ pool tokens) into a referendum. We pass `{ Enj: null }` for
- * regular voting; staked-ENJ flows would supply `{ SEnj: <poolId> }`.
+ * regular voting; staked-ENJ flows supply `sEnjCurrency(poolId)`.
  *
  * Vote builders return unsigned extrinsics; signing is the caller's job.
  */
@@ -16,6 +19,7 @@ import type { ApiPromise } from "@polkadot/api"
 import type { SubmittableExtrinsic } from "@polkadot/api/types"
 import type { ISubmittableResult } from "@polkadot/types/types"
 import {
+  CONVICTION_LOCK_PERIODS,
   CONVICTION_MULTIPLIER,
   type ClassLock,
   type Conviction,
@@ -25,8 +29,9 @@ import {
 type Tx = SubmittableExtrinsic<"promise", ISubmittableResult>
 
 /**
- * Currency enum on Enjin's voteManager / multi-token-aware
- * convictionVoting. Mirrors the on-chain shape exactly:
+ * Currency enum on Enjin's multi-token convictionVoting fork
+ * (`pallet_multi_token_conviction_voting::types::VoteCurrency`). Mirrors
+ * the on-chain shape exactly:
  *
  *   enum VoteCurrency {
  *     Enj,
@@ -47,18 +52,45 @@ export function sEnjCurrency(poolId: number): VoteCurrency {
   return { SEnj: { tokenId: poolId } }
 }
 
+/**
+ * `convictionVoting.voteLockingPeriod` on Enjin Relay: 100,800 blocks (7
+ * days at 6s) on both mainnet and canary at spec 1070. Only stands in until
+ * the api is connected - `getVoteLockingPeriod` reads the live value.
+ */
+export const DEFAULT_VOTE_LOCKING_PERIOD = 100_800
+
+/**
+ * The runtime's conviction-lock unit, in blocks. A winning-side Standard
+ * vote stays locked until its referendum's end block plus
+ * `CONVICTION_LOCK_PERIODS[conviction] × voteLockingPeriod` - the same on
+ * every track, whatever the track's decision period. Falls back to
+ * DEFAULT_VOTE_LOCKING_PERIOD while the api isn't ready or when the
+ * runtime doesn't expose the constant.
+ */
+export function getVoteLockingPeriod(api: ApiPromise | null | undefined): number {
+  const raw =
+    api?.consts.convictionVoting?.voteLockingPeriod ??
+    api?.consts.voteManager?.voteLockingPeriod
+  const blocks = raw == null ? Number.NaN : toNumber(raw)
+  return Number.isFinite(blocks) && blocks > 0 ? blocks : DEFAULT_VOTE_LOCKING_PERIOD
+}
+
+/** Blocks a Standard vote at `conviction` stays locked after its referendum ends. */
+export function convictionLockBlocks(conviction: Conviction, voteLockingPeriod: number): number {
+  return CONVICTION_LOCK_PERIODS[conviction] * voteLockingPeriod
+}
+
 function hasVoteManager(api: ApiPromise): boolean {
   return Boolean(api.tx.voteManager)
 }
 
 /**
  * Detect whether the runtime's `convictionVoting.vote` extrinsic expects
- * an extra `currency` arg. The Enjin canary runtime ships a
- * multi-token-aware fork of convictionVoting that takes 3 args; standard
- * Substrate / Polkadot only takes 2.
+ * an extra `currency` arg. Enjin's multi-token fork (mainnet and canary)
+ * takes 3 args (poll_index, vote, currency); stock Substrate / Polkadot
+ * takes 2.
  *
- * Returns null on chains without convictionVoting at all (Enjin mainnet
- * uses voteManager).
+ * Returns null on chains without convictionVoting at all.
  */
 function convictionVotingArgCount(api: ApiPromise): number | null {
   const vote = api.tx.convictionVoting?.vote
@@ -141,9 +173,9 @@ export function buildSplitAbstainVote(
 
 /**
  * Pick the right pallet + arity for the current runtime and dispatch the
- * vote call. Enjin mainnet exposes `voteManager.vote` (3 args including
- * currency); canary exposes a multi-token-aware `convictionVoting.vote`
- * that also takes 3 args; stock Substrate / Polkadot only takes 2.
+ * vote call. Enjin mainnet and canary expose the multi-token
+ * `convictionVoting.vote` (3 args including currency); stock Substrate /
+ * Polkadot only takes 2. `voteManager.vote` wins on a runtime that has it.
  */
 function buildVoteExtrinsic(
   api: ApiPromise,
@@ -171,9 +203,10 @@ export function buildRemoveVote(
   pollIndex: number,
   currency?: VoteCurrency,
 ): Tx {
-  // Both Enjin pallets ship a multi-token-aware removeVote that takes
-  // (class, index, currency). Stock Substrate convictionVoting only
-  // takes (class, index). Detect from metadata so we don't hard-code.
+  // Enjin's multi-token convictionVoting (and a voteManager, where a
+  // runtime has one) takes (class, index, currency). Stock Substrate
+  // convictionVoting only takes (class, index). Detect from metadata so we
+  // don't hard-code.
   if (hasVoteManager(api)) {
     const argCount = extrinsicArgCount(api, "voteManager", "removeVote")
     if (argCount === 3) {
@@ -199,7 +232,7 @@ export function buildRemoveVote(
 /**
  * Build the unlock extrinsic - frees expired locks for `target`.
  *
- * The deployed Enjin runtime's multi-token `convictionVoting.unlock` takes
+ * Enjin's multi-token `convictionVoting.unlock` (mainnet and canary) takes
  * (class, target, currency) - 3 args - because locks are held per currency;
  * stock Substrate takes (class, target). Probe metadata for the real arity
  * so we pass `currency` only when the runtime expects it (omitting it throws
@@ -280,7 +313,7 @@ export function buildDelegate(api: ApiPromise, params: DelegateParams): Tx {
 }
 
 /**
- * Build the undelegate extrinsic. The deployed Enjin runtime's multi-token
+ * Build the undelegate extrinsic. Enjin's multi-token
  * `convictionVoting.undelegate` takes (class, currency) - 2 args - since a
  * delegation is per currency; stock Substrate takes (class). Probe arity so
  * we pass `currency` only when expected (defaulting to ENJ).
@@ -305,11 +338,10 @@ export function buildUndelegate(
 }
 
 function voteQuery(api: ApiPromise) {
-  // Vote *state* lives on convictionVoting on Enjin. voteManager owns
-  // the per-vote currency override (Enj vs sENJ) and is the extrinsic
-  // surface, but the actual VotingFor / ClassLocksFor maps are the
-  // standard convictionVoting ones. Other chains might expose the
-  // state directly on voteManager - accept either.
+  // Vote *state* (VotingFor / ClassLocksFor) lives on convictionVoting -
+  // on Enjin the multi-token fork, whose maps carry the currency as an
+  // extra key. A runtime with a voteManager pallet might expose the state
+  // there instead - accept either.
   if (api.query.convictionVoting?.votingFor) return api.query.convictionVoting
   return api.query.voteManager
 }
@@ -514,7 +546,10 @@ export type PollVoter = {
   voter: string
   trackId: number
   vote: VoteRecord
-  /** voteManager-specific: Enj | { SEnj: poolId }. Null on chains without voteManager. */
+  /**
+   * Enj | { SEnj: { tokenId } }, from the multi-token `votingFor` key (or
+   * voteManager.voteCurrencies). Null on stock single-currency Substrate.
+   */
   currencyRaw: unknown
 }
 

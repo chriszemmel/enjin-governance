@@ -82,6 +82,13 @@ export async function listCommentsForProposalWithAuthors(
   `) as CommentWithAuthor[]
 }
 
+export async function getCommentById(id: string): Promise<CommentRow | null> {
+  const rows = (await getSql()`
+    SELECT * FROM comments WHERE id = ${id} LIMIT 1
+  `) as CommentRow[]
+  return rows[0] ?? null
+}
+
 export async function findCommentOwnership(
   commentId: string,
 ): Promise<{ userId: string } | null> {
@@ -93,16 +100,31 @@ export async function findCommentOwnership(
   return { userId: rows[0]!.user_id }
 }
 
+/** How long after posting the author may still edit a comment. */
+export const COMMENT_EDIT_WINDOW_MS = 15 * 60_000
+
+/** The moment a comment stops being editable. */
+export function commentEditableUntil(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + COMMENT_EDIT_WINDOW_MS)
+}
+
+/**
+ * Replace the author's own text. The route checks everything first; the
+ * WHERE repeats the rules that could change in between (a delete, the
+ * window running out), so null means nothing was written.
+ */
 export async function editComment(
   id: string,
   userId: string,
   body: string,
 ): Promise<CommentRow | null> {
   const sql = getSql()
+  const postedAfter = new Date(Date.now() - COMMENT_EDIT_WINDOW_MS)
   const rows = (await sql`
     UPDATE comments
        SET body_markdown = ${body}, edited_at = NOW()
      WHERE id = ${id} AND user_id = ${userId} AND is_deleted = FALSE
+       AND created_at > ${postedAfter}
      RETURNING *
   `) as CommentRow[]
   return rows[0] ?? null

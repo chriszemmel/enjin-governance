@@ -10,6 +10,7 @@ import {
   FileText,
   Landmark,
   Menu,
+  ShieldCheck,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -27,6 +28,13 @@ import { useDisplayAddress, useWallet } from "@/lib/wallet/use-wallet"
 import { getConnectorMeta } from "@/lib/wallet/connector-registry"
 import { usePublicProfile } from "@/lib/query/hooks/use-profile"
 import { PolkadotIdenticon } from "@/components/profile/identicon"
+import { useMyModerationRole } from "@/lib/query/hooks/use-moderation"
+import {
+  browserHintStorage,
+  hasModeratorHint,
+  rememberModeratorRole,
+} from "@/lib/moderation/role-hint"
+import { useMe } from "@/lib/query/hooks/use-session"
 
 // Two top-level destinations. "Create" lives as a per-page CTA on
 // Proposals and Treasury so it doesn't crowd the menu.
@@ -47,6 +55,28 @@ export function Nav() {
   const { status, connectorId, session, activeAddress } = useWallet()
   const { short: addressShort, full: addressFull } = useDisplayAddress()
   const isConnected = status === "connected" && !!addressShort
+  // Moderators and admins get a link to the review queue: by the signed-in
+  // role, or, before signing in, because this wallet signed in with a role
+  // on this device before (lib/moderation/role-hint.ts).
+  const me = useMe()
+  const signedIn = !!me.data
+  const roleQuery = useMyModerationRole(isConnected && signedIn)
+  const hinted = useMemo(() => {
+    const storage = browserHintStorage()
+    return !signedIn && isConnected && !!activeAddress && !!storage
+      ? hasModeratorHint(storage, activeAddress)
+      : false
+  }, [signedIn, isConnected, activeAddress])
+  const signedInAddress = me.data?.address
+  useEffect(() => {
+    const storage = browserHintStorage()
+    if (!storage || !signedInAddress || !roleQuery.isSuccess) return
+    rememberModeratorRole(storage, signedInAddress, !!roleQuery.data)
+  }, [signedInAddress, roleQuery.isSuccess, roleQuery.data])
+  const showModeration = signedIn ? !!roleQuery.data : hinted
+  const links = showModeration
+    ? [...navLinks, { label: "Moderation", href: "/moderation", icon: ShieldCheck }]
+    : navLinks
 
   const connectorMeta = useMemo(
     () => (connectorId ? getConnectorMeta(connectorId) : null),
@@ -138,7 +168,7 @@ export function Nav() {
         {mobileOpen && (
           <div className="md:hidden bg-background border-b border-border px-4 pb-4">
             <nav className="flex flex-col gap-1 pt-2">
-              {navLinks.map((link) => {
+              {links.map((link) => {
                 const active = pathname === link.href
                 return (
                   <Link
@@ -251,7 +281,7 @@ export function Nav() {
             className="flex flex-col gap-1 px-3 pb-3 border-b border-border"
             aria-label="Main navigation"
           >
-            {navLinks.map((link) => {
+            {links.map((link) => {
               const active =
                 pathname === link.href || pathname.startsWith(link.href + "/")
               return (

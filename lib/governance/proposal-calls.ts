@@ -1,12 +1,12 @@
 /**
  * Curated proposal-call composer.
  *
- * A referendum enacts a single Call. Today the create wizard only ever builds
- * a treasury `spend_local`; this module builds the inner Call for the full set
- * of proposal types a DAO needs - treasury spends, referendum admin
- * (cancel/kill), call whitelisting, runtime upgrades (authorized by code
- * hash), on-chain remarks - plus a raw escape hatch for pasting any
- * SCALE-encoded call.
+ * A referendum enacts a single Call. The treasury wizard builds a
+ * `spend_local`; this module, used by the advanced composer, builds the inner
+ * Call for the full set of proposal types a DAO needs - treasury spends,
+ * referendum admin (cancel/kill), call whitelisting, runtime upgrades
+ * (authorized by code hash), on-chain remarks - plus a raw escape hatch for
+ * pasting any SCALE-encoded call.
  *
  * Each builder returns a `Call` (decoded `.method`), NOT a signed extrinsic.
  * The caller wraps it via preimage/inline + `referenda.submit` under the
@@ -17,7 +17,7 @@
 
 import type { ApiPromise } from "@polkadot/api"
 import type { Call } from "@polkadot/types/interfaces"
-import { stringToHex } from "@polkadot/util"
+import { stringToHex, u8aToHex } from "@polkadot/util"
 import { buildSpendLocalCall } from "./treasury"
 import {
   buildCancelReferendumCall,
@@ -37,27 +37,41 @@ export type ProposalCallSpec =
 export type ProposalKind = ProposalCallSpec["kind"]
 
 /**
- * Submission origins offered by the advanced composer, every one verified
- * encodable against enjin v1070's `EnjinRuntimeOriginCaller`. Root is the
- * system origin; the rest are `pallet_custom_origins` tracks. (Treasury spends
- * derive their tier from the amount and don't use this list.)
+ * Submission origins offered by the advanced composer, each with the name of
+ * the referenda track it submits on. Root is the system origin; the rest are
+ * the `pallet_custom_origins` variants that have a track - every one in the
+ * `Origins` enum of Enjin specs 1070 and 1080 except `Emergency` and the
+ * fellowship ranks, which have no referenda track (submitting with them
+ * fails with `NoTrack`). Ordered by track id: Root and the referendum-admin
+ * tracks (0-3), the admin tracks (100-112), then the treasury tracks
+ * (200-204). Treasury spends derive their tier from the amount and don't
+ * use this list.
  */
-export const SUBMIT_ORIGINS: { label: string; origin: unknown }[] = [
-  { label: "Root", origin: { System: "Root" } },
-  { label: "WhitelistedCaller", origin: { Origins: "WhitelistedCaller" } },
-  { label: "ReferendumCanceller", origin: { Origins: "ReferendumCanceller" } },
-  { label: "ReferendumKiller", origin: { Origins: "ReferendumKiller" } },
-  { label: "GeneralAdmin", origin: { Origins: "GeneralAdmin" } },
-  { label: "SmallTipper", origin: { Origins: "SmallTipper" } },
-  { label: "BigTipper", origin: { Origins: "BigTipper" } },
-  { label: "SmallSpender", origin: { Origins: "SmallSpender" } },
-  { label: "MediumSpender", origin: { Origins: "MediumSpender" } },
-  { label: "BigSpender", origin: { Origins: "BigSpender" } },
+export const SUBMIT_ORIGINS: { label: string; origin: unknown; track: string }[] = [
+  { label: "Root", origin: { System: "Root" }, track: "root" },
+  { label: "WhitelistedCaller", origin: { Origins: "WhitelistedCaller" }, track: "whitelisted_caller" },
+  { label: "ReferendumCanceller", origin: { Origins: "ReferendumCanceller" }, track: "referendum_canceller" },
+  { label: "ReferendumKiller", origin: { Origins: "ReferendumKiller" }, track: "referendum_killer" },
+  { label: "StakingAdmin", origin: { Origins: "StakingAdmin" }, track: "staking_admin" },
+  { label: "TreasuryAdmin", origin: { Origins: "TreasuryAdmin" }, track: "treasury_admin" },
+  { label: "LeaseAdmin", origin: { Origins: "LeaseAdmin" }, track: "lease_admin" },
+  { label: "FellowshipAdmin", origin: { Origins: "FellowshipAdmin" }, track: "fellowship_admin" },
+  { label: "GeneralAdmin", origin: { Origins: "GeneralAdmin" }, track: "general_admin" },
+  { label: "AuctionAdmin", origin: { Origins: "AuctionAdmin" }, track: "auction_admin" },
+  { label: "MultiTokensAdmin", origin: { Origins: "MultiTokensAdmin" }, track: "multi_tokens_admin" },
+  { label: "FuelTanksAdmin", origin: { Origins: "FuelTanksAdmin" }, track: "fuel_tanks_admin" },
+  { label: "WhitelistAdmin", origin: { Origins: "WhitelistAdmin" }, track: "whitelist_admin" },
+  { label: "ParachainsAdmin", origin: { Origins: "ParachainsAdmin" }, track: "parachains_admin" },
+  { label: "SmallTipper", origin: { Origins: "SmallTipper" }, track: "small_tipper" },
+  { label: "BigTipper", origin: { Origins: "BigTipper" }, track: "big_tipper" },
+  { label: "SmallSpender", origin: { Origins: "SmallSpender" }, track: "small_spender" },
+  { label: "MediumSpender", origin: { Origins: "MediumSpender" }, track: "medium_spender" },
+  { label: "BigSpender", origin: { Origins: "BigSpender" }, track: "big_spender" },
 ]
 
 /**
  * Build the inner Call for a proposal spec. Throws (via the codec) if a
- * pasted raw call or runtime blob can't be decoded - surfaced to the user
+ * pasted raw call or code hash can't be encoded - surfaced to the user
  * before any signing prompt.
  */
 export function buildProposalCall(api: ApiPromise, spec: ProposalCallSpec): Call {
@@ -77,8 +91,17 @@ export function buildProposalCall(api: ApiPromise, spec: ProposalCallSpec): Call
       return api.tx.system.authorizeUpgrade(spec.codeHash).method as Call
     case "remark":
       return api.tx.system.remark(stringToHex(spec.text)).method as Call
-    case "rawCall":
-      return api.createType("Call", spec.callHex) as unknown as Call
+    case "rawCall": {
+      // Decoding stops at the end of the call, so trailing bytes would be
+      // dropped silently: the call must re-encode to exactly what was pasted.
+      const call = api.createType("Call", spec.callHex) as unknown as Call
+      if (u8aToHex(call.toU8a()) !== spec.callHex.toLowerCase()) {
+        throw new Error(
+          "These bytes don't decode to exactly one call - check for extra or missing bytes.",
+        )
+      }
+      return call
+    }
   }
 }
 

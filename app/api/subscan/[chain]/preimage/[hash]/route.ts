@@ -10,7 +10,7 @@ export async function GET(
   context: { params: Promise<{ chain: string; hash: string }> },
 ) {
   const { chain, hash } = await context.params
-  if (!(chain in CHAINS)) {
+  if (!Object.hasOwn(CHAINS, chain)) {
     return NextResponse.json({ error: "Unknown chain" }, { status: 400 })
   }
   if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) {

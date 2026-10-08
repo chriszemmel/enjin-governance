@@ -13,7 +13,8 @@ import type {
   Track,
 } from "@/lib/governance/types"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
-import { useTotalIssuance } from "@/lib/query/hooks/use-total-issuance"
+import { type SupportBasis, supportFraction } from "@/lib/governance/support"
+import { useSupportIssuance } from "@/lib/query/hooks/use-support-issuance"
 
 interface DecisionSlideProps {
   referendum: Referendum
@@ -29,7 +30,9 @@ type Tone = "pass" | "short" | "confirm"
  * now, and how do the decaying requirements compare to where it stands?
  *
  *   - Approval = ayes / (ayes + nays), conviction-weighted (from the tally).
- *   - Support  = tally.support / totalIssuance.
+ *   - Support  = tally.support / the runtime's turnout denominator: active
+ *     issuance (total - inactive) before spec 1080, total issuance from it
+ *     (lib/governance/support.ts).
  *
  * Both are checked against the track's decaying requirement curves at
  * today's point in the decision period. v1 renders the actual trajectory
@@ -43,9 +46,9 @@ export function DecisionSlide({
   chain,
 }: DecisionSlideProps) {
   const currentBlockQuery = useCurrentBlock(chain)
-  const issuanceQuery = useTotalIssuance(chain)
+  const issuanceQuery = useSupportIssuance(chain)
   const currentBlock = currentBlockQuery.data ?? null
-  const totalIssuance = issuanceQuery.data ?? null
+  const issuance = issuanceQuery.data ?? null
 
   const status =
     referendum.status.type === "Ongoing" ? referendum.status : null
@@ -67,10 +70,7 @@ export function DecisionSlide({
 
     const totalVotes = tally.ayes + tally.nays
     const approvalCurrent = totalVotes > 0n ? ratio(tally.ayes, totalVotes) : 0
-    const supportCurrent =
-      totalIssuance && totalIssuance > 0n
-        ? ratio(tally.support, totalIssuance)
-        : null
+    const supportCurrent = issuance ? supportFraction(tally.support, issuance.denominator) : null
 
     const requiredApproval = evaluateCurve(track.minApproval, x)
     const requiredSupport = evaluateCurve(track.minSupport, x)
@@ -100,7 +100,7 @@ export function DecisionSlide({
       passingSupport,
       verdict,
     }
-  }, [status, track, tally, currentBlock, totalIssuance])
+  }, [status, track, tally, currentBlock, issuance])
 
   if (!status) {
     return (
@@ -161,6 +161,7 @@ export function DecisionSlide({
         passing={passingSupport}
         totalDays={totalDays}
         scale="sqrt"
+        basis={issuanceQuery.data?.basis ?? null}
       />
     </div>
   )
@@ -229,6 +230,7 @@ function DecisionCurveChart({
   passing,
   totalDays,
   scale,
+  basis = null,
 }: {
   title: string
   curve: GovernanceCurve
@@ -238,6 +240,8 @@ function DecisionCurveChart({
   passing: boolean
   totalDays: number
   scale: "linear" | "sqrt"
+  /** For the support chart: which issuance the percentages are of. */
+  basis?: SupportBasis | null
 }) {
   const [hoverX, setHoverX] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -304,7 +308,7 @@ function DecisionCurveChart({
 
   const hoverRequired = hoverX == null ? null : evaluateCurve(curve, hoverX)
   const hoverDay = hoverX == null ? null : Math.round(hoverX * totalDays)
-  const caption = buildCaption({ passing, required, current, crossDay, scale })
+  const caption = buildCaption({ passing, required, current, crossDay, basis })
 
   return (
     <div className="rounded-xl border border-border bg-surface-1/50 p-4">
@@ -495,15 +499,15 @@ function buildCaption({
   required,
   current,
   crossDay,
-  scale,
+  basis,
 }: {
   passing: boolean
   required: number
   current: number | null
   crossDay: number | null
-  scale: "linear" | "sqrt"
+  basis: SupportBasis | null
 }): string {
-  const ofIssuance = scale === "sqrt" ? " of total issuance" : ""
+  const ofIssuance = basis ? ` of ${basis} issuance` : ""
   if (current == null) return `Requirement today: ${fmtPct(required)}${ofIssuance}.`
   if (passing) {
     return `On the curve. Needs ${fmtPct(required)}${ofIssuance} today; currently ${fmtPct(current)}.`

@@ -7,14 +7,16 @@
  * the chain via `referenda.metadataOf` or, for older referenda, by
  * decoding `system.remark` call args for the EGOV1 prefix).
  *
- * Cached on the CDN for 60s; ongoing referenda may have edits to the
- * metadata row (status flips, redirect file write).
+ * Not cached (`private, no-cache`): edits, withdrawals and moderation
+ * should show on the next refetch. The text of a proposal moderators hid
+ * or removed is left out (lib/moderation/proposal-text.ts).
  */
 
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalByIndex } from "@/lib/db/proposals"
+import { proposalTextStates, visibleText } from "@/lib/moderation/proposal-text"
 
 export const runtime = "nodejs"
 
@@ -65,14 +67,20 @@ export async function GET(
     )
   }
 
+  const states = await proposalTextStates([row.id])
+  if (!states) {
+    return NextResponse.json(
+      { ok: false, error: "Proposals are unavailable right now - try again." },
+      { status: 503 },
+    )
+  }
+
   const response = NextResponse.json({
     ok: true,
     id: row.id,
     network: row.network,
     referendum_index: row.referendum_index,
-    title: row.title,
-    summary: row.summary,
-    body_markdown: row.body_markdown,
+    ...visibleText(row, states.get(row.id)),
     track: row.track,
     beneficiary: row.beneficiary,
     amount_planck: row.amount_planck,
