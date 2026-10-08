@@ -1,7 +1,6 @@
 "use client"
 
 import {
-  AlertCircle,
   Check,
   Cloud,
   Database,
@@ -19,7 +18,6 @@ import {
   ArtefactRow,
   CopyableMono,
   Row,
-  formatPlanckShort,
   type DraftResponse,
 } from "./create-ui"
 
@@ -42,11 +40,10 @@ type StageProps = {
   preimageLen: number
   preimageAlreadyNoted: boolean
   metadataHash: string | null
-  decisionDeposit: bigint | null
   /** Human label for the chosen enactment, e.g. "After 100 blocks". */
   enactmentText: string
-  chainTicker: string
-  chainDecimals: number
+  /** What the batch reserves and the decision deposit (FilingCosts). */
+  costs: React.ReactNode
 }
 
 export function Stage(p: StageProps) {
@@ -203,25 +200,7 @@ export function Stage(p: StageProps) {
         />
       </div>
 
-      <div className="rounded-xl bg-amber-500/5 border border-amber-500/30 p-4 text-xs text-muted-foreground leading-relaxed flex gap-3">
-        <AlertCircle className="w-4 h-4 text-amber-300 flex-shrink-0 mt-0.5" />
-        <div className="space-y-2">
-          <p>
-            A submission deposit is reserved on chain at submit time, refunded
-            when the referendum is decided. The decision deposit for the{" "}
-            <span className="text-primary">{p.track}</span> track
-            {p.decisionDeposit != null && (
-              <>
-                {" "}- currently{" "}
-                <span className="font-mono text-foreground">
-                  {formatPlanckShort(p.decisionDeposit, p.chainDecimals, p.chainTicker)}
-                </span>
-              </>
-            )}{" "}
-            must be placed before deciding starts. Anyone can place it.
-          </p>
-        </div>
-      </div>
+      {p.costs}
 
       <div className="rounded-2xl bg-card border border-border p-5 space-y-3">
         <h2 className="text-sm font-semibold text-foreground">Summary</h2>

@@ -518,7 +518,12 @@ fails at enactment, after the full vote, so the composer warns about it.
 - **Decision deposit** - the track's `decisionDeposit`, reserved from
   whoever places it.
 - **Preimage deposits** - one per noted preimage, so a proposal holds up
-  to two: the call and the envelope. They can be reclaimed with
+  to two: the call and the envelope. The runtime prices them per byte
+  (`base + perByte × length`); Enjin exposes no constant for it, so the
+  app reads it with a dry run of `preimage.notePreimage` (DryRunApi, from
+  spec 1080) and otherwise uses its table per spec: 1.0016 ENJ + 0.000025
+  ENJ per byte on 1070, 1 ENJ + 0.001 ENJ per byte on 1080
+  (`lib/governance/filing-deposits.ts`). They can be reclaimed with
   `preimage.unnotePreimage` while the preimage is `Unrequested`.
   `setMetadata` doesn't request the envelope, so it stays `Unrequested`.
   Unnoting it removes the bytes that `MetadataOf` points to: the app still
@@ -530,9 +535,24 @@ fails at enactment, after the full vote, so the composer warns about it.
   is also `Unrequested` on Enjin's runtime; the panel holds it back as
   "In use by a referendum" (`lib/governance/deposits.ts`).
 
-The treasury wizard only lets a proposer continue when their free balance
-covers the submission deposit, the track's decision deposit and 0.01 of a
-token for fees.
+The treasury wizard and the advanced composer show what a filing batch
+reserves and only let a proposer continue when their free balance covers
+it (`filingRequirement`): the submission deposit, the preimage deposits for
+the call (unless inline or already noted) and for the EGOV1 envelope (its
+length estimated from the app URL until the draft is staged), 0.01 of a
+token for the fee, and `balances.existentialDeposit`, which must stay free
+while deposits are reserved. The track's decision deposit is shown, not
+required: deciding needs it, but anyone can place it later.
+
+| Spec | Submission deposit | Preimage deposit |
+|---|---|---|
+| 1070 | 0.025 ENJ | 1.0016 ENJ + 0.000025 ENJ per byte |
+| 1080 | 1,000 ENJ | 1 ENJ + 0.001 ENJ per byte |
+
+Spec 1080 also raises the decision deposits (Root 2.5M ENJ, BigSpender
+250k, MediumSpender 37.5k, SmallSpender 12.5k, BigTipper 5k, SmallTipper
+2.5k ENJ). The app reads the submission and decision deposits from the
+runtime's constants, so this table is for reference only.
 
 Refunds follow pallet_referenda (`canRefundDeposit` in
 `lib/governance/deposits.ts`); neither deposit comes back by itself, and

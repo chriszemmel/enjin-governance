@@ -87,6 +87,15 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   page and the Reserved deposits panel now say so instead of showing a
   Refund button that failed with `BadStatus`. A killed referendum's
   deposits show as slashed.
+- **Filing shows what it reserves:** both composers list the submission
+  deposit, the preimage deposits for the call and the EGOV1 record (priced
+  per byte by the runtime, read with a dry run where the runtime offers
+  one), fees and the minimum balance, and only let a proposer continue
+  when their free balance covers them. The track's decision deposit is
+  shown but no longer required to file: anyone can place it later, and on
+  spec 1080 it reaches 250,000 ENJ for BigSpender. The review step no
+  longer says the submission deposit is refunded when the referendum is
+  decided: it comes back only if the referendum is approved or cancelled.
 
 ## 1.9
 
