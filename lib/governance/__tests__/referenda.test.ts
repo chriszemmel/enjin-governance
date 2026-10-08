@@ -9,6 +9,7 @@ import {
   buildSubmit,
   buildWhitelistCall,
   extractReferendumIndex,
+  getDecidedTrack,
   getReferendumMetadata,
 } from "@/lib/governance/referenda"
 import type { EventRecord } from "@polkadot/types/interfaces"
@@ -250,5 +251,41 @@ describe("extractReferendumIndex", () => {
 
   it("returns null when no Submitted event is present", () => {
     expect(extractReferendumIndex([evt("system", "ExtrinsicSuccess")])).toBeNull()
+  })
+})
+
+/**
+ * getDecidedTrack reads only the leading bytes of the raw ReferendumInfo at
+ * the block before the decision: variant 0 (Ongoing), then the track as a
+ * little-endian u16. Mainnet #12 was on MediumSpender (track 203).
+ */
+describe("getDecidedTrack", () => {
+  const apiWith = (value: Uint8Array | null) => {
+    const calls: unknown[] = []
+    const api = {
+      rpc: {
+        chain: { getBlockHash: async (n: number) => (calls.push(n), "0xhash") },
+        state: {
+          getStorage: async () =>
+            value == null
+              ? { isSome: false, toU8a: () => new Uint8Array() }
+              : { isSome: true, unwrap: () => ({ toU8a: () => value }), toU8a: () => value },
+        },
+      },
+      query: { referenda: { referendumInfoFor: { key: () => "0xkey" } } },
+    } as unknown as ApiPromise
+    return { api, calls }
+  }
+
+  it("reads the track from an Ongoing record at the block before the decision", async () => {
+    const { api, calls } = apiWith(new Uint8Array([0, 0xcb, 0x00, 9, 9, 9]))
+    await expect(getDecidedTrack(api, 12, 17_533_282)).resolves.toBe(203)
+    expect(calls).toEqual([17_533_281])
+  })
+
+  it("is null for a missing or non-Ongoing record, or an impossible block", async () => {
+    await expect(getDecidedTrack(apiWith(null).api, 1, 100)).resolves.toBeNull()
+    await expect(getDecidedTrack(apiWith(new Uint8Array([1, 2, 3])).api, 1, 100)).resolves.toBeNull()
+    await expect(getDecidedTrack(apiWith(new Uint8Array([0, 1, 0])).api, 1, 1)).resolves.toBeNull()
   })
 })

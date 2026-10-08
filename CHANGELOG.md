@@ -158,8 +158,9 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
 - **Treasury counts include decided spends:** a decided referendum no
   longer carries its track on chain, so the treasury page counted 0
   approved and 0 rejected. Tracks of decided referenda are read from the
-  archive (and shown on their cards); without an archive the counts say
-  "-" instead of leaving them out.
+  archive one at a time from their raw storage (no old runtime metadata
+  needed), kept in the browser, and shown on their cards; without an
+  archive the counts say "-" instead of leaving them out.
 - **Runtime upgrades in an open tab:** tracks, spend tiers, the support
   denominator and treasury constants are keyed on the runtime's spec
   version and refresh when it changes, instead of keeping the old values
