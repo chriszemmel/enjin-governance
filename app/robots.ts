@@ -28,6 +28,7 @@ const ALLOW = [
   "/moderation-log",
   // Link previews of any page, including the ones above.
   "/*/opengraph-image",
+  "/og/referendum/",
   // Public reads the pages make while they render. Crawlers that run
   // JavaScript need them to see what a visitor sees (titles, text, votes,
   // names). The responses themselves carry noindex. Everything else under

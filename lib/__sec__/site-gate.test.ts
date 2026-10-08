@@ -262,6 +262,7 @@ describe("proxy() password gate", () => {
       "/proposals/5/opengraph-image",
       "/proposals/5/opengraph-image-a1b2c3",
       "/twitter-image",
+      "/og/referendum/enjin-relay/5",
     ]) {
       expect(passes(await proxy(req(path))), path).toBe(true)
     }

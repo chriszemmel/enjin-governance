@@ -2,6 +2,7 @@
  * Page metadata builders. Pages only set a title, a description and their
  * canonical path; Open Graph and Twitter titles, descriptions and images
  * follow from those and the route's opengraph-image (see app/layout.tsx).
+ * A referendum's page names its own card (/og/referendum/[network]/[index]).
  */
 
 import type { Metadata } from "next"
@@ -54,19 +55,33 @@ export function proposalDescription(p: ProposalSeo): string {
   return clip(lead + text, DESCRIPTION_MAX)
 }
 
+/** The share image of one referendum, with its network in the path. */
+function proposalImagePath(p: Pick<ProposalSeo, "index" | "chain">): string {
+  return `/og/referendum/${p.chain.id}/${p.index}`
+}
+
 export function proposalMetadata(p: ProposalSeo): Metadata {
+  const image = {
+    url: proposalImagePath(p),
+    width: 1200,
+    height: 630,
+    alt: `${proposalTitle(p)} · ${APP_NAME}`,
+  }
   return {
     title: { default: proposalTitle(p), template: TITLE_TEMPLATE },
     description: proposalDescription(p),
     alternates: { canonical: p.path },
     // Setting openGraph replaces the site-wide one, so the shared fields
-    // come along. Title, description and the image (this route's
-    // opengraph-image) are still filled in by Next.
+    // come along; Next still fills in the title and description. The image
+    // is the referendum's own card, on its network (a route's
+    // opengraph-image can't see `?network=`).
     openGraph: {
       ...OPEN_GRAPH_BASE,
       type: "article",
+      images: [image],
       ...(p.editedAt ? { modifiedTime: toIso(p.editedAt) } : {}),
     },
+    twitter: { card: "summary_large_image", images: [image] },
     // Another network's pages can be shared but stay out of the index: the
     // sitemap and canonical URLs cover the default network, and the same
     // number there is a different referendum.

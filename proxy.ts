@@ -146,7 +146,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     pathname.endsWith("/opengraph-image") ||
     pathname.endsWith("/twitter-image") ||
     /\/opengraph-image-[a-z0-9]+/.test(pathname) ||
-    /\/twitter-image-[a-z0-9]+/.test(pathname)
+    /\/twitter-image-[a-z0-9]+/.test(pathname) ||
+    // A referendum's share image (app/og/referendum), same idea.
+    pathname.startsWith("/og/referendum/")
   ) {
     return pass(request, true)
   }

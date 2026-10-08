@@ -163,6 +163,14 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   the CDN, so a phone gets the counts in a couple of seconds without any
   archive read of its own. What the server can't supply the browser reads
   itself, with retries; only if that fails too do the counts say "-".
+- **A share image per referendum:** links to a referendum now unfurl with
+  its own card - number, track, title, and the amount it requests or what
+  it does in words ("Runtime upgrade", "Batch · 4 calls"). Only stable
+  facts, no status or tally, so each card is drawn once and cached for a
+  day. Short titles are set large, long ones step down to a floor and are
+  cut after four lines; the rest of the card never changes size. The image
+  lives at `/og/referendum/<network>/<index>`, so a Canary page shows the
+  Canary referendum.
 - **Runtime upgrades in an open tab:** tracks, spend tiers, the support
   denominator and treasury constants are keyed on the runtime's spec
   version and refresh when it changes, instead of keeping the old values

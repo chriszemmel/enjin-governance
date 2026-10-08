@@ -235,8 +235,11 @@ describe("proposal metadata", () => {
     expect(m.description).toBe("Six months of maintenance for the open-source governance tools.")
     expect(m.alternates).toEqual({ canonical: "/proposals/42" })
     expect(m.openGraph).toMatchObject({ type: "article", siteName: "Enjin Governance" })
-    // Next fills og:image from the route's opengraph-image only when none is set here.
-    expect(m.openGraph).not.toHaveProperty("images")
+    // The referendum's own card, with its network in the path.
+    expect(m.openGraph).toMatchObject({
+      images: [{ url: expect.stringMatching(/^\/og\/referendum\/[a-z-]+\/42$/), width: 1200, height: 630 }],
+    })
+    expect(m.twitter).toMatchObject({ card: "summary_large_image" })
     expect(m.robots).toBeUndefined()
   })
 
