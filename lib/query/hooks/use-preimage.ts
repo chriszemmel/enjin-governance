@@ -33,19 +33,41 @@ type DecodedPreimage = {
 }
 
 /**
- * Fetch + decode a preimage by (hash, len). Returns null if the preimage
- * has been unnoted from chain state.
+ * Fetch + decode a preimage by (hash, len). When it's no longer noted (the
+ * runtime drops a referendum's preimage once its call has run) and
+ * `atBlock` is given, it's read from the archive node at that block instead
+ * and decoded with that block's runtime: a decided referendum passes the
+ * block its history was read at, where the preimage was still requested.
+ * Comes back without bytes only when neither has it.
  */
-export function usePreimage(ref: PreimageRef | null | undefined, chain?: ChainConfig) {
+export function usePreimage(
+  ref: PreimageRef | null | undefined,
+  chain?: ChainConfig,
+  atBlock?: number | null,
+) {
   const active = useActiveChain()
   const target = chain ?? active
   const apiQuery = useApi(target)
+  const archiveApi = useArchiveApi(target)
   return useQuery<DecodedPreimage | null>({
-    queryKey: ["preimage", target.id, ref?.hash, ref?.len],
+    queryKey: ["preimage", target.id, ref?.hash, ref?.len, atBlock ?? null],
     queryFn: async () => {
       if (!apiQuery.data || !ref) return null
       const api = apiQuery.data
       const preimage = await getPreimage(api, ref)
+      if (!preimage?.bytes && atBlock != null && archiveApi.data) {
+        const archive = archiveApi.data
+        const past = await archive.at(await archive.rpc.chain.getBlockHash(atBlock))
+        const earlier = await getPreimage(past as unknown as typeof api, ref)
+        if (earlier?.bytes) {
+          return {
+            hash: ref.hash,
+            len: ref.len,
+            ...decodeCall(past.registry, earlier.bytes),
+            bytes: earlier.bytes,
+          }
+        }
+      }
       if (!preimage?.bytes) {
         return {
           hash: ref.hash,
@@ -64,7 +86,7 @@ export function usePreimage(ref: PreimageRef | null | undefined, chain?: ChainCo
         bytes: preimage.bytes,
       }
     },
-    enabled: apiQuery.isSuccess && !!ref,
+    enabled: apiQuery.isSuccess && !!ref && (atBlock == null || !archiveApi.isPending),
     staleTime: 5 * 60_000,
     gcTime: 60 * 60_000,
   })

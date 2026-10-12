@@ -142,7 +142,12 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   failed. While confirming, the estimate uses the requested enactment
   (`After` / `At`) and the track minimum. A treasury `spend_local` gets a
   payout step: next spend period, then paid, from `treasury.proposals`,
-  with the block and date it was paid at (read from the archive).
+  with the block and date it was paid at (read from the archive). Blocks
+  that have happened link to the explorer.
+- **Decided calls without Subscan:** once a call has run, the runtime drops
+  its preimage; the page now reads it from the archive node at the block
+  before the referendum was decided, so treasury summaries and payouts of
+  decided referenda work without a Subscan key.
 - **A calmer lifecycle card:** while anything is still to come it leads
   with the time left (to vote, to confirm, to enactment, to the payout)
   and lists Prepare, Decide, Confirm, Enact and the payout with one date

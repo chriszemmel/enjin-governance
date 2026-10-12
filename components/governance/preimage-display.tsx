@@ -13,13 +13,27 @@ import type { PreimageRef } from "@/lib/governance/types"
 type PreimageDisplayProps = {
   className?: string
 } & (
-  | { preimageRef: PreimageRef; inlineBytes?: never; inlineAt?: never }
+  | {
+      preimageRef: PreimageRef
+      /**
+       * For a decided referendum, the block its history was read at, where
+       * an unnoted preimage can still be read (see usePreimage).
+       */
+      preimageAt?: number | null
+      inlineBytes?: never
+      inlineAt?: never
+    }
   /**
    * A call that rides inline in its referendum - decoded, never fetched.
    * `inlineAt` is the block the bytes were read at, for a decided
    * referendum (see useInlineCall).
    */
-  | { inlineBytes: Uint8Array; inlineAt?: number | null; preimageRef?: never }
+  | {
+      inlineBytes: Uint8Array
+      inlineAt?: number | null
+      preimageRef?: never
+      preimageAt?: never
+    }
 )
 
 /**
@@ -32,12 +46,13 @@ type PreimageDisplayProps = {
  */
 export function PreimageDisplay({
   preimageRef,
+  preimageAt,
   inlineBytes,
   inlineAt,
   className,
 }: PreimageDisplayProps) {
   const chain = useActiveChain()
-  const lookupQuery = usePreimage(preimageRef)
+  const lookupQuery = usePreimage(preimageRef, undefined, preimageAt)
   const inlineQuery = useInlineCall(inlineBytes, inlineAt)
   const preimageQuery = inlineBytes ? inlineQuery : lookupQuery
   // Default to collapsed - the preimage block is rarely useful at a

@@ -157,11 +157,16 @@ data wins.
 | Data | Sources, in order |
 |---|---|
 | Tally, submitted block, track, proposer, call hash | Live state (`useReferendum`) → archive at `at - 1` (`useReferendumHistory`) → Subscan (`useSubscanReferendum`) |
-| Decoded call | `preimage.preimageFor` on the primary (`usePreimage`) → Subscan referendum `pre_image` → Subscan preimage endpoint (`useSubscanPreimage`) |
+| Decoded call | `preimage.preimageFor` on the primary (`usePreimage`) → the same on the archive at `at - 1`, decoded with that block's runtime → Subscan referendum `pre_image` → Subscan preimage endpoint (`useSubscanPreimage`) |
 | Voters | Live state, or the archive at `at - 1` once concluded (`useReferendumVotes`) |
 
 The Subscan requests run in parallel with the chain reads, not after they
-fail, so the data is ready when it is needed.
+fail, so the data is ready when it is needed. None of it needs Subscan:
+the runtime drops a referendum's preimage once its call has run, but at
+`at - 1` it was still requested, so the archive has the call of every
+decided referendum (mainnet #14's `spend_local`, unnoted after it paid out,
+decodes from there). Subscan only adds the call when the archive can't be
+reached.
 
 `getPreimage` (`lib/governance/preimage.ts`) tries three lookups before it
 gives up: the `(hash, len)` it was given; the length stored in

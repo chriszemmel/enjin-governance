@@ -3,6 +3,7 @@
 import { useId, useState } from "react"
 import { Check, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { subscanBlockUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
 import { useEnactment } from "@/lib/query/hooks/use-enactment"
@@ -529,18 +530,34 @@ function Timeline({
 }
 
 function TimelineWhen({ event, currentBlock }: { event: TimelineEvent; currentBlock: number | null }) {
+  const chain = useActiveChain()
   if (event.block == null) {
     return <span className="text-[11px] text-muted-foreground/70 text-right">-</span>
   }
   const date = currentBlock != null ? blockToDate(event.block, currentBlock) : null
+  // A block that has happened links to its page on the explorer (the
+  // payout's lists the treasury's Awarded event); estimates don't.
+  const past = !event.approx && currentBlock != null && event.block <= currentBlock
+  const number = `#${formatBlockNumber(event.block)}`
   return (
     <p
       className="text-right leading-snug whitespace-nowrap text-muted-foreground"
       title={date ? formatAbsoluteTime(date) : undefined}
     >
       <span className="font-mono text-[11px] tabular-nums text-foreground">
-        {event.approx && <span className="text-muted-foreground">≈ </span>}#
-        {formatBlockNumber(event.block)}
+        {event.approx && <span className="text-muted-foreground">≈ </span>}
+        {past ? (
+          <a
+            href={subscanBlockUrl(chain, event.block)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary-text underline-offset-2 hover:underline"
+          >
+            {number}
+          </a>
+        ) : (
+          number
+        )}
       </span>
       {currentBlock != null && <span className="text-[11px]"> · {dayText(event.block, currentBlock)}</span>}
     </p>

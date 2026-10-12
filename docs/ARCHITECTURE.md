@@ -167,9 +167,10 @@ Only the first rule is enforced by the build. The others are kept by review.
 
 A concluded referendum's on-chain record drops its tally, call and
 submitted block. The page fills them from the archive node first and from
-Subscan second. The call is decoded from `preimage.preimageFor` and falls
-back to Subscan. [`CHAIN_FLOW.md`](CHAIN_FLOW.md) has the order and the
-timings.
+Subscan second. The call is decoded from `preimage.preimageFor`, live or,
+once the runtime has dropped it after enactment, on the archive node at
+`at - 1`, and only then from Subscan. [`CHAIN_FLOW.md`](CHAIN_FLOW.md) has
+the order and the timings.
 
 `ProposalMetadataHeader` hashes the canonical JSON (`stringifyStable`) with
 SHA-256 and compares it with the row's `json_sha256`. Images load only from

@@ -3,7 +3,7 @@ import { expect, openProposal, test } from "./support/test"
 // Canary referendum 13 (support/data.ts) is a SmallTipper spend_local of
 // 1 cENJ: approved at 17,387,342, enacted by the scheduler at 17,387,352
 // (approval + the track's 10-block minimum enactment), and its treasury
-// proposal #2 paid at a later spend period. All of it is settled history,
+// proposal #2 awarded at the spend period 17,395,200. All of it is settled history,
 // read from the Canary RPC and archive node. The payout needs the call
 // decoded from its preimage, as the page's treasury summary does.
 for (const width of [360, 390, 1280]) {
@@ -21,7 +21,8 @@ for (const width of [360, 390, 1280]) {
       const card = page.getByRole("region", { name: "Lifecycle" })
       const details = card.getByRole("button", { name: /Details/ })
       await expect(details).toContainText("Paid out 1 cENJ", { timeout: 60_000 })
-      await expect(details).toContainText("treasury proposal #2")
+      // The payout's block, found on the archive node.
+      await expect(details).toContainText("paid at #17,395,200", { timeout: 60_000 })
       await details.click()
 
       const timeline = card.getByRole("list", { name: "Timeline" })
@@ -31,7 +32,12 @@ for (const width of [360, 390, 1280]) {
       // The exact block, from the scheduler's Dispatched event (no "≈").
       await expect(row("Executed")).toContainText("#17,387,352")
       await expect(row("Executed")).not.toContainText("≈")
-      await expect(row("Paid out")).toBeVisible()
+      await expect(row("Paid out")).toContainText("#17,395,200")
+      // A block that has happened links to its explorer page.
+      await expect(row("Paid out").getByRole("link", { name: "#17,395,200" })).toHaveAttribute(
+        "href",
+        /\/block\/17395200$/,
+      )
 
       // Nothing sticks out: not the page, the card, or any timeline row.
       const overflow = await page.evaluate(

@@ -196,6 +196,11 @@ export function subscanExtrinsicUrl(chain: ChainConfig, txHash: string): string 
   return `${chain.subscanBase}/extrinsic/${txHash}`
 }
 
+/** Build a Subscan block URL (UI page; works without an API key). */
+export function subscanBlockUrl(chain: ChainConfig, block: number): string {
+  return `${chain.subscanBase}/block/${block}`
+}
+
 /** Build a Subscan preimage URL (UI page; works without an API key). */
 export function subscanPreimageUrl(chain: ChainConfig, hash: string): string {
   return `${chain.subscanBase}/preimage/${hash}`

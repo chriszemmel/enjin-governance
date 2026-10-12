@@ -171,14 +171,14 @@ describe("after approval", () => {
 })
 
 describe("once it has all happened", () => {
-  it("#12 paid out", () => {
+  it("#12 paid out, its block not found yet", () => {
     const lc = getLifecycle(approved(12, 17_533_282), mediumSpender, HEAD, {
       enactment: { status: "executed", block: 17_547_682, ok: true },
       spend: { spendPeriod: 14_400, payout: { status: "paid", proposalIndex: 6 } },
     })
     expect(finishedSummary(lc, HEAD, 17_533_282, "30,000 ENJ")).toEqual({
       title: "Paid out 30,000 ENJ",
-      sub: "Enacted Oct 5 · treasury proposal #6",
+      sub: "Enacted Oct 5",
       tone: "ok",
     })
   })
@@ -193,11 +193,13 @@ describe("once it has all happened", () => {
     })
     expect(finishedSummary(lc, HEAD, 17_533_282, "30,000 ENJ")).toEqual({
       title: "Paid out 30,000 ENJ on Oct 5",
-      sub: "Enacted Oct 5 · treasury proposal #6",
+      sub: "Enacted Oct 5 · paid at #17,553,600",
       tone: "ok",
     })
+    // The treasury's own index, short: not to be read as the referendum's.
     expect(stepRows(lc, HEAD, "30,000 ENJ").at(-1)).toMatchObject({
       key: "payout",
+      note: "Payout #6",
       state: "done",
       when: { main: "#17,553,600", sub: "Oct 5", mono: true },
     })

@@ -190,7 +190,10 @@ export default function ProposalDetailPage() {
     }
     return null
   })()
-  const preimageQuery = usePreimage(earlyProposalRef ?? undefined)
+  // A decided referendum's preimage is dropped once its call has run; the
+  // archive still has it at the block its history is read at.
+  const preimageAt = finalisedAt != null ? finalisedAt - 1 : null
+  const preimageQuery = usePreimage(earlyProposalRef ?? undefined, undefined, preimageAt)
   // Small calls (≤128 bytes) ride inline in the referendum instead of as a
   // preimage - e.g. system.authorizeUpgrade, referenda.cancel. Decode those
   // straight from the referendum info: a live one with today's runtime, a
@@ -592,6 +595,8 @@ export default function ProposalDetailPage() {
                     decode when there is one; otherwise it shows raw. */}
                 {inlineCall && !(inlineCallQuery.isError && decodedCall) ? (
                   <PreimageDisplay inlineBytes={inlineCall.bytes} inlineAt={inlineCall.at} />
+                ) : proposalRef && preimageQuery.data?.bytes ? (
+                  <PreimageDisplay preimageRef={proposalRef} preimageAt={preimageAt} />
                 ) : decodedCall ? (
                   <SubscanCallDisplay
                     call={decodedCall}
@@ -612,7 +617,7 @@ export default function ProposalDetailPage() {
                   subscanPreimageQuery.isPending ? (
                     <PreimageInlineSkeleton />
                   ) : (
-                    <PreimageDisplay preimageRef={proposalRef} />
+                    <PreimageDisplay preimageRef={proposalRef} preimageAt={preimageAt} />
                   )
                 ) : null}
                 <RuntimeCodeHash

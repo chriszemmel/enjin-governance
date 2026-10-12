@@ -125,7 +125,7 @@ export function stepRows(
         rows.push({
           key: "payout",
           label: amount ? `Paid out · ${amount}` : "Paid out",
-          note: payout.proposalIndex != null ? `Treasury proposal #${payout.proposalIndex}` : null,
+          note: payout.proposalIndex != null ? `Payout #${payout.proposalIndex}` : null,
           noteTone: "muted",
           state: "done",
           when:
@@ -265,9 +265,11 @@ export function finishedSummary(
       }
       if (enact?.state === "done") {
         if (payout?.state === "done") {
+          // The treasury numbers its proposals on its own, so its index next to
+          // the referendum's reads like a contradiction; the block says more.
           const parts = [
             enactedAt != null ? `Enacted ${dayText(enactedAt, currentBlock)}` : null,
-            payout.proposalIndex != null ? `treasury proposal #${payout.proposalIndex}` : null,
+            payout.block != null ? `paid at #${formatBlockNumber(payout.block)}` : null,
           ].filter(Boolean)
           return {
             title: `${amount ? `Paid out ${amount}` : "Paid out"}${on(payout.block)}`,
