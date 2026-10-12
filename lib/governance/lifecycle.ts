@@ -94,7 +94,10 @@ export type TimelineEvent = {
 /** Where a treasury spend's payout stands, for display. */
 export type PayoutView = {
   state: "upcoming" | "active" | "done" | "skipped" | "unknown"
-  /** Active: the spend period it's due at. Upcoming: an estimate, if any. */
+  /**
+   * Active: the spend period it's due at. Upcoming: an estimate, if any.
+   * Done: the spend period that paid it, once found.
+   */
   block: number | null
   approx: boolean
   /** The treasury proposal index, when known. */
@@ -659,7 +662,12 @@ function approvedPayout(
       }
     }
     case "paid":
-      return { state: "done", block: null, approx: false, proposalIndex: spend.payout.proposalIndex }
+      return {
+        state: "done",
+        block: spend.payout.block ?? null,
+        approx: false,
+        proposalIndex: spend.payout.proposalIndex,
+      }
     case "none":
       return { state: "skipped", block: null, approx: false, proposalIndex: null }
     default:
@@ -679,7 +687,7 @@ function payoutEvent(payout: PayoutView): TimelineEvent {
         note: PAYOUT_NOTE,
       }
     case "done":
-      return { id: "payout", label: "Paid out", block: null, approx: false, status: "done" }
+      return { id: "payout", label: "Paid out", block: payout.block, approx: false, status: "done" }
     case "skipped":
       return { id: "payout", label: "No payout", block: null, approx: false, status: "failed" }
     case "upcoming":

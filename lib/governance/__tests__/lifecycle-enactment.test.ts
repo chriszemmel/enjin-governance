@@ -296,6 +296,16 @@ describe("Payout of #12's spend_local", () => {
     expect(lc.timeline.at(-1)).toMatchObject({ label: "Paid out", status: "done" })
   })
 
+  it("paid, with the spend period that awarded it: dated", () => {
+    const lc = approvedLifecycle(
+      17_560_000,
+      { status: "executed", block: ENACTED, ok: true },
+      { status: "paid", proposalIndex: 6, block: PAYOUT },
+    )
+    expect(lc.payout).toMatchObject({ state: "done", block: PAYOUT, proposalIndex: 6 })
+    expect(lc.timeline.at(-1)).toMatchObject({ label: "Paid out", block: PAYOUT, status: "done" })
+  })
+
   it("undetermined after enactment: neutral, never a check", () => {
     const lc = approvedLifecycle(
       17_560_000,

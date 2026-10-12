@@ -183,6 +183,26 @@ describe("once it has all happened", () => {
     })
   })
 
+  it("#12 paid out, with its award block: dated in the summary and the payout step", () => {
+    const lc = getLifecycle(approved(12, 17_533_282), mediumSpender, HEAD, {
+      enactment: { status: "executed", block: 17_547_682, ok: true },
+      spend: {
+        spendPeriod: 14_400,
+        payout: { status: "paid", proposalIndex: 6, block: 17_553_600 },
+      },
+    })
+    expect(finishedSummary(lc, HEAD, 17_533_282, "30,000 ENJ")).toEqual({
+      title: "Paid out 30,000 ENJ on Oct 5",
+      sub: "Enacted Oct 5 · treasury proposal #6",
+      tone: "ok",
+    })
+    expect(stepRows(lc, HEAD, "30,000 ENJ").at(-1)).toMatchObject({
+      key: "payout",
+      state: "done",
+      when: { main: "#17,553,600", sub: "Oct 5", mono: true },
+    })
+  })
+
   it("#10 enacted, no treasury spend", () => {
     const lc = getLifecycle(approved(10, 16_880_927), root, HEAD, {
       enactment: { status: "executed", block: 16_950_720, ok: true },

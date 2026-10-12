@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest"
 import { initializeWasm } from "@/lib/chain/ss58"
 import {
+  findAwardBlock,
   localSpendTarget,
   nextSpendPeriodBlock,
   resolvePayout,
@@ -117,5 +118,73 @@ describe("resolvePayout", () => {
     expect(
       resolvePayout({ record: null, spend, proposals: [proposal6, twin], approvals: [6, 7] }),
     ).toEqual({ status: "pending", proposalIndex: null })
+  })
+})
+
+describe("findAwardBlock", () => {
+  const SP = 14_400
+  // #12's proposal #6: enacted at 17,547,682, awarded at 17,553,600.
+  const ENACTED = 17_547_682
+  const AWARD = 17_553_600
+  /** A proposal stored until `paidAt`, awarded there; counts the reads. */
+  function chain(paidAt: number | null) {
+    const reads: number[] = []
+    return {
+      reads,
+      stored: async (block: number) => {
+        reads.push(block)
+        return paidAt == null || block < paidAt
+      },
+      awarded: async (block: number) => block === paidAt,
+    }
+  }
+
+  it("the first spend period after enactment", async () => {
+    const c = chain(AWARD)
+    await expect(
+      findAwardBlock({ enactedAt: ENACTED, currentBlock: 17_600_000, spendPeriod: SP, ...c }),
+    ).resolves.toBe(AWARD)
+  })
+
+  it("a later period when the pot couldn't cover the first, in a few reads", async () => {
+    const later = AWARD + 30 * SP
+    const c = chain(later)
+    await expect(
+      findAwardBlock({ enactedAt: ENACTED, currentBlock: later + 90 * SP, spendPeriod: SP, ...c }),
+    ).resolves.toBe(later)
+    expect(c.reads.length).toBeLessThanOrEqual(8)
+  })
+
+  it("an enactment on a spend period block waits for the next one", async () => {
+    const c = chain(AWARD + SP)
+    await expect(
+      findAwardBlock({ enactedAt: AWARD, currentBlock: AWARD + 2 * SP, spendPeriod: SP, ...c }),
+    ).resolves.toBe(AWARD + SP)
+  })
+
+  it("still stored at the last period: not found", async () => {
+    await expect(
+      findAwardBlock({
+        enactedAt: ENACTED,
+        currentBlock: 17_600_000,
+        spendPeriod: SP,
+        ...chain(null),
+      }),
+    ).resolves.toBeNull()
+  })
+
+  it("no spend period since enactment: not found, nothing read", async () => {
+    const c = chain(AWARD)
+    await expect(
+      findAwardBlock({ enactedAt: ENACTED, currentBlock: AWARD - 1, spendPeriod: SP, ...c }),
+    ).resolves.toBeNull()
+    expect(c.reads).toEqual([])
+  })
+
+  it("gone without an Awarded event there: not dated", async () => {
+    const c = { ...chain(AWARD), awarded: async () => false }
+    await expect(
+      findAwardBlock({ enactedAt: ENACTED, currentBlock: 17_600_000, spendPeriod: SP, ...c }),
+    ).resolves.toBeNull()
   })
 })

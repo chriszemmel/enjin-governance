@@ -128,7 +128,10 @@ export function stepRows(
           note: payout.proposalIndex != null ? `Treasury proposal #${payout.proposalIndex}` : null,
           noteTone: "muted",
           state: "done",
-          when: null,
+          when:
+            due != null
+              ? { main: `#${formatBlockNumber(due)}`, sub: dayText(due, currentBlock), mono: true }
+              : null,
         })
         break
       case "skipped":
@@ -267,7 +270,7 @@ export function finishedSummary(
             payout.proposalIndex != null ? `treasury proposal #${payout.proposalIndex}` : null,
           ].filter(Boolean)
           return {
-            title: amount ? `Paid out ${amount}` : "Paid out",
+            title: `${amount ? `Paid out ${amount}` : "Paid out"}${on(payout.block)}`,
             sub: parts.join(" · ") || null,
             tone: "ok",
           }

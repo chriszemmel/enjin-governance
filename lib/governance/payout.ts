@@ -30,8 +30,11 @@ export type PayoutStatus =
   | { status: "unknown" }
   /** Approved and waiting for a spend period. */
   | { status: "pending"; proposalIndex: number | null }
-  /** The proposal was created and has since left the treasury: paid. */
-  | { status: "paid"; proposalIndex: number | null }
+  /**
+   * The proposal was created and has since left the treasury: paid. `block`
+   * is the spend period it was awarded at, once found (`findAwardBlock`).
+   */
+  | { status: "paid"; proposalIndex: number | null; block?: number | null }
   /** The enacted call failed, so there is nothing to pay. */
   | { status: "none" }
 
@@ -104,6 +107,65 @@ export function resolvePayout(input: {
     return { status: "pending", proposalIndex: waiting.length === 1 ? waiting[0].index : null }
   }
   return { status: "unknown" }
+}
+
+/**
+ * The block a paid spend was awarded at: the first spend period after its
+ * enactment at whose block the treasury proposal is gone, confirmed by that
+ * block's `treasury.Awarded` event for the proposal. The proposal is stored
+ * until the period that pays it and never after, so a binary search over the
+ * periods finds it in a few archive reads, however long the pot made it wait.
+ * Mainnet referendum #14's proposal #7, enacted at 17,637,452, was awarded at
+ * 17,640,000. Null when no period up to `currentBlock` paid it.
+ */
+export async function findAwardBlock(input: {
+  enactedAt: number
+  currentBlock: number
+  spendPeriod: number
+  /** Whether the proposal is still stored in the state after `block`. */
+  stored: (block: number) => Promise<boolean>
+  /** Whether `block`'s events award the proposal. */
+  awarded: (block: number) => Promise<boolean>
+}): Promise<number | null> {
+  const { enactedAt, currentBlock, spendPeriod, stored, awarded } = input
+  if (!(spendPeriod > 0)) return null
+  let lo = Math.floor(enactedAt / spendPeriod) + 1
+  let hi = Math.floor(currentBlock / spendPeriod)
+  if (lo > hi || (await stored(hi * spendPeriod))) return null
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (await stored(mid * spendPeriod)) lo = mid + 1
+    else hi = mid
+  }
+  const block = lo * spendPeriod
+  return (await awarded(block)) ? block : null
+}
+
+/** `findAwardBlock`'s chain reads for treasury proposal `proposalIndex`, on an archive node. */
+export function awardReaders(
+  api: ApiPromise,
+  proposalIndex: number,
+): { stored: (block: number) => Promise<boolean>; awarded: (block: number) => Promise<boolean> } {
+  const at = async (block: number) => api.at(await api.rpc.chain.getBlockHash(block))
+  return {
+    stored: async (block) => {
+      const state = await at(block)
+      const entry = await state.query.treasury.proposals(proposalIndex)
+      return (entry as unknown as { isSome: boolean }).isSome
+    },
+    awarded: async (block) => {
+      const state = await at(block)
+      const events = (await state.query.system.events()) as unknown as {
+        event: { section: string; method: string; data: { toJSON: () => unknown } }
+      }[]
+      return events.some(({ event }) => {
+        if (event.section !== "treasury" || event.method !== "Awarded") return false
+        const data = event.data.toJSON() as unknown[] | Record<string, unknown>
+        const index = Array.isArray(data) ? data[0] : data.proposalIndex
+        return Number(index) === proposalIndex
+      })
+    },
+  }
 }
 
 /** `treasury.spendPeriod`, or null when the runtime has no treasury. */

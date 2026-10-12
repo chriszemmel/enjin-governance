@@ -141,7 +141,8 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   the executed block and result from the archive; a failed call shows as
   failed. While confirming, the estimate uses the requested enactment
   (`After` / `At`) and the track minimum. A treasury `spend_local` gets a
-  payout step: next spend period, then paid, from `treasury.proposals`.
+  payout step: next spend period, then paid, from `treasury.proposals`,
+  with the block and date it was paid at (read from the archive).
 - **A calmer lifecycle card:** while anything is still to come it leads
   with the time left (to vote, to confirm, to enactment, to the payout)
   and lists Prepare, Decide, Confirm, Enact and the payout with one date

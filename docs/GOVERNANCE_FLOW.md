@@ -200,9 +200,15 @@ pot covers them, and removes them. `useSpendPayout`
   period, block X, if the treasury can cover it"; gone → paid; the
   dispatch failed → no payout. Anything else stays unknown: a spend that
   failed at enactment never created a proposal, so a missing one alone
-  doesn't prove a payment.
+  doesn't prove a payment;
+- once paid: the block it was paid at, from the archive (`findAwardBlock`):
+  the first spend period after enactment whose state no longer holds the
+  proposal, found by binary search over the periods and checked against
+  that block's `treasury.Awarded` event. The summary and the Paid out step
+  show it; until it's found, the step has no date.
 
-#12 created treasury proposal #6, awarded at 17,553,600.
+#12 created treasury proposal #6, awarded at 17,553,600; #14 created #7,
+awarded at 17,640,000.
 
 ## Writing to the chain: `useExtrinsic`
 
