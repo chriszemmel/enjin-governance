@@ -1,6 +1,6 @@
 {
   "name": "enjin-governance",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "scripts": {
@@ -15,9 +15,11 @@
     "knip": "knip",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "db:migrate": "node scripts/run-migrations.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@aws-sdk/client-s3": "^3.1050.0",
     "@aws-sdk/s3-request-presigner": "^3.1050.0",
     "@hookform/resolvers": "^3.9.1",
@@ -63,9 +65,10 @@
     "cmdk": "1.1.1",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.6.0",
+    "fflate": "^0.8.3",
     "input-otp": "1.4.2",
     "lucide-react": "^0.564.0",
-    "next": "16.2.6",
+    "next": "16.3.8",
     "next-themes": "^0.4.6",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
@@ -75,7 +78,7 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.0",
     "server-only": "^0.0.1",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.5",
     "sonner": "^1.7.1",
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
@@ -83,20 +86,40 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^22",
     "@types/qrcode": "^1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "eslint": "^9.18.0",
-    "eslint-config-next": "16.2.6",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.3.8",
     "knip": "^5.42.0",
-    "postcss": "^8.5",
+    "postcss": "^8.5.28",
     "prettier": "^3.4.2",
     "tailwindcss": "^4.2.0",
     "tw-animate-css": "1.3.3",
     "typescript": "5.7.3",
-    "vitest": "^2.1.8"
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
   },
-  "packageManager": "pnpm@9.15.4"
+  "packageManager": "pnpm@9.15.4",
+  "pnpm": {
+    "overrides": {
+      "@babel/core@<7.29.6": "^7.29.6",
+      "baseline-browser-mapping@<2.11.0": "^2.11.0",
+      "brace-expansion@<1.1.18": "^1.1.18",
+      "brace-expansion@>=5 <5.0.9": "^5.0.9",
+      "browserslist@<4.28.7": "^4.28.7",
+      "colord@<2.9.4": "^2.9.4",
+      "lodash@<4.18.0": "^4.18.0",
+      "nanoid@<3.3.18": "^3.3.18",
+      "postcss@<8.5.23": "^8.5.23",
+      "smol-toml@<1.7.1": "^1.7.1",
+      "source-map-js@<1.2.2": "^1.2.2",
+      "ws@>=7 <7.5.11": "^7.5.11",
+      "ws@>=8 <8.21.0": "^8.21.0"
+    }
+  }
 }

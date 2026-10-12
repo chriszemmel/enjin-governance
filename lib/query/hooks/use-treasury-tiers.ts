@@ -2,7 +2,7 @@
 
 import type { ChainConfig } from "@/lib/chain/chains"
 import { treasuryTiersForSpec, type TreasuryTierTable } from "@/lib/governance/treasury"
-import { useApi } from "./use-api"
+import { useSpecVersion } from "./use-spec-version"
 
 /**
  * The treasury tier table for the connected runtime (`treasuryTiersForSpec`).
@@ -12,10 +12,10 @@ import { useApi } from "./use-api"
  * unverified one (a spec missing from the list), for display.
  */
 export function useTreasuryTiers(chain?: ChainConfig) {
-  const apiQuery = useApi(chain)
-  // Read on every render rather than memoized on the ApiPromise: polkadot.js
-  // updates runtimeVersion in place on a runtime upgrade.
-  const specVersion = apiQuery.data?.runtimeVersion.specVersion.toNumber() ?? null
+  // Polled from the ApiPromise (useSpecVersion): polkadot.js updates
+  // runtimeVersion in place on a runtime upgrade, and the poll re-renders
+  // with the new spec's table. The tables are cached per spec.
+  const specVersion = useSpecVersion(chain)
   const table = specVersion != null ? treasuryTiersForSpec(specVersion) : null
   return { specVersion, table, notice: tierTableNotice(specVersion, table) }
 }

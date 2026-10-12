@@ -12,7 +12,10 @@
  * - `validateDisplayName` runs on the free-text display name. Blocked
  *   against substring matches of impersonation phrases ("Enjin
  *   Support", "Official Enjin", "Verified Account", …) and the same
- *   profanity list.
+ *   profanity list. Matching runs on a folded form (see `matchForm`), so
+ *   look-alike spaces, invisible characters, full-width or styled letters
+ *   and accents can't slip a phrase past it. Store the name through
+ *   `normalizeDisplayName`, the text that was checked.
  *
  * The lists are deliberately curated rather than exhaustive - better
  * to miss a few edge cases than to false-positive a real user's name.
@@ -137,10 +140,48 @@ export function validateHandle(input: string): HandleError | null {
   return null
 }
 
+// Characters that render as nothing or reorder the text around them: zero
+// width space, soft hyphen, word joiner and invisible operators, byte order
+// mark, Mongolian vowel separator, and the bidi marks, embeddings,
+// overrides and isolates. A name never needs them, and U+202E alone makes
+// "troppuS nijnE" display as "Enjin Support". Zero-width (non-)joiners stay:
+// Persian, Indic scripts and emoji sequences need them.
+const INVISIBLE_CONTROLS = /[\u00AD\u061C\u180E\u200B\u200E\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g
+
+/**
+ * The display name as it should be stored: invisible and direction-control
+ * characters removed, every kind of space (no-break, ideographic, line
+ * separator, tab, …) turned into a plain space, runs collapsed, trimmed.
+ * The letters themselves are kept as typed.
+ */
+export function normalizeDisplayName(input: string): string {
+  return input.replace(INVISIBLE_CONTROLS, "").replace(/\s+/gu, " ").trim()
+}
+
+/**
+ * What the phrase lists are matched against: NFKC (full-width and styled
+ * letters, ligatures and odd spaces become plain ones), every format
+ * character dropped (joiners included), accents and variation selectors
+ * stripped, lowercased, and each run of spaces or punctuation made one
+ * space - so "Enjin\u00A0Support", "Ｅｎｊｉｎ Support", "Ënjin-Support"
+ * and "Enjin \u200B Support" all read "enjin support".
+ */
+function matchForm(name: string): string {
+  return name
+    .normalize("NFKC")
+    .replace(/\p{Cf}/gu, "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+}
+
 export function validateDisplayName(input: string): DisplayNameError | null {
-  const v = input.trim().toLowerCase()
-  if (v.length === 0) return null
-  if (v.length > 80) return "too_long"
+  const name = normalizeDisplayName(input)
+  if (name.length === 0) return null
+  if (name.length > 80) return "too_long"
+  const v = matchForm(name)
   if (IMPERSONATION_PATTERNS.some((p) => v.includes(p))) return "impersonation"
   if (PROFANITY_PATTERNS.some((p) => v.includes(p))) return "profane"
   return null

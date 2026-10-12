@@ -10,12 +10,10 @@ import { queryKeys } from "@/lib/query/keys"
 /**
  * Cached ApiPromise against the chain's archive endpoint, if configured.
  *
- * Falls back to the primary RPC when no archive endpoint is set - at
- * which point `api.at(oldBlockHash)` queries will only succeed for the
- * most recent ~256 blocks. Recommended archive providers:
- *   - Dwellir archive (`wss://enjin-relay-rpc.n.dwellir.com` paid tier
- *     enables archive)
- *   - OnFinality archive endpoint
+ * The archive endpoints are Enjin's own (`archive.*.enjin.io`, see
+ * lib/chain/chains.ts). Falls back to the primary RPC when none is set -
+ * at which point `api.at(oldBlockHash)` queries will only succeed for
+ * the most recent ~256 blocks.
  */
 export function useArchiveApi(chain?: ChainConfig) {
   const active = useActiveChain()

@@ -8,7 +8,11 @@ import {
   sEnjCurrency,
   type VoteCurrency,
 } from "@/lib/governance/conviction-voting"
-import type { StakedEnjHolding } from "@/lib/governance/staking-pools"
+import {
+  DESTROYING_POOL_VOTING_ENDS_SPEC,
+  senjCanVote,
+  type StakedEnjHolding,
+} from "@/lib/governance/staking-pools"
 import { cn } from "@/lib/utils"
 import { EnjAvatar } from "./enj-avatar"
 import { PoolNftAvatar } from "./pool-nft-avatar"
@@ -16,7 +20,9 @@ import { PoolNftAvatar } from "./pool-nft-avatar"
 /**
  * A vote-source toggle: liquid ENJ, or any sENJ pool the user holds a
  * non-zero balance in. Renders as a single row with the active source
- * shown inline; tapping expands a dropdown with one item per source.
+ * shown inline; tapping expands a dropdown with one item per source. From
+ * spec 1080 a pool being destroyed is listed but can't be picked (see
+ * senjCanVote).
  *
  * Returns null callers should treat as "no holdings beyond liquid ENJ"
  * so the parent can skip rendering the selector entirely when there's
@@ -42,6 +48,8 @@ type Props = {
   chain: ChainConfig
   freeEnjBalance: bigint | null
   stakedHoldings: StakedEnjHolding[]
+  /** The connected runtime's spec version, which decides senjCanVote. */
+  specVersion: number
   selected: SelectedCurrency
   onChange: (next: SelectedCurrency) => void
   disabled?: boolean
@@ -51,6 +59,7 @@ export function VoteCurrencySelect({
   chain,
   freeEnjBalance,
   stakedHoldings,
+  specVersion,
   selected,
   onChange,
   disabled,
@@ -107,7 +116,7 @@ export function VoteCurrencySelect({
               setOpen(false)
             }}
           />
-          {senjOptions.map((opt) => (
+          {senjOptions.map((opt, i) => (
             <OptionRow
               key={opt.kind === "SEnj" ? opt.poolId : "enj"}
               option={opt}
@@ -116,6 +125,11 @@ export function VoteCurrencySelect({
                 selected.kind === "SEnj" &&
                 opt.kind === "SEnj" &&
                 selected.poolId === opt.poolId
+              }
+              blockedNote={
+                senjCanVote(stakedHoldings[i]!.poolState, specVersion)
+                  ? null
+                  : `This pool is being destroyed. Since runtime ${DESTROYING_POOL_VOTING_ENDS_SPEC} its sENJ can't vote or delegate.`
               }
               onPick={() => {
                 onChange(opt)
@@ -133,27 +147,40 @@ function OptionRow({
   option,
   chain,
   active,
+  blockedNote = null,
   onPick,
 }: {
   option: SelectedCurrency
   chain: ChainConfig
   active: boolean
+  /** Why this source can't vote; the row is then disabled. */
+  blockedNote?: string | null
   onPick: () => void
 }) {
   return (
     <button
       type="button"
       onClick={onPick}
+      disabled={blockedNote != null}
       className={cn(
-        "w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs transition-colors",
-        active ? "bg-primary/10" : "hover:bg-surface-1",
+        "w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs transition-colors disabled:cursor-not-allowed",
+        active ? "bg-primary/10" : blockedNote ? "" : "hover:bg-surface-1",
       )}
     >
       <span className="flex items-center gap-2 min-w-0">
-        <Avatar selection={option} size="sm" />
+        <span className={cn("flex-shrink-0", blockedNote && "opacity-50")}>
+          <Avatar selection={option} size="sm" />
+        </span>
         <span className="flex flex-col items-start min-w-0">
-          <CurrencyLabel selection={option} />
-          <BalanceLabel selection={option} chain={chain} />
+          <span className={cn("flex flex-col items-start min-w-0", blockedNote && "opacity-50")}>
+            <CurrencyLabel selection={option} />
+            <BalanceLabel selection={option} chain={chain} />
+          </span>
+          {blockedNote && (
+            <span className="text-[10px] text-amber-300 text-left leading-snug mt-0.5">
+              {blockedNote}
+            </span>
+          )}
         </span>
       </span>
       {active && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}

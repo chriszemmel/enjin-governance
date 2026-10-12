@@ -14,10 +14,12 @@ import { SignRequestModal } from "@/components/wallet/sign-request-modal"
 import { useSignFlow } from "@/lib/wallet/use-sign-flow"
 import { type CallStatus } from "@/components/create/call-card"
 import { type UploadedAttachment } from "@/components/create/attachment-dropzone"
+import { AddressFormatDialog } from "@/components/create/address-format-dialog"
 import { Compose } from "@/components/create/compose"
 import { Stage } from "@/components/create/stage"
 import { SignAndDone } from "@/components/create/sign-and-done"
 import { PlaceDepositButton } from "@/components/governance/place-deposit-button"
+import { FilingCosts } from "@/components/create/filing-costs"
 import { WizardFooter } from "@/components/create/wizard-footer"
 import {
   StepBar,
@@ -25,11 +27,22 @@ import {
   type WizardStep,
 } from "@/components/create/create-ui"
 import { subscanExtrinsicUrl, subscanReferendumUrl } from "@/lib/chain/chains"
-import { useActiveChain } from "@/lib/chain/use-chain"
+import { getActiveChain, useActiveChain } from "@/lib/chain/use-chain"
 import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
-import { encodeForChain, isValidAddressForChain } from "@/lib/chain/ss58"
+import { env } from "@/lib/env"
+import {
+  encodeForChain,
+  inspectAddress,
+  isValidAddressForChain,
+  samePublicKey,
+} from "@/lib/chain/ss58"
 import { extractReferendumIndex } from "@/lib/governance/referenda"
-import { hashCall } from "@/lib/governance/preimage"
+import { hashCall, noteWouldAbort } from "@/lib/governance/preimage"
+import {
+  envelopeBytes,
+  estimateEnvelopeBytes,
+  filingRequirement,
+} from "@/lib/governance/filing-deposits"
 import { formatTrackName } from "@/lib/governance/display"
 import { maxTreasurySpend, pickOriginForAmount } from "@/lib/governance/treasury"
 import {
@@ -38,11 +51,12 @@ import {
 } from "@/lib/governance/submit-treasury-proposal"
 import { useApi } from "@/lib/query/hooks/use-api"
 import { useBalance } from "@/lib/query/hooks/use-balance"
-import { useMe, useNoncePrefetch, useSignIn } from "@/lib/query/hooks/use-session"
+import { useFilingCosts } from "@/lib/query/hooks/use-filing-costs"
+import { useEnsureSignedIn } from "@/lib/wallet/use-ensure-signed-in"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
-import { usePreimageStatus } from "@/lib/query/hooks/use-preimage"
+import { useEnvelopeNoted, usePreimageStatus } from "@/lib/query/hooks/use-preimage"
 import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
 import { findTrackByName } from "@/lib/governance/tracks"
 import {
@@ -52,20 +66,54 @@ import {
   validateEnactment,
   type EnactmentChoice,
 } from "@/lib/governance/enactment"
-import { useExtrinsic } from "@/lib/query/hooks/use-tx"
-import { confirmWithRetry } from "@/lib/query/confirm-proposal"
+import { useExtrinsic, type TxStatus } from "@/lib/query/hooks/use-tx"
 import { useWallet } from "@/lib/wallet/use-wallet"
 import { walletDisplayFor } from "@/lib/wallet/connector-registry"
 import { formatError } from "@/lib/utils/format-error"
+import { confirmWithRetry } from "@/lib/governance/confirm-client"
+import {
+  chainSubmissionReader,
+  findLandedSubmission,
+  stagedForMismatch,
+  type StagedFor,
+} from "@/lib/governance/submission-checks"
+import { keyFromPublicUrl } from "@/lib/r2/paths"
 
 export default function CreatePage() {
   // useSearchParams() forces this subtree to opt out of static
   // prerendering. Wrapping in Suspense satisfies Next's CSR-bailout
-  // requirement while keeping the rest of the chunk eligible.
+  // requirement while keeping the rest of the chunk eligible. The fallback
+  // is what the prerendered HTML shows until the scripts have run: the
+  // page's frame and heading instead of a blank page.
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<CreatePageFallback />}>
       <CreatePageInner />
     </Suspense>
+  )
+}
+
+function CreatePageFallback() {
+  return (
+    <Shell>
+      <div className="max-w-3xl mx-auto">
+        <BackToProposals />
+        {/* No network name yet: the saved choice is only read in the browser. */}
+        <Header chainName={null} chainShort={null} />
+        <StepBar current="create" />
+      </div>
+    </Shell>
+  )
+}
+
+function BackToProposals() {
+  return (
+    <Link
+      href="/proposals"
+      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+    >
+      <ArrowLeft className="w-3.5 h-3.5" />
+      Back to Proposals
+    </Link>
   )
 }
 
@@ -80,6 +128,7 @@ function CreatePageInner() {
   const treasuryTiers = useTreasuryTiers()
   const treasuryBalanceQuery = useBalance(chain.treasuryAddress)
   const currentBlockQuery = useCurrentBlock()
+  const filingCosts = useFilingCosts()
 
   const [enactment, setEnactment] = useState<EnactmentChoice>(DEFAULT_ENACTMENT)
   const [step, setStep] = useState<WizardStep>("create")
@@ -87,7 +136,13 @@ function CreatePageInner() {
   // "Edit" on an existing draft we still mint a fresh id - the prior R2
   // blob stays addressable at its old URL, and the new submission gets a
   // clean DB row + remark.
-  const [proposalId] = useState(() => crypto.randomUUID())
+  const [proposalId, setProposalId] = useState(() => crypto.randomUUID())
+  // Resuming an unsigned draft re-stages it in place: the server needs the
+  // json_sha256 we last saw to accept the update.
+  const [resumedSha, setResumedSha] = useState<string | null>(null)
+  // Payload of the last successful stage - staging again with nothing
+  // changed just returns to Review instead of rewriting the draft.
+  const [stagedFingerprint, setStagedFingerprint] = useState<string | null>(null)
   const [title, setTitle] = useState("")
   const [summary, setSummary] = useState("")
   const [body, setBody] = useState("")
@@ -96,12 +151,25 @@ function CreatePageInner() {
   // Track whether we've already populated the form from an existing draft -
   // prevents the load effect from clobbering the user's edits if it re-runs.
   const [prefilled, setPrefilled] = useState(false)
+  // Only a draft that actually loaded may be auto-staged (?go=review).
+  const [prefillOk, setPrefillOk] = useState(false)
+  // Who wrote the proposal loaded via ?from=, and its saved payout address.
+  const [loaded, setLoaded] = useState<{ proposer: string; beneficiary: string | null } | null>(
+    null,
+  )
 
   const [walletOpen, setWalletOpen] = useState(false)
   const [draft, setDraft] = useState<DraftResponse | null>(null)
+  // The network and account the draft was staged for: signing is refused
+  // once either changed.
+  const [stagedFor, setStagedFor] = useState<StagedFor | null>(null)
   const [staging, setStaging] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [submittedIndex, setSubmittedIndex] = useState<number | null>(null)
+  // A retry found that an earlier attempt's batch had already landed.
+  const [landed, setLanded] = useState(false)
+  // Why the pre-sign check refused to sign (shown like a failed tx).
+  const [precheckError, setPrecheckError] = useState<string | null>(null)
   const [callStatus, setCallStatus] = useState<CallStatus[]>([
     "pending",
     "pending",
@@ -118,11 +186,9 @@ function CreatePageInner() {
   // The draft + media write endpoints now require an authenticated
   // proposer. Mirror the comments flow: prefetch a nonce, and gate the
   // first write behind a sign-in (a one-line nonce signature, no tx).
-  const meQuery = useMe()
-  const prefetchedNonce = useNoncePrefetch()
-  const signIn = useSignIn(prefetchedNonce)
-  const [signInModalOpen, setSignInModalOpen] = useState(false)
-  const [signInError, setSignInError] = useState<string | null>(null)
+  const { ensureSignedIn, signInModal } = useEnsureSignedIn({
+    isWalletConnect: sign.isWalletConnect,
+  })
 
   // The proposer is always the connected signer (drafts, deposits, sign-in
   // are keyed to it). The beneficiary is who the treasury pays - defaults to
@@ -136,15 +202,19 @@ function CreatePageInner() {
     }
   }, [activeAddress, chain.id])
   const [beneficiaryInput, setBeneficiaryInput] = useState("")
-  const beneficiary = useMemo(() => {
-    const raw = beneficiaryInput.trim()
-    if (!raw) return proposerAddress // empty = pay self
-    try {
-      return encodeForChain(raw, chain.id)
-    } catch {
-      return raw
-    }
-  }, [beneficiaryInput, proposerAddress, chain.id])
+  // What was typed is never converted silently: an address in another
+  // network's format opens AddressFormatDialog, and the field only counts
+  // once it holds an address in this chain's own format.
+  const beneficiaryInspection = useMemo(
+    () => inspectAddress(beneficiaryInput, chain.id),
+    [beneficiaryInput, chain.id],
+  )
+  const beneficiary =
+    beneficiaryInspection.status === "empty"
+      ? proposerAddress // empty = pay self
+      : beneficiaryInspection.status === "native"
+        ? beneficiaryInspection.address
+        : null
   const beneficiaryValid =
     beneficiary != null && isValidAddressForChain(beneficiary, chain.id)
   const beneficiaryIsSelf =
@@ -158,8 +228,9 @@ function CreatePageInner() {
 
   // Load an existing draft into the form when arriving via Edit/Submit.
   // We fetch the canonical JSON (proxied through /api/proposals/[id]/json
-  // so CORS doesn't bite) and pre-fill the fields. Attachments aren't
-  // re-loaded - the proposer can re-attach if they want to keep them.
+  // so CORS doesn't bite) and pre-fill the fields. An unsigned draft keeps
+  // its id, beneficiary and attachments, so staging it again updates the
+  // same draft instead of creating a duplicate.
   useEffect(() => {
     if (!fromDraftId || prefilled) return
     let cancelled = false
@@ -171,15 +242,52 @@ function CreatePageInner() {
           title?: string
           summary?: string | null
           body_markdown?: string
+          proposer?: string
           spend?: { amount_planck?: string; beneficiary?: string } | null
+          call?: unknown
+          attachments?: {
+            name: string
+            url: string
+            sha256: string
+            content_type: string
+            size_bytes: number
+          }[]
         }
         if (cancelled) return
+        // A draft from the advanced composer describes a call this wizard
+        // can't edit; re-staging it here would turn it into a treasury spend.
+        if (j.call) {
+          toast.error("This draft was made in the advanced composer", {
+            description: "Cancel it from your drafts, or file it again from the advanced composer.",
+          })
+          setPrefilled(true)
+          return
+        }
+        const resumable = res.headers.get("x-proposal-status") === "draft"
+        const sha = res.headers.get("x-proposal-sha256")
+        if (resumable && sha) {
+          setProposalId(fromDraftId)
+          setResumedSha(sha)
+          setAttachments(
+            (j.attachments ?? []).map((a) => ({
+              bucket_key: keyFromPublicUrl(a.url),
+              url: a.url,
+              sha256: a.sha256,
+              size_bytes: a.size_bytes,
+              content_type: a.content_type,
+              name: a.name,
+            })),
+          )
+        }
+        const savedBeneficiary = j.spend?.beneficiary
+        setLoaded({
+          proposer: j.proposer ?? "",
+          beneficiary:
+            savedBeneficiary && savedBeneficiary !== j.proposer ? savedBeneficiary : null,
+        })
         setTitle(j.title ?? "")
         setSummary(j.summary ?? "")
         setBody(j.body_markdown ?? "")
-        // Left empty, the beneficiary falls back to the proposer - which would
-        // silently re-point a draft that pays someone else.
-        if (j.spend?.beneficiary) setBeneficiaryInput(j.spend.beneficiary)
         if (j.spend?.amount_planck) {
           try {
             const planck = BigInt(j.spend.amount_planck)
@@ -195,8 +303,11 @@ function CreatePageInner() {
           }
         }
         setPrefilled(true)
+        setPrefillOk(true)
         toast.success("Loaded draft", {
-          description: "Edit anything, then stage to publish a fresh version.",
+          description: resumable
+            ? "Edit anything, then stage to update this draft."
+            : "Edit anything, then stage to save it as a new draft.",
         })
       } catch (e) {
         toast.error("Could not load draft", { description: formatError(e) })
@@ -250,35 +361,6 @@ function CreatePageInner() {
     return findTrackByName(tracksQuery.data, pickedTier.origin)
   }, [tracksQuery.data, pickedTier])
 
-  // Submission deposit from referenda pallet consts (always-on small
-  // amount that gets reserved on submit and refunded once decided).
-  const submissionDeposit = useMemo<bigint | null>(() => {
-    const api = apiQuery.data as ApiPromise | undefined
-    if (!api?.consts?.referenda?.submissionDeposit) return null
-    try {
-      const codec = api.consts.referenda.submissionDeposit as unknown as {
-        toString(): string
-      }
-      return BigInt(codec.toString())
-    } catch {
-      return null
-    }
-  }, [apiQuery.data])
-
-  // Anti-spam balance gate. The proposer must hold the submission
-  // deposit (reserved immediately) + the track's decision deposit
-  // (anyone can place it later, but requiring the proposer to be able
-  // to cover it themselves screens out spam) + a small fee buffer.
-  const FEE_BUFFER_PLANCK = 10n ** BigInt(chain.decimals - 2) // 0.01 of one token
-  const requiredPlanck: bigint | null =
-    submissionDeposit != null && trackForOrigin
-      ? submissionDeposit + trackForOrigin.decisionDeposit + FEE_BUFFER_PLANCK
-      : null
-  const balanceSufficient =
-    requiredPlanck == null ||
-    balanceQuery.data == null ||
-    balanceQuery.data >= requiredPlanck
-
   // preimage preview (computed locally, no network)
   const preimagePreview = useMemo(() => {
     const api = apiQuery.data as ApiPromise | undefined
@@ -304,14 +386,38 @@ function CreatePageInner() {
     }
   }, [draft])
 
-  // If an earlier proposal already noted these exact call bytes,
+  // If an account already noted these exact call bytes (Unrequested),
   // `preimage.notePreimage` would abort with AlreadyNoted and revert
   // the whole batchAll. The hash + len are the same regardless, so we
-  // can skip step 1 and only sign submit + remark.
+  // can skip step 1 and only sign submit + remark. A Requested preimage
+  // still takes the note (see noteWouldAbort).
   const preimageStatusQuery = usePreimageStatus(preimagePreview?.preimageHash ?? null)
-  const preimageAlreadyNoted =
-    preimageStatusQuery.data === "Unrequested" ||
-    preimageStatusQuery.data === "Requested"
+  const preimageAlreadyNoted = noteWouldAbort(preimageStatusQuery.data)
+
+  // Balance gate: the batch reserves the submission deposit and a preimage
+  // deposit for each of the call and the EGOV1 envelope (priced per byte by
+  // the chain), and pays a fee; the existential deposit must stay free. The
+  // envelope's length is estimated until the draft is staged. The track's
+  // decision deposit is shown but not required: anyone can place it later.
+  const filingNeeds = useMemo(() => {
+    const { submissionDeposit, preimageRate } = filingCosts
+    if (submissionDeposit == null || !preimageRate || !preimagePreview) return null
+    return filingRequirement({
+      submissionDeposit,
+      rate: preimageRate,
+      callLen: preimageAlreadyNoted ? null : preimagePreview.preimageLen,
+      envelopeLen: draft
+        ? envelopeBytes(draft.remark_payload)
+        : estimateEnvelopeBytes(env.NEXT_PUBLIC_APP_URL, chain.id, proposalId),
+      feeAllowance: filingCosts.feeAllowance,
+      existentialDeposit: filingCosts.existentialDeposit,
+    })
+  }, [filingCosts, preimagePreview, preimageAlreadyNoted, draft, chain.id, proposalId])
+  const requiredPlanck = filingNeeds?.total ?? null
+  const balanceSufficient =
+    requiredPlanck == null ||
+    balanceQuery.data == null ||
+    balanceQuery.data >= requiredPlanck
 
   // Authoritative "should we skip notePreimage?" decision used by the build
   // closure at submit time. The status query is 30s-stale: if it read
@@ -328,6 +434,8 @@ function CreatePageInner() {
   useEffect(() => {
     skipNoteRef.current = preimageAlreadyNoted
   }, [preimageAlreadyNoted])
+  // The same for the EGOV1 envelope's own preimage (step 3).
+  const envelopeNoted = useEnvelopeNoted(draft?.remark_payload)
 
   // The referendum index setMetadata targets = referendumCount() at the
   // moment referenda.submit executes. Same seed-a-ref shape as skipNoteRef:
@@ -374,9 +482,11 @@ function CreatePageInner() {
   }
   if (isConnected && !beneficiaryValid) {
     missingReasons.push(
-      beneficiaryInput.trim()
-        ? "Beneficiary address isn't valid on this chain"
-        : "Connected address isn't valid on this chain",
+      beneficiaryInspection.status === "foreign"
+        ? `Beneficiary is a ${beneficiaryInspection.networkLabel} address. Convert or clear it.`
+        : beneficiaryInput.trim()
+          ? "Beneficiary address isn't valid on this chain"
+          : "Connected address isn't valid on this chain",
     )
   }
   if (title.trim().length < 10) {
@@ -415,48 +525,44 @@ function CreatePageInner() {
   }
   if (!balanceSufficient && requiredPlanck != null && balanceQuery.data != null) {
     missingReasons.push(
-      `Need at least ${formatTokenAmount(requiredPlanck, chain)} to cover the submission deposit, decision deposit, and fees (you have ${formatTokenAmount(balanceQuery.data, chain)})`,
+      `Need at least ${formatTokenAmount(requiredPlanck, chain)} free to cover the submission deposit, the preimage deposits, fees and the minimum balance (you have ${formatTokenAmount(balanceQuery.data, chain)})`,
     )
   }
   if (enactmentError) {
     missingReasons.push(`Enactment: ${enactmentError}`)
   }
 
-  // Resolve a signed-in session, prompting the wallet to sign the nonce
-  // if we don't already have one. Returns false when the user cancels or
-  // the signature fails so callers can abort the write they were about to
-  // make. Gates both the media upload and the draft staging step.
-  const ensureSignedIn = useCallback(async (): Promise<boolean> => {
-    if (meQuery.data) return true
-    // The /api/auth/me poll can trail a fresh cookie by up to 60s - re-check
-    // before forcing a signature the user may not actually need.
-    try {
-      const refreshed = await meQuery.refetch()
-      if (refreshed.data) return true
-    } catch {
-      // fall through to the sign-in prompt
-    }
-    setSignInError(null)
-    if (sign.isWalletConnect) setSignInModalOpen(true)
-    try {
-      await signIn.submit()
-      setSignInModalOpen(false)
-      toast.success("Signed in")
-      return true
-    } catch (e) {
-      const message = formatError(e)
-      setSignInError(message)
-      if (!sign.isWalletConnect) {
-        toast.error("Sign-in required", { description: message })
-      }
-      return false
-    }
-  }, [meQuery, sign.isWalletConnect, signIn])
-
   // staging hop (upload media is already done; here we upload JSON)
   const stageDraft = useCallback(async () => {
-    if (!preimagePreview || !pickedTier || !beneficiary || !parsedAmount) {
+    if (!preimagePreview || !pickedTier || !beneficiary || !parsedAmount || !proposerAddress) {
       toast.error("Form is incomplete")
+      return
+    }
+    const payload = {
+      proposal_id: proposalId,
+      network: chain.id,
+      proposer_address: proposerAddress,
+      title: title.trim(),
+      summary: summary.trim() || null,
+      body_markdown: body,
+      track: pickedTier.origin,
+      beneficiary,
+      amount_planck: parsedAmount.toString(),
+      preimage_hash: preimagePreview.preimageHash,
+      preimage_len: preimagePreview.preimageLen,
+      attachments: attachments.map((a) => ({
+        bucket_key: a.bucket_key,
+        name: a.name,
+        url: a.url,
+        sha256: a.sha256,
+        content_type: a.content_type,
+        size_bytes: a.size_bytes,
+      })),
+    }
+    // Back -> Stage with nothing changed: the saved draft is still current.
+    const fingerprint = JSON.stringify(payload)
+    if (draft && fingerprint === stagedFingerprint) {
+      setStep("review")
       return
     }
     // The draft endpoint requires an authenticated proposer - sign in
@@ -468,25 +574,10 @@ function CreatePageInner() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          proposal_id: proposalId,
-          network: chain.id,
-          proposer_address: proposerAddress,
-          title: title.trim(),
-          summary: summary.trim() || null,
-          body_markdown: body,
-          track: pickedTier.origin,
-          beneficiary,
-          amount_planck: parsedAmount.toString(),
-          preimage_hash: preimagePreview.preimageHash,
-          preimage_len: preimagePreview.preimageLen,
-          attachments: attachments.map((a) => ({
-            bucket_key: a.bucket_key,
-            name: a.name,
-            url: a.url,
-            sha256: a.sha256,
-            content_type: a.content_type,
-            size_bytes: a.size_bytes,
-          })),
+          ...payload,
+          // Re-staging updates the same draft in place; the server only
+          // accepts that from the version we last saw.
+          expected_sha256: draft?.json_sha256 ?? resumedSha,
         }),
       })
       const json = (await res.json()) as DraftResponse | { ok: false; error: string }
@@ -496,7 +587,15 @@ function CreatePageInner() {
         setStaging(false)
         return
       }
-      setDraft(json as DraftResponse)
+      const saved = json as DraftResponse
+      setDraft(saved)
+      setStagedFor({ network: chain.id, proposer: proposerAddress })
+      setStagedFingerprint(fingerprint)
+      if (saved.updated) {
+        toast.success("Draft updated", {
+          description: "Same draft, new version.",
+        })
+      }
       setStep("review")
     } catch (e) {
       toast.error("Could not stage Proposal", {
@@ -511,21 +610,40 @@ function CreatePageInner() {
     proposerAddress,
     body,
     chain.id,
+    draft,
     ensureSignedIn,
     parsedAmount,
     pickedTier,
     preimagePreview,
     proposalId,
+    resumedSha,
+    stagedFingerprint,
     summary,
     title,
   ])
+
+  // A link to someone else's proposal copies its text, never its payout
+  // address, and never skips to signing: the beneficiary and the
+  // auto-advance below are only taken from the connected wallet's own.
+  const loadedIsMine = useMemo(() => {
+    if (!loaded?.proposer || !activeAddress) return false
+    try {
+      return samePublicKey(loaded.proposer, activeAddress)
+    } catch {
+      return false
+    }
+  }, [loaded, activeAddress])
+  useEffect(() => {
+    const saved = loaded?.beneficiary
+    if (loadedIsMine && saved) setBeneficiaryInput((current) => current || saved)
+  }, [loadedIsMine, loaded])
 
   // When arriving via "Submit" on a draft (?go=review), auto-stage once
   // the form has been populated and is valid. The user still has to sign
   // on the Review screen - we just save the click.
   const [autoStaged, setAutoStaged] = useState(false)
   useEffect(() => {
-    if (!autoAdvance || autoStaged || !prefilled) return
+    if (!autoAdvance || autoStaged || !prefilled || !prefillOk || !loadedIsMine) return
     if (!isConnected || !composeValid) return
     if (staging || step !== "create") return
     setAutoStaged(true)
@@ -534,12 +652,98 @@ function CreatePageInner() {
     autoAdvance,
     autoStaged,
     prefilled,
+    prefillOk,
+    loadedIsMine,
     isConnected,
     composeValid,
     staging,
     step,
     stageDraft,
   ])
+
+  /**
+   * Link the draft to its referendum (POST confirm) and say how it went.
+   * `landedIn` is the batch that filed it, or null when a retry found that
+   * an earlier attempt had already landed.
+   *
+   * The referendum is already on chain at this point, so a failure here
+   * does not lose the proposal - but it does leave the row 'draft' with no
+   * narrative attached to a referendum that is live and taking votes, and
+   * nothing else in the app re-attaches it. So: retry the retryable
+   * failures, and never claim success for one that stuck.
+   */
+  const linkToReferendum = useCallback(
+    async (index: number | null, landedIn: { txHash: string; blockHash: string } | null) => {
+      let confirmError: string | null = null
+      if (draft && index != null) {
+        setConfirming(true)
+        try {
+          const api = apiQuery.data as ApiPromise | undefined
+          let blockNumber: number | null = landedIn ? 0 : null
+          if (api && landedIn) {
+            try {
+              const header = await api.rpc.chain.getHeader(landedIn.blockHash)
+              blockNumber = (
+                header as unknown as { number: { toNumber(): number } }
+              ).number.toNumber()
+            } catch {
+              // best-effort
+            }
+          }
+          confirmError = await confirmWithRetry(
+            draft.id,
+            {
+              referendum_index: index,
+              tx_hash: landedIn?.txHash ?? null,
+              block_hash: landedIn?.blockHash ?? null,
+              block_number: blockNumber,
+            },
+            // The session can run out while the batch finalises; sign in
+            // again rather than leave a live referendum unlinked.
+            () => ensureSignedIn({ fresh: true }),
+          )
+        } catch (err) {
+          confirmError = formatError(err)
+        } finally {
+          setConfirming(false)
+        }
+      }
+
+      const view =
+        index != null
+          ? { label: "View", onClick: () => router.push(`/proposals/${index}`) }
+          : undefined
+      if (confirmError) {
+        // The submission itself succeeded; only the off-chain link failed.
+        // Say both, rather than a green toast over a half-finished job.
+        toast.warning("Submitted on chain, but not linked", {
+          id: "create-tx",
+          duration: Infinity,
+          description:
+            index != null
+              ? `Referendum #${index} was created, but attaching its off-chain details failed: ${confirmError}`
+              : confirmError,
+          action: view,
+        })
+      } else if (!landedIn) {
+        toast.success(`Referendum #${index} was already filed`, {
+          id: "create-tx",
+          description: "An earlier attempt landed, so nothing was signed again.",
+          action: view,
+        })
+      } else {
+        toast.success("Proposal submitted", {
+          id: "create-tx",
+          description:
+            index != null
+              ? `Referendum #${index} created.`
+              : subscanExtrinsicUrl(chain, landedIn.txHash),
+          action: view,
+        })
+      }
+    },
+    [apiQuery.data, chain, draft, ensureSignedIn, router],
+  )
 
   const tx = useExtrinsic({
     // We persist the on-chain `referendum_index` from the batch's events
@@ -548,9 +752,14 @@ function CreatePageInner() {
     // flow that must wait for GRANDPA before resolving.
     resolveOn: "finalized",
     build: (api) => {
-      if (!draft || !pickedTier || !beneficiary || parsedAmount == null) {
+      if (!draft || !stagedFor || !pickedTier || !beneficiary || parsedAmount == null) {
         throw new Error("Review the draft before submitting.")
       }
+      const moved = stagedForMismatch(stagedFor, {
+        network: getActiveChain().id,
+        address: activeAddress,
+      })
+      if (moved) throw new Error(moved)
       // Light every call in the batch as running while the single
       // signed extrinsic is in-flight - the user signs one tx that
       // either applies all or none, so showing per-call pending state
@@ -581,20 +790,27 @@ function CreatePageInner() {
       // submission noted it), retrying the note step would abort with
       // preimage.AlreadyNoted and revert the whole batchAll. Drop step
       // 1; the rest of the batch still references the same (hash, len).
-      return skipNote
-        ? [built.submitTx, built.metadataNoteTx, built.setMetadataTx]
-        : built.calls
+      // Likewise step 3 when the envelope is already noted.
+      return [
+        ...(skipNote ? [] : [built.noteTx]),
+        built.submitTx,
+        ...(envelopeNoted.skipRef.current ? [] : [built.metadataNoteTx]),
+        built.setMetadataTx,
+      ]
     },
     onStatus(status) {
       if (status.kind === "error") {
         setCallStatus((curr) =>
           curr.map((c) => (c === "running" ? "failed" : c)) as CallStatus[],
         )
-        // Self-heal the AlreadyNoted dead-end: the preimage is already on
-        // chain, so the next attempt must skip notePreimage instead of
-        // rebuilding the same batch that just reverted.
+        // Self-heal the AlreadyNoted dead-end: one of the two preimages is
+        // already on chain. Re-read both, so the next attempt skips exactly
+        // the note that is already there instead of guessing.
         if (/AlreadyNoted/i.test(status.message)) {
-          skipNoteRef.current = true
+          void preimageStatusQuery.refetch().then((r) => {
+            if (r.isSuccess) skipNoteRef.current = noteWouldAbort(r.data)
+          })
+          void envelopeNoted.refresh()
         }
       }
       if (sign.isWalletConnect) {
@@ -631,76 +847,8 @@ function CreatePageInner() {
       setCallStatus(["ok", "ok", "ok", "ok"])
       const index = extractReferendumIndex(events)
       setSubmittedIndex(index)
-
       // Confirm on the server so the redirect file + DB row are updated.
-      // The referendum is already on chain at this point, so a failure here
-      // does not lose the proposal - but it does leave the row 'draft' with
-      // no narrative attached to a referendum that is live and taking votes,
-      // and nothing else in the app re-attaches it. So: retry the retryable
-      // failures, and never claim success for one that stuck.
-      let confirmError: string | null = null
-      if (draft && index != null) {
-        setConfirming(true)
-        try {
-          const api = apiQuery.data as ApiPromise | undefined
-          let blockNumber = 0
-          if (api) {
-            try {
-              const header = await api.rpc.chain.getHeader(blockHash)
-              blockNumber = (
-                header as unknown as { number: { toNumber(): number } }
-              ).number.toNumber()
-            } catch {
-              // best-effort
-            }
-          }
-          confirmError = await confirmWithRetry(draft.id, {
-            referendum_index: index,
-            tx_hash: txHash,
-            block_hash: blockHash,
-            block_number: blockNumber,
-          })
-        } catch (err) {
-          confirmError = formatError(err)
-        } finally {
-          setConfirming(false)
-        }
-      }
-
-      if (confirmError) {
-        // The submission itself succeeded; only the off-chain link failed.
-        // Say both, rather than a green toast over a half-finished job.
-        toast.warning("Submitted on chain, but not linked", {
-          id: "create-tx",
-          duration: Infinity,
-          description:
-            index != null
-              ? `Referendum #${index} was created, but attaching its off-chain details failed: ${confirmError}`
-              : confirmError,
-          action:
-            index != null
-              ? {
-                  label: "View",
-                  onClick: () => router.push(`/proposals/${index}`),
-                }
-              : undefined,
-        })
-      } else {
-        toast.success("Proposal submitted", {
-          id: "create-tx",
-          description:
-            index != null
-              ? `Referendum #${index} created.`
-              : subscanExtrinsicUrl(chain, txHash),
-          action:
-            index != null
-              ? {
-                  label: "View",
-                  onClick: () => router.push(`/proposals/${index}`),
-                }
-              : undefined,
-        })
-      }
+      await linkToReferendum(index, { txHash, blockHash })
       // Stay on the Submit step - its rendering branches on tx.status.kind
       // and shows the success card automatically on finalised.
     },
@@ -715,14 +863,16 @@ function CreatePageInner() {
   // batch reverts, so both refreshes are correctness-of-first-try, not
   // safety.
   const submitProposal = useCallback(async () => {
+    setPrecheckError(null)
     try {
+      // Both ways: a preimage unnoted since the cached read must be noted
+      // again, or the Lookup would point at nothing.
       const res = await preimageStatusQuery.refetch()
-      if (res.data === "Unrequested" || res.data === "Requested") {
-        skipNoteRef.current = true
-      }
+      if (res.isSuccess) skipNoteRef.current = noteWouldAbort(res.data)
     } catch {
       // Best-effort: fall back to whatever the seeded ref already holds.
     }
+    const envelope = await envelopeNoted.refresh()
     try {
       const count = await referendumCountQuery.refetch()
       if (count.data != null) {
@@ -731,19 +881,69 @@ function CreatePageInner() {
     } catch {
       // Best-effort: fall back to the seeded ref; build throws if empty.
     }
+    // The envelope already on chain may be an earlier attempt of this very
+    // batch that landed while its status updates were lost (the
+    // lost-contact timeout). Signing again would file a second referendum,
+    // so link the one it filed instead. The build refuses a switched
+    // account or network, so this only runs for the staged one.
+    const api = apiQuery.data as ApiPromise | undefined
+    const referendumCount = referendumIndexRef.current
+    if (
+      envelope !== "Missing" &&
+      api &&
+      draft &&
+      stagedFor &&
+      envelopeNoted.hash &&
+      referendumCount != null &&
+      !stagedForMismatch(stagedFor, { network: getActiveChain().id, address: activeAddress })
+    ) {
+      let found: number | null
+      try {
+        found = await findLandedSubmission(chainSubmissionReader(api), {
+          envelopeHash: envelopeNoted.hash,
+          proposer: stagedFor.proposer,
+          referendumCount,
+        })
+      } catch (e) {
+        const message = `Couldn't check whether an earlier attempt already filed this proposal, so nothing was signed. Try again in a moment. (${formatError(e)})`
+        setPrecheckError(message)
+        if (!sign.isWalletConnect) {
+          toast.error("Submission failed", { id: "create-tx", description: message })
+        }
+        return
+      }
+      if (found != null) {
+        sign.close()
+        setLanded(true)
+        setCallStatus(["ok", "ok", "ok", "ok"])
+        setSubmittedIndex(found)
+        await linkToReferendum(found, null)
+        return
+      }
+    }
     void tx.submit()
-  }, [preimageStatusQuery, referendumCountQuery, tx])
+  }, [
+    preimageStatusQuery,
+    referendumCountQuery,
+    envelopeNoted,
+    apiQuery.data,
+    draft,
+    stagedFor,
+    activeAddress,
+    sign,
+    linkToReferendum,
+    tx,
+  ])
+  // What the sign surfaces show: a refused pre-sign check reads as a
+  // failed attempt.
+  const signStatus: TxStatus = precheckError
+    ? { kind: "error", message: precheckError }
+    : tx.status
 
   return (
     <Shell>
       <div className="max-w-3xl mx-auto">
-        <Link
-          href="/proposals"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Proposals
-        </Link>
+        <BackToProposals />
 
         <Header chainName={chain.name} chainShort={chain.shortName} />
         <StepBar current={step} />
@@ -752,7 +952,10 @@ function CreatePageInner() {
           <div className="mb-4 text-xs text-muted-foreground">
             Filing a runtime upgrade, referendum cancel/kill, whitelist, or other
             non-treasury call?{" "}
-            <Link href="/create/advanced" className="text-primary hover:underline">
+            <Link
+              href="/create/advanced"
+              className="text-primary underline underline-offset-2 decoration-primary/40 hover:decoration-current"
+            >
               Use the advanced composer
             </Link>
             .
@@ -766,7 +969,12 @@ function CreatePageInner() {
             proposerAddress={proposerAddress}
             beneficiary={beneficiary}
             beneficiaryInput={beneficiaryInput}
-            beneficiaryValid={beneficiaryValid}
+            beneficiaryStatus={beneficiaryInspection.status}
+            beneficiaryNetworkLabel={
+              beneficiaryInspection.status === "foreign"
+                ? beneficiaryInspection.networkLabel
+                : null
+            }
             beneficiaryIsSelf={beneficiaryIsSelf}
             accountName={activeAccountName}
             chainShort={chain.shortName}
@@ -800,6 +1008,18 @@ function CreatePageInner() {
           />
         )}
 
+        {step === "create" && isConnected && filingNeeds && (
+          <div className="mt-5">
+            <FilingCosts
+              requirement={filingNeeds}
+              chain={chain}
+              balanceFree={balanceQuery.data ?? null}
+              decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
+              trackLabel={pickedTier ? formatTrackName(pickedTier.origin) : null}
+            />
+          </div>
+        )}
+
         {step === "review" && draft && pickedTier && parsedAmount && beneficiary && (
           <Stage
             draft={draft}
@@ -813,15 +1033,25 @@ function CreatePageInner() {
             track={formatTrackName(pickedTier.origin)}
             trackRaw={pickedTier.origin}
             chainName={chain.name}
+            network={chain.id}
             attachments={attachments}
             callHex={preimagePreview?.callHex ?? "0x"}
             preimageHash={preimagePreview?.preimageHash ?? "0x"}
             preimageLen={preimagePreview?.preimageLen ?? 0}
             preimageAlreadyNoted={preimageAlreadyNoted}
             metadataHash={metadataHash}
-            decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
-            chainTicker={chain.ticker}
-            chainDecimals={chain.decimals}
+            enactmentText={enactmentLabel(enactment)}
+            costs={
+              filingNeeds && (
+                <FilingCosts
+                  requirement={filingNeeds}
+                  chain={chain}
+                  balanceFree={balanceQuery.data ?? null}
+                  decisionDeposit={trackForOrigin?.decisionDeposit ?? null}
+                  trackLabel={formatTrackName(pickedTier.origin)}
+                />
+              )
+            }
           />
         )}
 
@@ -846,7 +1076,7 @@ function CreatePageInner() {
                 title: `File the referendum on ${formatTrackName(pickedTier.origin)}`,
                 pallet: "referenda",
                 method: "submit",
-                summary: `Opens voting on the ${formatTrackName(pickedTier.origin)} track. Enacts the moment it's approved.`,
+                summary: `Opens voting on the ${formatTrackName(pickedTier.origin)} track. Enactment: ${enactmentLabel(enactment)}.`,
                 details: [
                   { label: "Origin", value: `Origins.${pickedTier.origin}` },
                   { label: "Lookup hash", value: preimagePreview?.preimageHash ?? "-" },
@@ -886,7 +1116,7 @@ function CreatePageInner() {
               },
             ]}
             callStatus={callStatus}
-            txStatus={tx.status}
+            txStatus={landed ? { kind: "finalized" } : signStatus}
             submittedIndex={submittedIndex}
             confirming={confirming}
             referendumLink={
@@ -912,7 +1142,8 @@ function CreatePageInner() {
           canStage={composeValid && !staging}
           missingReasons={missingReasons}
           staging={staging}
-          tx={tx}
+          tx={{ ...tx, status: signStatus }}
+          landed={landed}
           isConnected={isConnected}
           isWalletConnect={
             session?.connectorId === "enjin-wallet" ||
@@ -944,12 +1175,23 @@ function CreatePageInner() {
       </div>
 
       <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
+      {step === "create" && beneficiaryInspection.status === "foreign" && (
+        <AddressFormatDialog
+          input={beneficiaryInspection.input}
+          networkLabel={beneficiaryInspection.networkLabel}
+          convertedAddress={beneficiaryInspection.address}
+          chainShortName={chain.shortName}
+          isOwnWallet={beneficiaryInspection.address === proposerAddress}
+          onConvert={() => setBeneficiaryInput(beneficiaryInspection.address)}
+          onCancel={() => setBeneficiaryInput("")}
+        />
+      )}
       <SignRequestModal
         open={sign.isOpen}
         walletName={walletMeta.name}
         walletIcon={walletMeta.icon}
         subtitle="Approve the proposal batch in your wallet"
-        status={tx.status}
+        status={signStatus}
         deepLinkUrl={sign.deepLinkUrl}
         explorerUrl={
           tx.status.kind === "finalized"
@@ -972,27 +1214,11 @@ function CreatePageInner() {
         }}
       />
       <SignRequestModal
-        open={signInModalOpen}
+        {...signInModal}
         walletName={walletMeta.name}
         walletIcon={walletMeta.icon}
         subtitle="Sign in to stage your proposal"
-        status={
-          signInError
-            ? { kind: "error", message: signInError }
-            : { kind: "signing" }
-        }
         deepLinkUrl={sign.deepLinkUrl}
-        onClose={() => setSignInModalOpen(false)}
-        onRetry={() => {
-          setSignInError(null)
-          signIn
-            .submit()
-            .then(() => {
-              setSignInModalOpen(false)
-              toast.success("Signed in")
-            })
-            .catch((e) => setSignInError(formatError(e)))
-        }}
       />
     </Shell>
   )
@@ -1008,7 +1234,13 @@ function Shell({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Header({ chainName, chainShort }: { chainName: string; chainShort: string }) {
+function Header({
+  chainName,
+  chainShort,
+}: {
+  chainName: string | null
+  chainShort: string | null
+}) {
   return (
     <div className="mb-6 flex items-start gap-4">
       <div className="w-11 h-11 rounded-xl bg-primary/10 border border-purple-border flex items-center justify-center flex-shrink-0">
@@ -1019,9 +1251,15 @@ function Header({ chainName, chainShort }: { chainName: string; chainShort: stri
           Treasury Proposal
         </h1>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Request a payout from the {chainShort} treasury to your
-          connected wallet on{" "}
-          <span className="text-foreground">{chainName}</span>.
+          {chainName && chainShort ? (
+            <>
+              Request a payout from the {chainShort} treasury to your
+              connected wallet on{" "}
+              <span className="text-foreground">{chainName}</span>.
+            </>
+          ) : (
+            "Request a payout from the treasury to your connected wallet."
+          )}
         </p>
       </div>
     </div>

@@ -7,7 +7,6 @@ import { env } from "@/lib/env"
 import { getChain } from "@/lib/chain/chains"
 import { getActiveChain } from "@/lib/chain/use-chain"
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/config"
-import { isMobileUserAgent } from "@/lib/wallet/deep-link"
 import type {
   ConnectOptions,
   ConnectedSession,
@@ -21,6 +20,14 @@ type SignClientType = Awaited<ReturnType<typeof importAndInit>>
 
 let signClientPromise: Promise<SignClientType> | null = null
 
+/**
+ * The last reason the relay gave for closing the socket. When Reown refuses
+ * a connection it closes with code 3000 and a reason like "Unauthorized:
+ * origin not allowed"; the SDK keeps retrying and `connect` just times out,
+ * so we hold on to the reason and report it instead of the timeout.
+ */
+let lastRelayError: string | null = null
+
 async function importAndInit() {
   if (!env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID) {
     throw new Error(
@@ -30,15 +37,23 @@ async function importAndInit() {
     )
   }
   const { SignClient } = await import("@walletconnect/sign-client")
+  // The page's own origin, not NEXT_PUBLIC_APP_URL: wallets compare the
+  // metadata URL with the origin Reown verifies, so a preview deployment
+  // has to announce its own domain.
+  const origin = typeof window === "undefined" ? env.NEXT_PUBLIC_APP_URL : window.location.origin
   const client = await SignClient.init({
     projectId: env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
     relayUrl: env.NEXT_PUBLIC_WALLETCONNECT_RELAY_URL,
     metadata: {
       name: APP_NAME,
       description: APP_DESCRIPTION,
-      url: env.NEXT_PUBLIC_APP_URL,
-      icons: [`${env.NEXT_PUBLIC_APP_URL}/favicon.svg`],
+      url: origin,
+      icons: [`${origin}/favicon.svg`],
     },
+  })
+
+  client.core.relayer.on("relayer_error", (err: unknown) => {
+    lastRelayError = err instanceof Error ? err.message : String(err)
   })
 
   // Kick the relay socket awake the moment the dapp tab regains
@@ -103,6 +118,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
  */
 function resetSignClient(): void {
   signClientPromise = null
+  lastRelayError = null
   if (typeof window === "undefined") return
   try {
     const keys: string[] = []
@@ -116,6 +132,43 @@ function resetSignClient(): void {
   } catch {
     /* private mode etc. - non-fatal */
   }
+}
+
+/**
+ * Turn the relay's close reason into something an admin can act on. The
+ * project id is public (it ships in the bundle), so naming its last
+ * characters is fine and tells them which Reown project the build uses.
+ */
+export function describeRelayRefusal(
+  reason: string,
+  origin: string,
+  projectId: string | undefined,
+): string {
+  const project = projectId ? `project …${projectId.slice(-6)}` : "the project"
+  if (/origin/i.test(reason)) {
+    return (
+      `WalletConnect refused this site (${origin}). ` +
+      `Add it to the allowed domains of Reown ${project}.`
+    )
+  }
+  if (/key|project/i.test(reason)) {
+    return (
+      `WalletConnect rejected ${project}. Check NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ` +
+      "for this deployment and redeploy."
+    )
+  }
+  return `WalletConnect closed the connection: ${reason}`
+}
+
+function relayRefusal(): Error | null {
+  if (!lastRelayError || typeof window === "undefined") return null
+  return new Error(
+    describeRelayRefusal(
+      lastRelayError,
+      window.location.origin,
+      env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+    ),
+  )
 }
 
 /**
@@ -273,14 +326,36 @@ function approvedChainsFromSession(session: {
  * a request. Falls back to null if the wallet didn't provide one; the
  * caller can then default to `enjinwallet://`.
  */
-function nativeRedirectFromPeer(meta: unknown): string | null {
+// Custom app schemes ("enjinwallet:", "novawallet:") and https. The value is
+// rendered as a link, so "javascript:", "data:" and the like must never pass.
+// "https:" or a custom app scheme of at least three characters.
+const REDIRECT_SCHEME = /^[a-z][a-z0-9+.-]{2,}:$/
+const FORBIDDEN_SCHEMES = new Set([
+  "javascript:",
+  "data:",
+  "vbscript:",
+  "file:",
+  "blob:",
+  "http:",
+  "about:",
+])
+
+export function nativeRedirectFromPeer(meta: unknown): string | null {
   if (!meta || typeof meta !== "object") return null
   const m = meta as Record<string, unknown>
   const redirect = m.redirect as Record<string, unknown> | undefined
   if (!redirect) return null
   const native = redirect.native
-  if (typeof native === "string" && native.length > 0) return native
-  return null
+  if (typeof native !== "string" || native.length === 0 || native.length > 512) return null
+  if (/[\s\u0000-\u001f\u007f]/.test(native)) return null
+  let protocol: string
+  try {
+    protocol = new URL(native).protocol.toLowerCase()
+  } catch {
+    return null
+  }
+  if (FORBIDDEN_SCHEMES.has(protocol) || !REDIRECT_SCHEME.test(protocol)) return null
+  return native
 }
 
 /**
@@ -317,32 +392,6 @@ function chainNameForCaip(caip: string): string | null {
     /* ignore */
   }
   return null
-}
-
-/**
- * Synchronously click a synthetic `<a target="_blank">` pointing at the
- * wallet's deep link. Has to be invoked inside a live user-gesture
- * window (i.e. directly inside a click handler, no awaits in front) so
- * iOS Safari honours the navigation. Using a hidden anchor rather than
- * `window.location.href` keeps the dapp's tab alive - setting
- * location.href on iOS tends to surface an "Open in Enjin Wallet?"
- * prompt that re-mounts React on return, which has previously caused
- * double-fired sign requests.
- */
-function fireDeepLink(url: string): void {
-  if (typeof window === "undefined") return
-  try {
-    const a = document.createElement("a")
-    a.href = url
-    a.target = "_blank"
-    a.rel = "noopener noreferrer"
-    a.style.display = "none"
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-  } catch {
-    /* non-fatal */
-  }
 }
 
 /**
@@ -386,12 +435,12 @@ function buildSigner(
   // wallet never opens, the request hangs at the relay, and the
   // wallet eventually returns code 5000.
   //
-  // The reliable path is the pair flow's mechanism: a deep link fired
-  // synchronously from inside the click handler (`wakeWallet` on the
-  // connector, called from useExtrinsic.submit / useSignIn.submit).
-  // Wipe WALLETCONNECT_DEEPLINK_CHOICE here so the library's redirect
-  // short-circuits at `if (!wcDeepLink) return` - our sync wake is
-  // the single authoritative deep link.
+  // The reliable path is the pair flow's mechanism: a deep link the user
+  // taps. SignRequestModal renders an "Open in <wallet>" `<a>` built by
+  // buildSignRequestDeepLink (via useSignFlow) while the request is
+  // pending. Wipe WALLETCONNECT_DEEPLINK_CHOICE here so the library's
+  // redirect short-circuits at `if (!wcDeepLink) return` - the modal's
+  // link is the single authoritative deep link.
   const suppressInternalRedirect = (): void => {
     if (typeof window === "undefined") return
     try {
@@ -473,6 +522,7 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       // the same key surface twice (en…/cn…) and cross the per-network
       // handle namespace.
       const { uri, approval } = await (async () => {
+        lastRelayError = null
         try {
           const signClient = await withTimeout(
             getSignClient(),
@@ -493,8 +543,9 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
             "Couldn't start the WalletConnect session. Please try again.",
           )
         } catch (err) {
+          const refused = relayRefusal()
           resetSignClient()
-          throw err
+          throw refused ?? err
         }
       })()
 
@@ -563,27 +614,6 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       }
 
       return buildSigner(signClient, topic, active.caip2)
-    },
-
-    wakeWallet(session: ConnectedSession): void {
-      if (typeof window === "undefined") return
-      if (!isMobileUserAgent()) return
-      const peerRedirect =
-        (session.meta.peerRedirect as string | null | undefined) ?? null
-      const topic = (session.meta.topic as string | undefined) ?? null
-      // Mirror the pair flow's deep-link shape - `enjinwallet://wc?...` -
-      // so the wallet routes through its WalletConnect handler rather
-      // than just opening to home. We don't have the per-request id
-      // synchronously (it's generated inside signClient.request), so
-      // include sessionTopic as the strongest hint we can give the
-      // wallet about which session this is for. The request itself
-      // arrives over the WC relay a moment later.
-      const base = peerRedirect ?? "enjinwallet://"
-      const baseNoSlash = base.endsWith("/") ? base.slice(0, -1) : base
-      const url = topic
-        ? `${baseNoSlash}/wc?sessionTopic=${encodeURIComponent(topic)}`
-        : base
-      fireDeepLink(url)
     },
 
     async restore(): Promise<ConnectedSession | null> {

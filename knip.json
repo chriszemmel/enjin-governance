@@ -27,14 +27,17 @@
     "lib/query/hooks/use-profile.ts",
     "lib/query/hooks/use-comments.ts",
     "components/governance/comments-section.tsx",
-    "lib/utils/format-error.ts"
+    "lib/utils/format-error.ts",
+    "test/server-only-stub.ts"
   ],
   "project": [
     "app/**/*.{ts,tsx}",
     "components/**/*.{ts,tsx}",
-    "lib/**/*.{ts,tsx}"
+    "lib/**/*.{ts,tsx}",
+    "e2e/**/*.ts",
+    "test/**/*.ts"
   ],
-  "ignore": ["components/ui/**"],
+  "ignore": ["components/ui/**", ".claude/**"],
   "ignoreDependencies": [
     "tailwindcss",
     "tw-animate-css",
@@ -43,10 +46,8 @@
     "@radix-ui/react-alert-dialog",
     "@radix-ui/react-aspect-ratio",
     "@radix-ui/react-avatar",
-    "@radix-ui/react-checkbox",
     "@radix-ui/react-collapsible",
     "@radix-ui/react-context-menu",
-    "@radix-ui/react-dropdown-menu",
     "@radix-ui/react-hover-card",
     "@radix-ui/react-label",
     "@radix-ui/react-menubar",
@@ -57,7 +58,6 @@
     "@radix-ui/react-select",
     "@radix-ui/react-separator",
     "@radix-ui/react-slider",
-    "@radix-ui/react-switch",
     "@radix-ui/react-tabs",
     "@radix-ui/react-toast",
     "@radix-ui/react-toggle",
@@ -71,7 +71,6 @@
     "react-resizable-panels",
     "recharts",
     "vaul",
-    "postcss-load-config",
-    "@aws-sdk/s3-request-presigner"
+    "postcss-load-config"
   ]
 }

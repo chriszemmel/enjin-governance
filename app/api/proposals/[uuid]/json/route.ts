@@ -16,10 +16,15 @@
  *
  * External indexers don't need this - they can fetch the bucket URL
  * directly. Only browser callers go through here.
+ *
+ * Proposals that haven't reached the chain are private: only their
+ * proposer, signed in, can load them (to resume a draft).
  */
 
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
+import { getCurrentUser } from "@/lib/auth/current-user"
+import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById } from "@/lib/db/proposals"
 
@@ -54,6 +59,19 @@ export async function GET(
       { status: 404 },
     )
   }
+  if (row.status !== "on_chain") {
+    const me = await getCurrentUser().catch(() => null)
+    await initializeWasm()
+    let own = false
+    try {
+      own = me != null && samePublicKey(me.address, row.proposer_address)
+    } catch {
+      own = false
+    }
+    if (!own) {
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 })
+    }
+  }
 
   // Proposer edits overwrite the bucket bytes at the same key, so
   // both Next's data cache for the upstream fetch and any downstream
@@ -63,11 +81,10 @@ export async function GET(
   try {
     upstream = await fetch(row.json_url, { cache: "no-store" })
   } catch (e) {
+    const cause = e instanceof Error ? e.message : String(e)
+    console.error("[proposals/json] upstream fetch failed", cause)
     return NextResponse.json(
-      {
-        ok: false,
-        error: `Upstream fetch failed: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "The proposal file could not be read. Try again." },
       { status: 502 },
     )
   }
@@ -85,6 +102,9 @@ export async function GET(
       "content-type": "application/json; charset=utf-8",
       "cache-control": "private, no-cache, must-revalidate",
       "x-proposal-sha256": row.json_sha256,
+      // Lets the create page decide whether "Resume" can re-stage this row
+      // in place (only unsigned drafts can).
+      "x-proposal-status": row.status,
       "x-proposal-bucket-url": row.json_url,
     },
   })

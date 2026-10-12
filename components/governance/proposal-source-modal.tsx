@@ -204,10 +204,10 @@ function StatusBlock({
   status: { label: string; tone: StatusTone; line: string }
 }) {
   const toneClass = {
-    ok: "border-emerald-500/40 text-emerald-400 bg-emerald-500/5",
-    warn: "border-amber-500/40 text-amber-300 bg-amber-500/5",
+    ok: "border-emerald-500/40 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5",
+    warn: "border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/5",
     info: "border-purple-border text-primary bg-primary/5",
-    alert: "border-red-500/40 text-red-400 bg-red-500/5",
+    alert: "border-red-500/40 text-red-700 dark:text-red-400 bg-red-500/5",
     neutral: "border-border text-muted-foreground bg-surface-1",
   }[status.tone]
 

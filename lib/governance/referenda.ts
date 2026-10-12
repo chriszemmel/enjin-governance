@@ -95,6 +95,37 @@ export async function getReferendumHistory(
   }
 }
 
+/**
+ * The track a decided referendum was on, read from its raw storage at the
+ * block before the decision. Only the first bytes matter (the `Ongoing`
+ * variant, then the track as a u16), so there is no need for that block's
+ * runtime metadata the way `api.at` would fetch it - which keeps a list
+ * of these quick on an archive node. Null when the state isn't there.
+ */
+export async function getDecidedTrack(
+  api: ApiPromise,
+  index: number,
+  atBlock: number,
+): Promise<number | null> {
+  if (atBlock <= 1) return null
+  try {
+    const blockHash = await api.rpc.chain.getBlockHash(atBlock - 1)
+    const key = api.query.referenda.referendumInfoFor.key(index)
+    const raw = (await api.rpc.state.getStorage(key, blockHash)) as unknown as {
+      isSome?: boolean
+      unwrap?: () => { toU8a: (bare: boolean) => Uint8Array }
+      toU8a: (bare: boolean) => Uint8Array
+    }
+    if (raw.isSome === false) return null
+    const bytes = raw.unwrap ? raw.unwrap().toU8a(true) : raw.toU8a(true)
+    // ReferendumInfo::Ongoing is variant 0 and starts with `track: u16`.
+    if (bytes.length < 3 || bytes[0] !== 0) return null
+    return bytes[1]! | (bytes[2]! << 8)
+  } catch {
+    return null
+  }
+}
+
 /** Count of referenda ever submitted (max index + 1). */
 export async function getReferendumCount(api: ApiPromise): Promise<number> {
   const count = await api.query.referenda.referendumCount()

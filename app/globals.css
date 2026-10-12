@@ -30,6 +30,10 @@
   --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(1 0 0);
 
+  /* Purple and red as text: the fills pass on white (see .dark). */
+  --primary-text: oklch(0.48 0.2 280);
+  --destructive-text: oklch(0.55 0.22 25);
+
   --border: oklch(0.9 0.005 270);
   --input: oklch(0.94 0.005 270);
   --ring: oklch(0.48 0.2 280);
@@ -88,6 +92,12 @@
   --destructive: oklch(0.5 0.22 25);
   --destructive-foreground: oklch(0.97 0 0);
 
+  /* Purple and red as text on these surfaces need more light than as fills
+   * behind white text; no one shade passes 4.5:1 both ways. Text utilities
+   * take these (see the base layer), fills keep the ones above. */
+  --primary-text: oklch(0.66 0.17 280);
+  --destructive-text: oklch(0.65 0.2 25);
+
   /* 0.23 keeps card outlines legible against the 0.09 page background;
    * it also gives the neutral hover step (border one level up) room to read. */
   --border: oklch(0.23 0.015 270);
@@ -130,6 +140,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -178,6 +189,13 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  /* Dark theme: purple and red text in their text shades (see .dark). */
+  .dark :is(.text-primary, .hover\:text-primary, .group-hover\:text-primary) {
+    --primary: var(--primary-text);
+  }
+  .dark :is(.text-destructive, .hover\:text-destructive) {
+    --destructive: var(--destructive-text);
   }
   /* iOS Safari zooms the whole page in whenever a focused input has a
    * computed font-size below 16px. We use text-sm (14px) throughout for

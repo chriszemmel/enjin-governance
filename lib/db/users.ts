@@ -10,6 +10,7 @@
  */
 
 import "server-only"
+import { networkOfAddress } from "@/lib/auth/sign-in-network"
 import { getSql } from "./client"
 
 export type UserRow = {
@@ -27,26 +28,19 @@ export type UserRow = {
 }
 
 /**
- * Best-effort SS58-prefix sniff for the `network` column. SS58 encodes
- * the version byte in the first two chars (mostly), so a cheap prefix
- * test classifies en…/cn…/ef…/cm… without pulling in @polkadot/util-crypto
- * on every upsert. Anything we can't classify stays NULL - the row is
- * still valid, just not eligible for the per-network handle UNIQUE.
- */
-function networkFromAddress(address: string): string | null {
-  if (address.startsWith("en")) return "enjin-relay"
-  if (address.startsWith("cn")) return "canary-relay"
-  if (address.startsWith("ef")) return "enjin-matrix"
-  if (address.startsWith("cm")) return "canary-matrix"
-  return null
-}
-
-/**
  * Get-or-create. Idempotent - concurrent inserts with the same address
  * collapse to one row via the UNIQUE constraint and `ON CONFLICT DO NOTHING`.
+ *
+ * The `network` comes from the address's exact SS58 prefix. An address in
+ * no known network's format (a generic 5… one, a raw key) throws instead
+ * of making a row without one, which the per-network handle UNIQUE
+ * wouldn't cover. Sign-in refuses those formats before it gets here.
  */
 export async function upsertUserByAddress(address: string): Promise<UserRow> {
-  const network = networkFromAddress(address)
+  const network = networkOfAddress(address)
+  if (!network) {
+    throw new Error(`No known network uses the address format of ${address}`)
+  }
   const sql = getSql()
   const rows = (await sql`
     WITH ins AS (
@@ -95,16 +89,21 @@ export type ProfileUpdate = {
   handle?: string | null
 }
 
+/**
+ * Update the fields present in `patch`: a field left out keeps its value,
+ * a field given as null is cleared.
+ */
 export async function updateProfile(
   userId: string,
   patch: ProfileUpdate,
 ): Promise<UserRow> {
   const sql = getSql()
+  const has = (field: keyof ProfileUpdate) => patch[field] !== undefined
   const rows = (await sql`
     UPDATE users SET
-      display_name = COALESCE(${patch.display_name ?? null}, display_name),
-      bio          = COALESCE(${patch.bio ?? null},          bio),
-      handle       = COALESCE(${patch.handle ?? null},       handle)
+      display_name = CASE WHEN ${has("display_name")} THEN ${patch.display_name ?? null} ELSE display_name END,
+      bio          = CASE WHEN ${has("bio")} THEN ${patch.bio ?? null} ELSE bio END,
+      handle       = CASE WHEN ${has("handle")} THEN ${patch.handle ?? null} ELSE handle END
     WHERE id = ${userId}
     RETURNING *
   `) as UserRow[]

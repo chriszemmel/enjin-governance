@@ -5,11 +5,12 @@ import useEmblaCarousel from "embla-carousel-react"
 import { ChevronLeft, ChevronRight, Lock, Pencil, Trash2 } from "lucide-react"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { formatBlockDuration, formatTokenAmount } from "@/lib/chain/format"
-import { sEnjCurrency, type VoteCurrency } from "@/lib/governance/conviction-voting"
 import {
-  CONVICTION_LOCK_PERIODS,
-  CONVICTION_MULTIPLIER,
-} from "@/lib/governance/types"
+  convictionLockBlocks,
+  sEnjCurrency,
+  type VoteCurrency,
+} from "@/lib/governance/conviction-voting"
+import { CONVICTION_MULTIPLIER } from "@/lib/governance/types"
 import type { MyVoteOnPoll } from "@/lib/governance/conviction-voting"
 import { decodeCurrency } from "@/lib/governance/vote-decode"
 import { usePoolNft } from "@/lib/query/hooks/use-pool-nft"
@@ -20,7 +21,8 @@ import { PoolNftAvatar } from "./pool-nft-avatar"
 type Props = {
   votes: MyVoteOnPoll[]
   chain: ChainConfig
-  decisionPeriodBlocks: number | null
+  /** The runtime's conviction-lock unit (`getVoteLockingPeriod`), in blocks. */
+  voteLockingPeriod: number
   removing: boolean
   removeStatus: string
   canRemove: boolean
@@ -44,7 +46,7 @@ type Props = {
 export function CurrentVotesStack({
   votes,
   chain,
-  decisionPeriodBlocks,
+  voteLockingPeriod,
   removing,
   removeStatus,
   canRemove,
@@ -90,7 +92,7 @@ export function CurrentVotesStack({
         <Card
           entry={v}
           chain={chain}
-          decisionPeriodBlocks={decisionPeriodBlocks}
+          voteLockingPeriod={voteLockingPeriod}
           removing={removing && currencyMatches(v, removingCurrency)}
           removeStatus={removeStatus}
           canRemove={canRemove}
@@ -121,7 +123,7 @@ export function CurrentVotesStack({
               <Card
                 entry={entry}
                 chain={chain}
-                decisionPeriodBlocks={decisionPeriodBlocks}
+                voteLockingPeriod={voteLockingPeriod}
                 removing={removing && currencyMatches(entry, removingCurrency)}
                 removeStatus={removeStatus}
                 canRemove={canRemove}
@@ -171,7 +173,7 @@ export function CurrentVotesStack({
 function Card({
   entry,
   chain,
-  decisionPeriodBlocks,
+  voteLockingPeriod,
   removing,
   removeStatus,
   canRemove,
@@ -180,7 +182,7 @@ function Card({
 }: {
   entry: MyVoteOnPoll
   chain: ChainConfig
-  decisionPeriodBlocks: number | null
+  voteLockingPeriod: number
   removing: boolean
   removeStatus: string
   canRemove: boolean
@@ -246,13 +248,10 @@ function Card({
 
   const v = entry.vote
   const multiplier = CONVICTION_MULTIPLIER[v.conviction]
-  const lockPeriods = CONVICTION_LOCK_PERIODS[v.conviction]
   const lockLabel =
     v.conviction === "None"
       ? "No lock"
-      : decisionPeriodBlocks != null
-        ? formatBlockDuration(decisionPeriodBlocks * lockPeriods)
-        : `${lockPeriods} decision periods`
+      : formatBlockDuration(convictionLockBlocks(v.conviction, voteLockingPeriod))
 
   return (
     <div className="rounded-xl border border-border bg-surface-1 p-3.5 space-y-2">
@@ -276,7 +275,9 @@ function Card({
           <span
             className={cn(
               "text-[10px] uppercase tracking-wider font-semibold flex items-center gap-1",
-              v.aye ? "text-emerald-400" : "text-red-400",
+              v.aye
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-red-700 dark:text-red-400",
             )}
           >
             <Pencil className="w-2.5 h-2.5" />
@@ -293,7 +294,9 @@ function Card({
         <span
           className={cn(
             "text-base font-semibold",
-            v.aye ? "text-emerald-400" : "text-red-400",
+            v.aye
+              ? "text-emerald-700 dark:text-emerald-400"
+              : "text-red-700 dark:text-red-400",
           )}
         >
           {v.aye ? "Aye" : "Nay"}

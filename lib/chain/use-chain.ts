@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import { env } from "@/lib/env"
@@ -43,28 +43,17 @@ export function useActiveChain(): ChainConfig {
  * any chain-identifying UI on this so the user never sees a chain we're
  * about to overwrite a tick later.
  *
- * Always returns `false` on the server / first client paint - the persist
- * middleware's API only exists in the browser, and SSR has no notion of
- * hydration anyway. The effect promotes it on the client once persist
- * fires `onFinishHydration` (or already did).
+ * `false` on the server and while a server-rendered page hydrates (the
+ * persist middleware only exists in the browser); true straight away on a
+ * client-side navigation once persist has hydrated.
  */
 export function useChainHydrated(): boolean {
-  const [hydrated, setHydrated] = useState(false)
-  useEffect(() => {
-    const persistApi = useChainStore.persist
-    if (!persistApi) {
-      // Defensive: persist middleware should always attach this on the
-      // client; if it doesn't there's nothing to wait for.
-      setHydrated(true)
-      return
-    }
-    const unsub = persistApi.onFinishHydration(() => setHydrated(true))
-    if (persistApi.hasHydrated()) setHydrated(true)
-    return () => {
-      unsub()
-    }
-  }, [])
-  return hydrated
+  return useSyncExternalStore(
+    (onChange) => useChainStore.persist?.onFinishHydration(onChange) ?? (() => {}),
+    // Defensive: without the persist middleware there's nothing to wait for.
+    () => useChainStore.persist?.hasHydrated() ?? true,
+    () => false,
+  )
 }
 
 /** Reactive setter - call to switch networks at runtime. */

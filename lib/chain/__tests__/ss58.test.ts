@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest"
 import {
   encodeForChain,
+  inspectAddress,
   initializeWasm,
   isValidAddressForChain,
   isValidSs58,
@@ -116,5 +117,48 @@ describe("shortenAddress", () => {
 
   it("returns the input unchanged if it's already short", () => {
     expect(shortenAddress("short")).toBe("short")
+  })
+})
+
+describe("inspectAddress", () => {
+  // One key in every format we care about.
+  const CN = "cnTfU9odSe157jiEmsDGsQgBanpTXcDa2GJSJSB2oEdgMnwL9"
+  const CX = "cxLbmk2EMgof5CXHhXvNDntWemrce3MuYwRHJLqhc5HYdeqm9"
+  const EN = "enCrdzdh8TVcEuoWtWokRRzgWVgLdGoyo5P4c7344LXRzFidX"
+  const EF = "efRKnRAsiKi8pHp1LvbvokibcYgcdYMAQFRPgGZKarNzq7dB5"
+  // Another key (the treasury account) in Polkadot / generic / hex form.
+  const DOT = "13UVJyLnbVp9RBZYFwFGyDvVd1y27Tt8tkntv6Q7JVPhFsTB"
+  const GENERIC = "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+  const HEX = "0x6d6f646c70792f74727372790000000000000000000000000000000000000000"
+  const TREASURY_CN = "cnTxmnXAtb5WE48CVU3RKAsdAbgPFhUtQQwjskwLi69N14WBY"
+
+  it("treats blank input as empty", () => {
+    expect(inspectAddress("   ", "canary-relay")).toEqual({ status: "empty" })
+  })
+
+  it("accepts an address already in the chain's format", () => {
+    expect(inspectAddress(CN, "canary-relay")).toEqual({ status: "native", address: CN })
+    expect(inspectAddress(` ${EN} `, "enjin-relay")).toEqual({ status: "native", address: EN })
+  })
+
+  it("names the network of a foreign-format address and gives the matching one", () => {
+    expect(inspectAddress(CX, "canary-relay")).toEqual({
+      status: "foreign",
+      input: CX,
+      networkLabel: "Canary Matrixchain",
+      address: CN,
+    })
+    expect(inspectAddress(EF, "enjin-relay")).toMatchObject({ networkLabel: "Enjin Matrixchain", address: EN })
+    expect(inspectAddress(EN, "canary-relay")).toMatchObject({ networkLabel: "Enjin Relaychain", address: CN })
+    expect(inspectAddress(DOT, "canary-relay")).toMatchObject({ networkLabel: "Polkadot", address: TREASURY_CN })
+    expect(inspectAddress(GENERIC, "canary-relay")).toMatchObject({ networkLabel: "generic Substrate", address: TREASURY_CN })
+    expect(inspectAddress(HEX, "canary-relay")).toMatchObject({ networkLabel: "raw public key", address: TREASURY_CN })
+  })
+
+  it("rejects broken addresses", () => {
+    expect(inspectAddress(CX.slice(0, -1), "canary-relay")).toEqual({ status: "invalid" })
+    expect(inspectAddress(`${CX.slice(0, -1)}8`, "canary-relay")).toEqual({ status: "invalid" })
+    expect(inspectAddress("0xdeadbeef", "canary-relay")).toEqual({ status: "invalid" })
+    expect(inspectAddress("hello", "canary-relay")).toEqual({ status: "invalid" })
   })
 })

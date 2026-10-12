@@ -415,7 +415,7 @@ function DelegateForm({
         <span className="text-[11px] text-muted-foreground">
           Amount ({chain.ticker})
           {free != null && (
-            <span className="text-muted-foreground/70">
+            <span className="text-muted-foreground">
               {" "}
               · free {formatTokenAmount(free, chain)}
             </span>

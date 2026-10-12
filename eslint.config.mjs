@@ -15,6 +15,12 @@ const config = [
       "public/**",
       "coverage/**",
       "dist/**",
+      // Playwright output (reports can hold the trace viewer's scripts).
+      "playwright-report/**",
+      "test-results/**",
+      "blob-report/**",
+      // Local tool state, e.g. git worktrees of this repo.
+      ".claude/**",
     ],
   },
   ...nextBaseConfig,

@@ -209,6 +209,17 @@ export async function getPreimageStatus(
 }
 
 /**
+ * Whether `preimage.notePreimage` of these bytes would abort the batch with
+ * `AlreadyNoted` - so the batch must leave that note out. Only an
+ * `Unrequested` preimage (noted by an account) does. A `Requested` one takes
+ * the note, and may not hold the bytes at all: skipping it would leave the
+ * referendum's Lookup (or setMetadata's hash) pointing at nothing.
+ */
+export function noteWouldAbort(status: PreimageStatus | null | undefined): boolean {
+  return status === "Unrequested"
+}
+
+/**
  * Hash a byte array exactly the way the chain hashes preimages (blake2-256).
  * Exported so callers can pre-compute a hash without building the extrinsic.
  */
