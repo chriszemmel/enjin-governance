@@ -63,7 +63,7 @@ import {
 } from "@/lib/chain/chains"
 import { SubscanLink } from "@/components/governance/subscan-link"
 import { RuntimeCodeHash } from "@/components/governance/runtime-code-hash"
-import { FastTrackCard } from "@/components/fellowship/fast-track-card"
+import { FastTrackCard, WhitelistedChip } from "@/components/fellowship/fast-track-card"
 import {
   useActiveChain,
   useChainHydrated,
@@ -388,6 +388,7 @@ export default function ProposalDetailPage() {
                   track={track ?? null}
                   trackId={ref.trackId ?? historyOngoing?.trackId ?? null}
                 />
+                <WhitelistedChip bytes={inlineCall?.bytes ?? preimageQuery.data?.bytes} />
               </>
             ),
             dates: (
@@ -425,6 +426,11 @@ export default function ProposalDetailPage() {
                 />
               ) : null,
           })}
+
+          <FastTrackCard
+            bytes={inlineCall?.bytes ?? preimageQuery.data?.bytes}
+            status={ref.status.type}
+          />
 
           {/* What is asked comes first, then how long there is to decide. */}
           {intent?.kind === "treasury-spend" && (
@@ -627,12 +633,6 @@ export default function ProposalDetailPage() {
               </div>
             )}
           </div>
-
-          <FastTrackCard
-            bytes={inlineCall?.bytes ?? preimageQuery.data?.bytes}
-            pallet="referenda"
-            status={ref.status.type}
-          />
 
           {!inlineCall && !decodedCall && !proposalRef && !isOngoing && (
             <div className="rounded-2xl bg-card border border-border p-6 space-y-3">

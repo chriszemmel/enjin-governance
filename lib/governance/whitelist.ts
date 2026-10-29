@@ -118,3 +118,9 @@ export async function findCounterparts(
   }
   return out
 }
+
+/** Every call hash whitelisted right now. */
+export async function listWhitelisted(api: ApiPromise): Promise<`0x${string}`[]> {
+  const entries = await api.query.whitelist!.whitelistedCall!.entries()
+  return entries.map(([key]) => (key.args[0] as unknown as { toHex: () => string }).toHex() as `0x${string}`)
+}

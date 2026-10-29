@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { pageMetadata } from "@/lib/seo/metadata"
 
 export const metadata = pageMetadata({
@@ -8,5 +9,6 @@ export const metadata = pageMetadata({
 })
 
 export default function FellowshipLayout({ children }: { children: React.ReactNode }) {
-  return children
+  // The pages read ?network= (useSearchParams), which needs a boundary.
+  return <Suspense>{children}</Suspense>
 }

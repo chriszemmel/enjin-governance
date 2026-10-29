@@ -4,15 +4,6 @@ import type { Referendum } from "@/lib/governance/types"
 import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 
 /**
- * `section.method` of a referendum's call, for titles and cards. Fellowship
- * referenda have no EGOV1 text yet, so the call is what names them.
- */
-export function useCallName(referendum: Referendum | null | undefined): string | null {
-  const decoded = useDecodedCall(referendum)
-  return decoded ? `${decoded.section}.${decoded.method}` : null
-}
-
-/**
  * The decoded call of an ongoing referendum (or of a decided one's
  * history, read at `atBlock`), inline or from its preimage.
  */

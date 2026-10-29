@@ -65,6 +65,9 @@ export function RankedTally({
           icon
         />
       </div>
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground pt-1">
+        Rank-weighted votes
+      </p>
       <Meter
         title="Approval"
         caption={`Ayes ${tally.ayes} · Nays ${tally.nays}`}
@@ -74,15 +77,15 @@ export function RankedTally({
       />
       <Meter
         title="Support"
-        caption={`${tally.bareAyes} of ${eligible} eligible members voted aye (rank ${rankNumeral(minRank)}+)`}
+        caption={`${tally.bareAyes} of ${eligible} eligible members voted aye`}
         value={support}
         need={needSupport}
         tone="purple"
       />
-      <p className="text-[11px] text-muted-foreground leading-relaxed">
-        Each member counts (r + 1)(r + 2) / 2, r being their rank above the track&apos;s
-        minimum. No conviction, no lock, no ENJ. The marks show what the track&apos;s curves
-        need now.
+      <p className="text-[11px] text-muted-foreground leading-relaxed border-t border-border pt-3">
+        Each member counts (r + 1)(r + 2) / 2, r being their rank above the track&apos;s minimum
+        (rank {rankNumeral(minRank)} here). No conviction, no lock, no ENJ. The marks show what the
+        track&apos;s curves need now.
       </p>
     </div>
   )
@@ -116,10 +119,18 @@ function Meter({
   const passing = value != null && need != null && value >= need
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between text-xs">
-        <span className="font-medium text-foreground">{title}</span>
+      <div className="flex items-baseline justify-between text-sm">
+        <span
+          className={cn(
+            "font-medium",
+            tone === "green" ? "text-green-700 dark:text-green-400" : "text-primary",
+          )}
+        >
+          {title}
+        </span>
         <span className="font-mono text-foreground">{value == null ? "-" : pct(value)}</span>
       </div>
+      <p className="text-[11px] text-muted-foreground font-mono">{caption}</p>
       <div className="relative h-2 rounded-full bg-surface-3 overflow-hidden">
         <div
           className={cn(
@@ -130,20 +141,22 @@ function Meter({
         />
         {need != null && (
           <div
-            className="absolute inset-y-0 w-0.5 bg-foreground/70"
+            className="absolute -inset-y-0.5 w-0.5 bg-foreground"
             style={{ left: `calc(${(need * 100).toFixed(2)}% - 1px)` }}
             aria-hidden
           />
         )}
       </div>
-      <div className="flex items-center justify-between text-[11px] text-muted-foreground gap-2">
-        <span>{caption}</span>
-        {need != null && (
-          <span className={cn("whitespace-nowrap", passing ? "text-green-700 dark:text-green-400" : "")}>
-            {passing ? "Passing" : "Needs"} {pct(need)}
-          </span>
-        )}
-      </div>
+      {need != null && (
+        <p
+          className={cn(
+            "text-[11px]",
+            passing ? "text-green-700 dark:text-green-400" : "text-muted-foreground",
+          )}
+        >
+          {passing ? "Passing" : "Not passing"} · needs {Math.round(need * 100)}% now
+        </p>
+      )}
     </div>
   )
 }

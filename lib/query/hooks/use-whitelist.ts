@@ -5,6 +5,7 @@ import { useActiveChain } from "@/lib/chain/use-chain"
 import {
   findCounterparts,
   isWhitelisted,
+  listWhitelisted,
   whitelistRoleOf,
   type WhitelistCounterpart,
   type WhitelistRole,
@@ -48,4 +49,48 @@ export function useWhitelistLink(bytes: Uint8Array | null | undefined) {
     staleTime: 60_000,
   })
   return { role, whitelisted, counterparts }
+}
+
+/** The call hashes whitelisted right now, with what whitelisted and dispatches each. */
+export function useWhitelistedCalls() {
+  const chain = useActiveChain()
+  const apiQuery = useApi()
+  const archiveQuery = useArchiveApi()
+  const tracksQuery = useTracks()
+  const dispatchTrackId =
+    tracksQuery.data?.find((t) => canonicalTrackName(t.name) === "whitelistedcaller")?.id ?? null
+  return useQuery<
+    { hash: `0x${string}`; fellowship: WhitelistCounterpart[]; dispatch: WhitelistCounterpart[] }[]
+  >({
+    queryKey: ["whitelist", chain.id, "all", dispatchTrackId],
+    queryFn: async () => {
+      const api = apiQuery.data!
+      const archive = archiveQuery.data ?? null
+      const hashes = await listWhitelisted(api)
+      return Promise.all(
+        hashes.map(async (hash) => ({
+          hash,
+          fellowship: await findCounterparts(api, archive, { role: "dispatch", hash, inner: null }, dispatchTrackId),
+          dispatch: await findCounterparts(api, archive, { role: "whitelist", hash }, dispatchTrackId),
+        })),
+      )
+    },
+    enabled:
+      !!apiQuery.data?.query.whitelist &&
+      tracksQuery.isSuccess &&
+      (archiveQuery.isSuccess || archiveQuery.isError),
+    staleTime: 30_000,
+  })
+}
+
+/** How many call hashes are whitelisted right now: one storage read. */
+export function useWhitelistCount() {
+  const chain = useActiveChain()
+  const apiQuery = useApi()
+  return useQuery<number>({
+    queryKey: ["whitelist", chain.id, "count"],
+    queryFn: async () => (await listWhitelisted(apiQuery.data!)).length,
+    enabled: !!apiQuery.data?.query.whitelist,
+    staleTime: 30_000,
+  })
 }

@@ -57,9 +57,10 @@ export function FellowshipVotePanel({
   const weight = rank != null ? voteWeight(rank, minRank) : 0
 
   // Start from the member's vote on chain, if any.
+  // A vote on chain shows as its own row; the buttons then pick a change.
   useEffect(() => {
-    if (myVote) setVote(myVote.aye ? "aye" : "nay")
-  }, [myVote])
+    setVote(null)
+  }, [myVote?.aye])
 
   const tx = useExtrinsic({
     build: (api) => buildFellowshipVote(api, index, vote === "aye"),
@@ -106,7 +107,7 @@ export function FellowshipVotePanel({
             <>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Members of rank {rankNumeral(minRank)} or higher vote on this track. Anyone can
-                follow the tally.
+                follow the tally and comment.
               </p>
               <button
                 onClick={() => setWalletOpen(true)}
@@ -148,7 +149,11 @@ export function FellowshipVotePanel({
                   )}
                 >
                   <span className="flex items-center gap-1.5 font-medium">
-                    {myVote.aye ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                    {myVote.aye ? (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5" />
+                    )}
                     {myVote.aye ? "Aye" : "Nay"}
                   </span>
                   <span className="font-mono">{myVote.weight} votes</span>
@@ -182,55 +187,59 @@ export function FellowshipVotePanel({
                   Nay
                 </button>
               </div>
-              {eligible ? (
-                <div className="rounded-xl bg-primary/5 border border-purple-border px-3.5 py-3 flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-                    Your vote counts
-                  </span>
-                  <span className="font-semibold text-primary font-mono">{weight}</span>
-                </div>
-              ) : (
-                <p className="text-[11px] text-muted-foreground flex items-start gap-1.5 leading-relaxed">
-                  <Lock className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              {!eligible ? (
+                <p className="text-xs text-muted-foreground flex items-start gap-1.5 leading-relaxed pt-1">
+                  <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                   {rank == null
-                    ? `Only Fellowship members of rank ${rankNumeral(minRank)} (${rankName(minRank)}) or higher vote on this track.`
-                    : `This track needs rank ${rankNumeral(minRank)} (${rankName(minRank)}); you are rank ${rankNumeral(rank)}.`}
+                    ? `Only members of rank ${rankNumeral(minRank)} (${rankName(minRank)}) or higher vote on this track.`
+                    : `This track needs rank ${rankNumeral(minRank)} (${rankName(minRank)}).`}
                 </p>
+              ) : (
+                <>
+                  <div className="rounded-xl bg-primary/5 border border-purple-border px-3.5 py-3 flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                      Your vote counts
+                    </span>
+                    <span className="font-semibold text-primary font-mono">{weight}</span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!vote) return
+                      sign.open()
+                      try {
+                        await tx.submit()
+                      } catch {
+                        // The status callback already showed it.
+                      }
+                    }}
+                    disabled={!eligible || !vote || unchanged || tx.isSubmitting}
+                    className={cn(
+                      "w-full px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200",
+                      eligible && vote && !unchanged && !tx.isSubmitting
+                        ? "bg-primary text-primary-foreground hover:bg-purple-dim glow-purple-sm"
+                        : "bg-surface-2 text-muted-foreground cursor-not-allowed",
+                    )}
+                  >
+                    {tx.isSubmitting
+                      ? tx.status.kind === "signing"
+                        ? "Awaiting signature…"
+                        : "Submitting…"
+                      : !vote
+                        ? myVote
+                          ? `Change to ${myVote.aye ? "Nay" : "Aye"}`
+                          : "Select a vote"
+                        : unchanged
+                          ? `You voted ${label}`
+                          : myVote
+                            ? `Change to ${label}`
+                            : `Vote ${label}`}
+                  </button>
+                  <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
+                    No lock and no conviction - change it while the poll is open
+                  </p>
+                </>
               )}
-              <button
-                onClick={async () => {
-                  if (!vote) return
-                  sign.open()
-                  try {
-                    await tx.submit()
-                  } catch {
-                    // The status callback already showed it.
-                  }
-                }}
-                disabled={!eligible || !vote || unchanged || tx.isSubmitting}
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200",
-                  eligible && vote && !unchanged && !tx.isSubmitting
-                    ? "bg-primary text-primary-foreground hover:bg-purple-dim glow-purple-sm"
-                    : "bg-surface-2 text-muted-foreground cursor-not-allowed",
-                )}
-              >
-                {tx.isSubmitting
-                  ? tx.status.kind === "signing"
-                    ? "Awaiting signature…"
-                    : "Submitting…"
-                  : !vote
-                    ? "Select a vote"
-                    : unchanged
-                      ? `You voted ${label}`
-                      : myVote
-                      ? `Change to ${label}`
-                      : `Vote ${label}`}
-              </button>
-              <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
-                No lock and no conviction - change it while the poll is open
-              </p>
             </>
           )}
         </div>

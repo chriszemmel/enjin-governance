@@ -6,14 +6,17 @@ import { expect, test } from "./support/test"
 test("the Fellowship hub lists members and referenda from the chain", async ({ page }) => {
   await page.goto("/fellowship?network=canary-relay")
   await expect(page.getByRole("heading", { level: 1, name: "Fellowship" })).toBeVisible()
-  const card = page.getByRole("link", { name: /F#0/ })
+  const card = page.getByRole("link", { name: /F # 0/ })
   await expect(card).toBeVisible({ timeout: 60_000 })
-  await expect(card.getByText("Approved")).toBeVisible()
+  await expect(card.getByText("Approved", { exact: true })).toBeVisible()
+  // F#0 whitelisted the call public referendum #5 dispatched.
+  await expect(card.getByText("Public referendum #5")).toBeVisible({ timeout: 60_000 })
+  await expect(card.getByText("Fellows · rank III+")).toBeVisible()
   await expect(page.getByText("Not a member")).toBeVisible()
 
   await page.getByRole("tab", { name: "Members" }).click()
   await expect(page.getByText("Grand Master").first()).toBeVisible()
-  await expect(page.getByText("Weight on")).toBeVisible()
+  await expect(page.getByRole("combobox")).toBeVisible()
 })
 
 test("a decided fellowship referendum has its own F# page", async ({ page }) => {

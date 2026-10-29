@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { ArrowLeft, Calendar, CheckCircle2, ExternalLink, Users, XCircle } from "lucide-react"
+import { ArrowLeft, Calendar, CheckCircle2, Hash, Users, XCircle } from "lucide-react"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { LoadError } from "@/components/layout/load-error"
@@ -16,9 +16,12 @@ import { FellowshipVotePanel } from "@/components/fellowship/fellowship-vote-pan
 import { RankBadge } from "@/components/fellowship/rank-badge"
 import { RankedTally } from "@/components/fellowship/ranked-tally"
 import { useDecodedCall } from "@/components/fellowship/call-summary"
-import { FastTrackCard } from "@/components/fellowship/fast-track-card"
+import { WhitelistCallCard } from "@/components/fellowship/fast-track-card"
+import { BlockTime } from "@/components/governance/block-time"
+import { SubscanLink } from "@/components/governance/subscan-link"
 import { FellowshipDepositButton } from "@/components/fellowship/fellowship-deposit-button"
 import { subscanBlockUrl } from "@/lib/chain/chains"
+import { useNetworkParam } from "@/lib/chain/use-network-param"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { samePublicKey } from "@/lib/chain/ss58"
 import {
@@ -38,6 +41,7 @@ import { friendlyError } from "@/lib/utils/format-error"
 import { cn } from "@/lib/utils"
 
 export default function FellowshipReferendumPage() {
+  useNetworkParam()
   const params = useParams<{ index: string }>()
   const raw = Array.isArray(params?.index) ? params.index[0] : params?.index
   const index = raw != null && /^\d+$/.test(raw) ? Number(raw) : -1
@@ -67,6 +71,8 @@ export default function FellowshipReferendumPage() {
     decidedAt ? decidedAt - 1 : null,
   )
   const callName = decodedCall ? `${decodedCall.section}.${decodedCall.method}` : null
+  const callBytes =
+    ongoing && "type" in ongoing.proposal ? ongoing.proposal.bytes : decodedCall?.bytes
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -97,8 +103,8 @@ export default function FellowshipReferendumPage() {
           ) : (
             <div className="grid lg:grid-cols-[1fr_340px] gap-6 items-start">
               <div className="space-y-4 min-w-0">
-                <section className="rounded-2xl bg-card border border-border p-5 space-y-4">
-                  <div className="flex items-center justify-between gap-2">
+                <section className="rounded-2xl bg-card border border-border p-6">
+                  <div className="flex items-start justify-between gap-2 mb-4">
                     <div className="flex items-center gap-2 flex-wrap">
                       <StatusChip type={live.status.type} />
                       {trackId != null && (
@@ -106,59 +112,44 @@ export default function FellowshipReferendumPage() {
                           {fellowshipTrackCaption(track, trackId)}
                         </span>
                       )}
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-purple-border bg-primary/8 text-primary">
-                        <Users className="w-3 h-3" />
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border border-purple-border bg-primary/10 text-primary">
+                        <Users className="w-3.5 h-3.5" />
                         Fellowship
                       </span>
                     </div>
-                    <span className="text-xs font-mono text-muted-foreground">F#{index}</span>
+                    <div className="ml-auto flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground font-mono flex items-center gap-1">
+                        F<Hash className="w-3.5 h-3.5" />
+                        {index}
+                      </span>
+                      {ongoing && <SubscanLink href={subscanBlockUrl(chain, ongoing.submitted)} />}
+                    </div>
                   </div>
-                  <h1 className="text-xl sm:text-2xl font-semibold text-foreground break-words">
+                  <h1 className="text-xl sm:text-2xl font-semibold text-foreground leading-tight mb-2 break-words">
                     {callName ?? `Fellowship referendum F#${index}`}
                   </h1>
-                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground border-t border-border pt-4">
+                  <div className="flex items-center gap-x-4 gap-y-2 mt-5 pt-5 border-t border-border text-xs text-muted-foreground flex-wrap">
                     {ongoing && (
-                      <a
-                        href={subscanBlockUrl(chain, ongoing.submitted)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 hover:text-foreground"
-                      >
+                      <span className="flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5" />
-                        Submitted <span className="font-mono">#{ongoing.submitted.toLocaleString("en-US")}</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
+                        Submitted <BlockTime block={ongoing.submitted} showBlock />
+                      </span>
                     )}
                     {ongoing && (
                       <span className="inline-flex items-center gap-1.5">
-                        Proposer <UserChip address={ongoing.submissionDeposit.who} size="xs" />
-                        <ProposerRank address={ongoing.submissionDeposit.who} members={membersQuery.data} />
+                        Proposer <UserChip address={ongoing.submissionDeposit.who} size="sm" />
+                        <ProposerRank
+                          address={ongoing.submissionDeposit.who}
+                          members={membersQuery.data}
+                        />
                       </span>
                     )}
                   </div>
                 </section>
 
-                <LifecycleProgress
-                  referendum={live}
-                  track={track}
-                  pallet={FELLOWSHIP_PALLET}
-                />
+                <WhitelistCallCard bytes={callBytes} callName={callName} />
 
-                {ongoing && (
-                  <section className="rounded-2xl bg-card border border-border p-5">
-                    {"type" in ongoing.proposal ? (
-                      <PreimageDisplay inlineBytes={ongoing.proposal.bytes} inlineAt={decidedAt ? decidedAt - 1 : null} />
-                    ) : (
-                      <PreimageDisplay preimageRef={ongoing.proposal} preimageAt={decidedAt ? decidedAt - 1 : null} />
-                    )}
-                  </section>
-                )}
-
-                <FastTrackCard
-                  bytes={ongoing && "type" in ongoing.proposal ? ongoing.proposal.bytes : decodedCall?.bytes}
-                  pallet={FELLOWSHIP_PALLET}
-                  status={live.status.type}
-                />
+                <LifecycleProgress referendum={live} track={track} pallet={FELLOWSHIP_PALLET} />
 
                 <section className="rounded-2xl bg-card border border-border p-5">
                   <TallyVotesSwiper
@@ -181,14 +172,37 @@ export default function FellowshipReferendumPage() {
                         id: "votes",
                         label: "Votes",
                         header: <h2 className="font-semibold text-foreground">Votes</h2>,
-                        content: <VotesList votes={votesQuery.data} members={membersQuery.data} decided={live.status.type !== "Ongoing"} />,
+                        content: (
+                          <VotesList
+                            votes={votesQuery.data}
+                            members={membersQuery.data}
+                            decided={live.status.type !== "Ongoing"}
+                          />
+                        ),
                       },
                     ]}
                   />
                 </section>
+
+                {ongoing && (
+                  <section className="rounded-2xl bg-card border border-border p-5">
+                    {"type" in ongoing.proposal ? (
+                      <PreimageDisplay
+                        inlineBytes={ongoing.proposal.bytes}
+                        inlineAt={decidedAt ? decidedAt - 1 : null}
+                      />
+                    ) : (
+                      <PreimageDisplay
+                        preimageRef={ongoing.proposal}
+                        preimageAt={decidedAt ? decidedAt - 1 : null}
+                      />
+                    )}
+                  </section>
+                )}
               </div>
 
-              <div className="space-y-4">
+              {/* On a phone the vote comes first, as on the public pages' sticky panel. */}
+              <div className="space-y-4 order-first lg:order-none lg:sticky lg:top-20">
                 {live.status.type === "Ongoing" && live.status.decisionDeposit == null && (
                   <FellowshipDepositButton index={index} track={track} />
                 )}
@@ -215,7 +229,7 @@ function ProposerRank({
   members: { address: string; rank: number }[] | undefined
 }) {
   const m = members?.find((x) => samePublicKey(x.address, address))
-  return m ? <RankBadge rank={m.rank} /> : null
+  return m ? <RankBadge rank={m.rank} short /> : null
 }
 
 function VotesList({
@@ -258,7 +272,9 @@ function VotesList({
               <UserChip address={v.voter} size="sm" />
             </div>
             {rank != null && <RankBadge rank={rank} />}
-            <span className="font-mono text-sm font-semibold tabular-nums w-8 text-right">{v.weight}</span>
+            <span className="font-mono text-sm font-semibold tabular-nums w-8 text-right">
+              {v.weight}
+            </span>
           </li>
         )
       })}

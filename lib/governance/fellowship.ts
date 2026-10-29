@@ -306,3 +306,40 @@ export function buildFellowshipPlaceDeposit(
 ): SubmittableExtrinsic<"promise"> {
   return api.tx.fellowshipReferenda!.placeDecisionDeposit!(index) as SubmittableExtrinsic<"promise">
 }
+
+export type MemberAction = "add" | "promote" | "demote" | "remove"
+
+/**
+ * The origin a fellowship referendum needs for a call, as the runtime
+ * checks it (tried on a Canary fork): whitelisting and removing a
+ * whitelisted call take `Fellows`; adding a member takes rank I's origin;
+ * promoting a member of rank r (to r + 1), demoting or removing one takes
+ * rank r + 2's. Null when no origin can (rank IX demoted).
+ */
+export function recommendedOrigin(
+  kind: "whitelist" | "removeWhitelisted" | "member" | "raw",
+  member?: { action: MemberAction; rank: number | null },
+): string | null {
+  if (kind === "whitelist" || kind === "removeWhitelisted") return "Fellows"
+  if (kind !== "member" || !member) return null
+  const dan = (n: number) => (n >= 1 && n <= MAX_RANK ? `Fellowship${n}Dan` : null)
+  switch (member.action) {
+    case "add":
+      return dan(1)
+    case "promote":
+      return member.rank == null ? null : dan(member.rank + 2)
+    case "demote":
+    case "remove":
+      return member.rank == null ? null : dan(member.rank + 2)
+  }
+}
+
+/** The track an origin submits on. */
+export function originTrack(origin: string): number | null {
+  return FELLOWSHIP_ORIGINS.find((o) => o.origin === origin)?.trackId ?? danTrack(origin)
+}
+
+function danTrack(origin: string): number | null {
+  const m = /^Fellowship(\d)Dan$/.exec(origin)
+  return m ? Number(m[1]) : null
+}

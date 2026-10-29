@@ -28,7 +28,10 @@ export function MembersList({
   me: string | null
 }) {
   const [trackId, setTrackId] = useState(3)
-  const counts = Array.from({ length: MAX_RANK + 1 }, (_, r) => members.filter((m) => m.rank === r).length)
+  const counts = Array.from(
+    { length: MAX_RANK + 1 },
+    (_, r) => members.filter((m) => m.rank === r).length,
+  )
   const track = tracks.find((t) => t.id === trackId) ?? null
 
   return (
@@ -42,8 +45,10 @@ export function MembersList({
               <span
                 key={r}
                 className={cn(
-                  "text-[10px] font-mono px-1.5 py-0.5 rounded-full border",
-                  n > 0 ? "border-purple-border text-foreground" : "border-border text-muted-foreground/60",
+                  "text-[11px] px-2 py-0.5 rounded-full border tabular-nums",
+                  n > 0
+                    ? "border-purple-border bg-primary/8 text-foreground font-semibold"
+                    : "border-border text-muted-foreground/60",
                 )}
               >
                 {rankNumeral(r)} {n}
@@ -65,12 +70,29 @@ export function MembersList({
           </select>
         </label>
       </div>
+      <div className="px-4 py-2.5 border-b border-border grid grid-cols-[1fr_auto_3rem] sm:grid-cols-[1fr_12rem_8rem] gap-3 text-[10px] uppercase tracking-wider text-muted-foreground">
+        <span>Member</span>
+        <span>Rank</span>
+        <span className="text-right truncate">
+          Weight
+          <span className="hidden sm:inline">
+            {" "}
+            on {track ? fellowshipTrackLabel(track, trackId) : "track"}
+          </span>
+        </span>
+      </div>
       <ul className="divide-y divide-border">
         {members.map((m) => {
           const mine = !!me && samePublicKey(m.address, me)
           return (
-            <li key={m.address} className="px-4 py-3 flex items-center gap-3">
-              <div className="flex-1 min-w-0 flex items-center gap-2">
+            <li
+              key={m.address}
+              className={cn(
+                "px-4 py-3 grid grid-cols-[1fr_auto_3rem] sm:grid-cols-[1fr_12rem_8rem] gap-3 items-center",
+                mine && "bg-primary/5",
+              )}
+            >
+              <div className="min-w-0 flex items-center gap-2">
                 <UserChip address={m.address} size="sm" />
                 {mine && (
                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground">
@@ -78,8 +100,10 @@ export function MembersList({
                   </span>
                 )}
               </div>
-              <RankBadge rank={m.rank} />
-              <span className="w-10 text-right font-mono text-sm font-semibold text-foreground tabular-nums">
+              <div>
+                <RankBadge rank={m.rank} />
+              </div>
+              <span className="text-right font-mono text-sm font-semibold text-foreground tabular-nums">
                 {voteWeight(m.rank, trackId)}
               </span>
             </li>
