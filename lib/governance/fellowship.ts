@@ -17,7 +17,11 @@
 
 import type { ApiPromise } from "@polkadot/api"
 import type { SubmittableExtrinsic } from "@polkadot/api/types"
+import type { EventRecord } from "@polkadot/types/interfaces"
 import type { Codec } from "@polkadot/types/types"
+import { u8aToHex } from "@polkadot/util"
+import { findEvent } from "@/lib/chain/events"
+import { canInline, noteAndHash } from "./preimage"
 import { decodeReferendumInfo } from "./status"
 import { decodeTracks } from "./tracks"
 import type { Referendum, Track } from "./types"
@@ -240,4 +244,65 @@ export async function getMyFellowshipVote(
   const opt = raw as unknown as { isSome?: boolean; unwrap?: () => Codec }
   const record = typeof opt.isSome === "boolean" ? (opt.isSome ? opt.unwrap!() : null) : (raw as Codec)
   return decodeFellowshipVote(record?.toJSON())
+}
+
+/**
+ * The origins a fellowship referendum is filed with, one per track: the
+ * origin decides the track (checked on a Canary fork: Initiates → 0,
+ * Fellows → 3, Experts → 5, Masters → 7, FellowshipNDan → N). The named
+ * ones are the usual choice where a track has one.
+ */
+export const FELLOWSHIP_ORIGINS: { trackId: number; origin: string }[] = [
+  { trackId: 0, origin: "FellowshipInitiates" },
+  { trackId: 1, origin: "Fellowship1Dan" },
+  { trackId: 2, origin: "Fellowship2Dan" },
+  { trackId: 3, origin: "Fellows" },
+  { trackId: 4, origin: "Fellowship4Dan" },
+  { trackId: 5, origin: "FellowshipExperts" },
+  { trackId: 6, origin: "Fellowship6Dan" },
+  { trackId: 7, origin: "FellowshipMasters" },
+  { trackId: 8, origin: "Fellowship8Dan" },
+  { trackId: 9, origin: "Fellowship9Dan" },
+]
+
+/** Members of rank I and up may file; candidates and outsiders get BadOrigin. */
+export const MIN_SUBMIT_RANK = 1
+
+/**
+ * `fellowshipReferenda.submit` for `callBytes` on the track `origin` opens.
+ * A call of up to 128 bytes rides inline; a longer one is noted as a
+ * preimage first, in one `utility.batchAll`.
+ */
+export function buildFellowshipSubmit(
+  api: ApiPromise,
+  params: { origin: string; callBytes: Uint8Array; enactAfter: number },
+): SubmittableExtrinsic<"promise"> {
+  const origin = { Origins: params.origin }
+  const enactment = { After: params.enactAfter }
+  const submit = (proposal: unknown) =>
+    api.tx.fellowshipReferenda!.submit!(origin, proposal, enactment) as SubmittableExtrinsic<"promise">
+  if (canInline(params.callBytes)) {
+    return submit({ Inline: u8aToHex(params.callBytes) })
+  }
+  const noted = noteAndHash(api, params.callBytes)
+  return api.tx.utility.batchAll([
+    noted.extrinsic,
+    submit({ Lookup: { hash: noted.hash, len: noted.len } }),
+  ]) as SubmittableExtrinsic<"promise">
+}
+
+/** The new F# index from a `fellowshipReferenda.Submitted` event. */
+export function extractFellowshipIndex(
+  events: EventRecord[] | readonly EventRecord[],
+): number | null {
+  const submitted = findEvent(events, "fellowshipReferenda", "Submitted")
+  if (!submitted) return null
+  return Number((submitted.data[0] as unknown as { toString: () => string }).toString())
+}
+
+export function buildFellowshipPlaceDeposit(
+  api: ApiPromise,
+  index: number,
+): SubmittableExtrinsic<"promise"> {
+  return api.tx.fellowshipReferenda!.placeDecisionDeposit!(index) as SubmittableExtrinsic<"promise">
 }

@@ -14,8 +14,7 @@ export function RankBadge({ rank, className }: { rank: number; className?: strin
         className,
       )}
     >
-      <span className="font-mono">{rankNumeral(rank)}</span>
-      {rankName(rank)}
+      <span className="font-mono">{rankNumeral(rank)}</span> {rankName(rank)}
     </span>
   )
 }

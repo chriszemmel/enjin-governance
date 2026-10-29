@@ -17,6 +17,7 @@ import { RankBadge } from "@/components/fellowship/rank-badge"
 import { RankedTally } from "@/components/fellowship/ranked-tally"
 import { useDecodedCall } from "@/components/fellowship/call-summary"
 import { FastTrackCard } from "@/components/fellowship/fast-track-card"
+import { FellowshipDepositButton } from "@/components/fellowship/fellowship-deposit-button"
 import { subscanBlockUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { samePublicKey } from "@/lib/chain/ss58"
@@ -187,11 +188,16 @@ export default function FellowshipReferendumPage() {
                 </section>
               </div>
 
-              <FellowshipVotePanel
-                index={index}
-                trackId={trackId}
-                isOngoing={live.status.type === "Ongoing"}
-              />
+              <div className="space-y-4">
+                {live.status.type === "Ongoing" && live.status.decisionDeposit == null && (
+                  <FellowshipDepositButton index={index} track={track} />
+                )}
+                <FellowshipVotePanel
+                  index={index}
+                  trackId={trackId}
+                  isOngoing={live.status.type === "Ongoing"}
+                />
+              </div>
             </div>
           )}
         </div>

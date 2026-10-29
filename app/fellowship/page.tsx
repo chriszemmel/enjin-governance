@@ -1,7 +1,8 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { FileText, ShieldCheck, Users } from "lucide-react"
+import Link from "next/link"
+import { ArrowRight, FileText, ShieldCheck, Users } from "lucide-react"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { LoadError } from "@/components/layout/load-error"
@@ -54,13 +55,24 @@ export default function FellowshipPage() {
       <Nav />
       <main className="pt-24 pb-24 px-4 sm:px-6 lg:px-8 flex-1">
         <div className="max-w-5xl mx-auto">
-          <div className="mb-8">
-            <h1 className="text-3xl font-semibold text-foreground mb-2">Fellowship</h1>
-            <p className="text-muted-foreground max-w-2xl">
-              The ranked technical collective of the {hydrated ? chain.name : "Enjin Relaychain"}.
-              Members vote by rank; an approved call runs with a Fellowship origin, such as
-              whitelisting a call for the fast public track.
-            </p>
+          <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="text-3xl font-semibold text-foreground mb-2">Fellowship</h1>
+              <p className="text-muted-foreground max-w-2xl">
+                The ranked technical collective of the {hydrated ? chain.name : "Enjin Relaychain"}.
+                Members vote by rank; an approved call runs with a Fellowship origin, such as
+                whitelisting a call for the fast public track.
+              </p>
+            </div>
+            {has && (
+              <Link
+                href={`/fellowship/new?network=${chain.id}`}
+                className="flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-all duration-200 glow-purple-sm"
+              >
+                New referendum
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            )}
           </div>
 
           {has === false ? (

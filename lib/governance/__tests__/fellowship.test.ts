@@ -3,6 +3,8 @@ import {
   decodeFellowshipVote,
   decodeRankedTally,
   eligibleMembers,
+  extractFellowshipIndex,
+  FELLOWSHIP_ORIGINS,
   fellowshipTrackCaption,
   fellowshipTrackLabel,
   rankName,
@@ -82,5 +84,24 @@ describe("labels", () => {
     expect(fellowshipTrackLabel({ name: "senior fellows" }, 4)).toBe("Senior Fellows")
     expect(fellowshipTrackLabel(null, 4)).toBe("Track 4")
     expect(fellowshipTrackCaption({ name: "fellows" }, 3)).toBe("Fellows · rank III+")
+  })
+})
+
+describe("filing", () => {
+  it("offers one origin per track, in track order", () => {
+    expect(FELLOWSHIP_ORIGINS.map((o) => o.trackId)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(FELLOWSHIP_ORIGINS.find((o) => o.trackId === 3)?.origin).toBe("Fellows")
+  })
+
+  it("reads the new F# from the Submitted event", () => {
+    const record = (section: string, method: string, data: unknown[]) =>
+      ({ event: { section, method, data } }) as never
+    expect(
+      extractFellowshipIndex([
+        record("referenda", "Submitted", [{ toString: () => "18" }]),
+        record("fellowshipReferenda", "Submitted", [{ toString: () => "16" }]),
+      ]),
+    ).toBe(16)
+    expect(extractFellowshipIndex([record("system", "ExtrinsicSuccess", [])])).toBeNull()
   })
 })

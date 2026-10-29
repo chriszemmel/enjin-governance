@@ -212,6 +212,11 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   each other by the call's hash, and compare both tracks' terms with Root's,
   read from the runtime. Until the call is whitelisted, the public one warns
   that enactment would fail with `CallIsNotWhitelisted`.
+- **Filing in the Fellowship:** members of rank I and up file a fellowship
+  referendum from `/fellowship/new`: whitelist a call by its call data or
+  hash, or enact a raw call, on the track its origin opens. A call over 128
+  bytes is noted as a preimage in the same batch. Anyone can then place the
+  decision deposit on the F# page.
 - **Abstain:** the vote panel offers Abstain next to Aye and Nay. It casts
   a `SplitAbstain` vote with the whole amount on abstain: it counts toward
   support, not approval, and has no conviction, so nothing stays locked
