@@ -206,6 +206,12 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   by members voting aye) and the votes. Members vote Aye or Nay there,
   weighted by rank; a rank below the track's minimum is told which rank it
   needs. The menu shows the entry only where the pallets exist.
+- **The fast track:** a fellowship referendum that whitelists a call and a
+  public WhitelistedCaller referendum that dispatches it show the same four
+  steps (fellowship vote, call whitelisted, public vote, dispatch), link
+  each other by the call's hash, and compare both tracks' terms with Root's,
+  read from the runtime. Until the call is whitelisted, the public one warns
+  that enactment would fail with `CallIsNotWhitelisted`.
 - **Abstain:** the vote panel offers Abstain next to Aye and Nay. It casts
   a `SplitAbstain` vote with the whole amount on abstain: it counts toward
   support, not approval, and has no conviction, so nothing stays locked

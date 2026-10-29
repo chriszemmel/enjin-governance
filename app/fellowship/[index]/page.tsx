@@ -15,7 +15,8 @@ import { UserChip } from "@/components/profile/user-chip"
 import { FellowshipVotePanel } from "@/components/fellowship/fellowship-vote-panel"
 import { RankBadge } from "@/components/fellowship/rank-badge"
 import { RankedTally } from "@/components/fellowship/ranked-tally"
-import { useCallName } from "@/components/fellowship/call-summary"
+import { useDecodedCall } from "@/components/fellowship/call-summary"
+import { FastTrackCard } from "@/components/fellowship/fast-track-card"
 import { subscanBlockUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { samePublicKey } from "@/lib/chain/ss58"
@@ -60,7 +61,11 @@ export default function FellowshipReferendumPage() {
         : null
   const trackId = live?.trackId ?? history?.trackId ?? null
   const track = tracksQuery.data?.find((t) => t.id === trackId) ?? null
-  const callName = useCallName(live?.status.type === "Ongoing" ? live : history)
+  const decodedCall = useDecodedCall(
+    live?.status.type === "Ongoing" ? live : history,
+    decidedAt ? decidedAt - 1 : null,
+  )
+  const callName = decodedCall ? `${decodedCall.section}.${decodedCall.method}` : null
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -147,6 +152,12 @@ export default function FellowshipReferendumPage() {
                     )}
                   </section>
                 )}
+
+                <FastTrackCard
+                  bytes={ongoing && "type" in ongoing.proposal ? ongoing.proposal.bytes : decodedCall?.bytes}
+                  pallet={FELLOWSHIP_PALLET}
+                  status={live.status.type}
+                />
 
                 <section className="rounded-2xl bg-card border border-border p-5">
                   <TallyVotesSwiper

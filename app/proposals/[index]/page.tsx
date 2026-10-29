@@ -63,6 +63,7 @@ import {
 } from "@/lib/chain/chains"
 import { SubscanLink } from "@/components/governance/subscan-link"
 import { RuntimeCodeHash } from "@/components/governance/runtime-code-hash"
+import { FastTrackCard } from "@/components/fellowship/fast-track-card"
 import {
   useActiveChain,
   useChainHydrated,
@@ -626,6 +627,12 @@ export default function ProposalDetailPage() {
               </div>
             )}
           </div>
+
+          <FastTrackCard
+            bytes={inlineCall?.bytes ?? preimageQuery.data?.bytes}
+            pallet="referenda"
+            status={ref.status.type}
+          />
 
           {!inlineCall && !decodedCall && !proposalRef && !isOngoing && (
             <div className="rounded-2xl bg-card border border-border p-6 space-y-3">
