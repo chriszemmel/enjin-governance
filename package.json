@@ -65,7 +65,7 @@
     "embla-carousel-react": "8.6.0",
     "input-otp": "1.4.2",
     "lucide-react": "^0.564.0",
-    "next": "16.2.6",
+    "next": "16.4.3",
     "next-themes": "^0.4.6",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
@@ -75,11 +75,11 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.0",
     "server-only": "^0.0.1",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.5",
     "sonner": "^1.7.1",
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
-    "zod": "^3.24.1",
+    "zod": "^4.6.7",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
@@ -89,7 +89,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "^9.18.0",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.4.3",
     "knip": "^5.42.0",
     "postcss": "^8.5",
     "prettier": "^3.4.2",
@@ -98,5 +98,17 @@
     "typescript": "5.7.3",
     "vitest": "^2.1.8"
   },
-  "packageManager": "pnpm@9.15.4"
+  "packageManager": "pnpm@9.15.4",
+  "pnpm": {
+    "overrides": {
+      "lodash": ">=4.18.0",
+      "browserslist": ">=4.28.7",
+      "baseline-browser-mapping": ">=2.11.0",
+      "source-map-js": ">=1.2.2",
+      "colord": ">=2.9.4",
+      "@babel/core": ">=7.29.6",
+      "ws@>=8.0.0 <8.21.0": "^8.21.0",
+      "ws@>=7.0.0 <7.5.11": "^7.5.11"
+    }
+  }
 }
