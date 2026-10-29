@@ -139,7 +139,7 @@ async function metadataBindingMatches(
   return { ok: true }
 }
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 
 const bodySchema = z.object({
   referendum_index: z.number().int().nonnegative(),

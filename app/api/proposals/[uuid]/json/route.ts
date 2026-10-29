@@ -25,7 +25,7 @@ import { getProposalById } from "@/lib/db/proposals"
 
 export const runtime = "nodejs"
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 
 export async function GET(
   _request: NextRequest,

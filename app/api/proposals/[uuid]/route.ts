@@ -56,7 +56,7 @@ import {
 
 export const runtime = "nodejs"
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 
 export async function DELETE(
   _request: NextRequest,

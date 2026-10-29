@@ -19,7 +19,7 @@ import { getProposalById, markProposalCancelled } from "@/lib/db/proposals"
 
 export const runtime = "nodejs"
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 const bodySchema = z
   .object({ reason: z.string().max(200).optional() })
   .optional()
