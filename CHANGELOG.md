@@ -206,6 +206,12 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   details say Abstain, and a tally with only abstain votes says so instead
   of "No votes". The form also picks up an existing vote when your votes
   load after the page, instead of starting empty.
+- **Queued referenda:** when a track already decides as many referenda as
+  it may (`maxDeciding`: 20 or 10 on the treasury tracks in spec 1080), the
+  lifecycle card and the proposal cards say "Queued" instead of counting
+  down a prepare period that has ended. While preparing, the card now says
+  votes count already, and counts down to when deciding starts rather than
+  "until voting opens".
 - **Hidden text stays hidden in the API:** `/api/proposals/by-index` and
   `by-indices` leave out the title, summary and text of a proposal that
   moderators hid or removed, and say so in a `moderation` field, as the

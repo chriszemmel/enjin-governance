@@ -44,6 +44,15 @@ export function heroFor(lifecycle: Lifecycle, currentBlock: number | null): Hero
       progress: 0,
     }
   }
+  if (lifecycle.queued) {
+    return {
+      big: null,
+      unit: "Queued: the track is full",
+      pill: "Queued",
+      approved: false,
+      progress: 1,
+    }
+  }
   if (!stage && payout?.state === "active" && payout.block != null) {
     const since = payout.since ?? null
     const span = since != null ? payout.block - since : 0
@@ -59,7 +68,7 @@ export function heroFor(lifecycle: Lifecycle, currentBlock: number | null): Hero
     }
   }
   const unit: Record<LifecycleStage["id"], string> = {
-    prepare: "until voting opens",
+    prepare: "until deciding starts",
     decide: "left to vote",
     confirm: "left to confirm",
     enact: "to enactment",
@@ -78,6 +87,13 @@ export function heroFor(lifecycle: Lifecycle, currentBlock: number | null): Hero
     approved,
     progress: stage?.progress ?? 0,
   }
+}
+
+function queuedNote(lifecycle: Lifecycle): string {
+  const max = lifecycle.maxDeciding
+  return max != null
+    ? `Waiting for one of the track's ${max} deciding places to free up`
+    : "Waiting for a deciding place on the track to free up"
 }
 
 /** "13d 13h", or "any block now" once the block is due. */
@@ -199,9 +215,12 @@ function stageRow(
         if (lifecycle.awaitingDecisionDeposit) {
           row.note = "Anyone can place the decision deposit"
           row.noteTone = "warn"
+        } else if (lifecycle.queued) {
+          row.note = queuedNote(lifecycle)
+          row.noteTone = "warn"
         } else {
-          row.note = "Voting opens after the prepare period"
-          row.when = ahead && { main: `opens ${ahead.main}` }
+          row.note = "Votes count already; deciding starts after it"
+          row.when = ahead && { main: `ends ${ahead.main}` }
         }
       } else if (stage.id === "decide") {
         row.note = "Needs approval and support"

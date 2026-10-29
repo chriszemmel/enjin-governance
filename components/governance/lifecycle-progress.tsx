@@ -440,13 +440,20 @@ export function LifecycleMini({
   }
 
   const label: Record<LifecycleStage["id"], string> = {
-    prepare: lifecycle.awaitingDecisionDeposit ? "Awaiting deposit" : "Preparing",
+    prepare: lifecycle.awaitingDecisionDeposit
+      ? "Awaiting deposit"
+      : lifecycle.queued
+        ? "Queued"
+        : "Preparing",
     decide: "Voting",
     confirm: "Confirming",
     enact: "Enactment",
   }
   const left =
-    lifecycle.awaitingDecisionDeposit || activeStage.endBlock == null || currentBlock == null
+    lifecycle.awaitingDecisionDeposit ||
+    lifecycle.queued ||
+    activeStage.endBlock == null ||
+    currentBlock == null
       ? null
       : activeStage.endBlock - currentBlock
 

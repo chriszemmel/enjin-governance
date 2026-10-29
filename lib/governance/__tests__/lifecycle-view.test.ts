@@ -117,6 +117,41 @@ describe("while voting", () => {
     )
   })
 
+  it("counts votes while preparing and says when deciding starts", () => {
+    const ref = ongoing(16, { submitted: HEAD - 3_000 })
+    const lc = getLifecycle(ref, mediumSpender, HEAD)
+    expect(heroFor(lc, HEAD)).toMatchObject({ unit: "until deciding starts", pill: "Preparing" })
+    expect(stepRows(lc, HEAD, null)[0]).toMatchObject({
+      state: "active",
+      note: "Votes count already; deciding starts after it",
+    })
+  })
+
+  it("says a referendum is queued when its track is full", () => {
+    const ref = ongoing(16, { submitted: HEAD - 30_000, inQueue: true })
+    const lc = getLifecycle(ref, mediumSpender, HEAD)
+    expect(lc.queued).toBe(true)
+    expect(heroFor(lc, HEAD)).toMatchObject({
+      big: null,
+      unit: "Queued: the track is full",
+      pill: "Queued",
+    })
+    expect(stepRows(lc, HEAD, null)[0]).toMatchObject({
+      state: "active",
+      noteTone: "warn",
+      note: `Waiting for one of the track's ${mediumSpender.maxDeciding} deciding places to free up`,
+    })
+  })
+
+  it("is not queued once deciding", () => {
+    const ref = ongoing(16, {
+      submitted: HEAD - 30_000,
+      inQueue: true,
+      deciding: { since: HEAD - 1_000, confirming: null },
+    })
+    expect(getLifecycle(ref, mediumSpender, HEAD).queued).toBe(false)
+  })
+
   it("waits for the decision deposit without a countdown", () => {
     const ref = ongoing(16, { submitted: HEAD - 3_000, decisionDeposit: null })
     const lc = getLifecycle(ref, mediumSpender, HEAD)

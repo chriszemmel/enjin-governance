@@ -124,6 +124,14 @@ export type Lifecycle = {
   /** True when the deciding stage is blocked on the decision deposit being placed. */
   awaitingDecisionDeposit: boolean
   /**
+   * True when the prepare period is over but the track already decides as
+   * many referenda as it may (`maxDeciding`): the runtime holds this one in
+   * the track's queue until a place frees up.
+   */
+  queued: boolean
+  /** The track's `maxDeciding`, for saying how many places it has. */
+  maxDeciding: number | null
+  /**
    * While deciding: the block the runtime will start confirming at, from its
    * alarm (the point where the support curve meets the current tally). Null
    * when confirming already, or when the alarm is just the end of the period.
@@ -256,6 +264,7 @@ function buildOngoingLifecycle(
 
   const awaitingDecisionDeposit =
     status.decisionDeposit == null && status.deciding == null
+  const queued = status.inQueue && status.deciding == null
 
   // While deciding, the alarm is the earlier of the period's end and the
   // block where the support curve falls to the current tally: from there
@@ -362,6 +371,8 @@ function buildOngoingLifecycle(
     overallProgress: computeOverallProgress(stages),
     terminal: null,
     awaitingDecisionDeposit,
+    queued,
+    maxDeciding: track?.maxDeciding ?? null,
     confirmStartsAt,
     timeline,
     payout,
@@ -623,6 +634,8 @@ function buildTerminalLifecycle(
     overallProgress: computeOverallProgress(stages),
     terminal,
     awaitingDecisionDeposit: false,
+    queued: false,
+    maxDeciding: track?.maxDeciding ?? null,
     confirmStartsAt: null,
     timeline,
     payout,
