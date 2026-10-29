@@ -4,7 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
+  # Advisories are published when other people publish them, not when we
+  # commit, so the audit also runs on a clock: Monday morning, UTC.
+  schedule:
+    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 concurrency:
@@ -42,6 +46,9 @@ jobs:
 
       - name: Knip
         run: pnpm knip
+
+      - name: Audit dependencies
+        run: pnpm audit --prod
 
       - name: Test
         run: pnpm test
