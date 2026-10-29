@@ -14,7 +14,7 @@ import { listStatesForProposal } from "@/lib/db/moderation"
 export const runtime = "nodejs"
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const id = z.string().uuid().safeParse(new URL(request.url).searchParams.get("proposal"))
+  const id = z.guid().safeParse(new URL(request.url).searchParams.get("proposal"))
   if (!id.success) {
     return NextResponse.json({ ok: false, error: "Invalid proposal id" }, { status: 400 })
   }

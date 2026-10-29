@@ -17,10 +17,10 @@ import { isMissingTable } from "@/lib/db/errors"
 
 export const runtime = "nodejs"
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 const postSchema = z.object({
   body_markdown: z.string().min(1).max(10_000),
-  parent_id: z.string().uuid().nullable().optional(),
+  parent_id: z.guid().nullable().optional(),
 })
 
 export async function GET(

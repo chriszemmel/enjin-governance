@@ -84,7 +84,7 @@ const attachmentSchema = z.object({
 })
 
 const bodySchema = z.object({
-  proposal_id: z.string().uuid(),
+  proposal_id: z.guid(),
   network: z.enum(NETWORK_VALUES),
   proposer_address: z.string().min(1),
   title: z.string().min(1).max(200),

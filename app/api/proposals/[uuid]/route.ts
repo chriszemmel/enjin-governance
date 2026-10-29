@@ -66,7 +66,7 @@ export const runtime = "nodejs"
 // Leaves time for the background text check after an edit.
 export const maxDuration = 60
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 
 export async function DELETE(
   _request: NextRequest,
