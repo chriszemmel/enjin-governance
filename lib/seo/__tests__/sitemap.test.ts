@@ -50,6 +50,7 @@ const STATIC = [
   "/",
   "/proposals",
   "/treasury",
+  "/fellowship",
   "/docs",
   "/moderation-log",
   "/security",

@@ -19,6 +19,7 @@ const PAGES: Array<Pick<Entry, "changeFrequency" | "priority"> & { path: string 
   { path: "/", changeFrequency: "daily", priority: 1 },
   { path: "/proposals", changeFrequency: "hourly", priority: 0.9 },
   { path: "/treasury", changeFrequency: "daily", priority: 0.8 },
+  { path: "/fellowship", changeFrequency: "daily", priority: 0.7 },
   { path: "/docs", changeFrequency: "monthly", priority: 0.6 },
   { path: "/moderation-log", changeFrequency: "weekly", priority: 0.3 },
   { path: "/security", changeFrequency: "yearly", priority: 0.3 },

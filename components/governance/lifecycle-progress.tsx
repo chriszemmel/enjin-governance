@@ -8,6 +8,7 @@ import { useActiveChain } from "@/lib/chain/use-chain"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
 import { useEnactment } from "@/lib/query/hooks/use-enactment"
 import { useReferendumHistory } from "@/lib/query/hooks/use-referendum-history"
+import type { ReferendaPallet } from "@/lib/governance/referenda"
 import { useSpendPayout } from "@/lib/query/hooks/use-spend-payout"
 import {
   blockToDate,
@@ -41,6 +42,12 @@ interface LifecycleProgressProps {
   amount?: string | null
   /** Override the chain head - used by previews/tests. */
   currentBlockOverride?: number | null
+  /**
+   * The Fellowship's referenda read their history from their own pallet,
+   * and skip the scheduler lookup: its task names are the public pallet's,
+   * so F#N would find #N's enactment.
+   */
+  pallet?: ReferendaPallet
   className?: string
 }
 
@@ -60,6 +67,7 @@ export function LifecycleProgress({
   track,
   intent,
   currentBlockOverride,
+  pallet = "referenda",
   className,
 }: LifecycleDetailProps) {
   const chain = useActiveChain()
@@ -69,11 +77,12 @@ export function LifecycleProgress({
   // A decided referendum's status just before the decision places the
   // earlier blocks. Same query (and cache entry) as the page's.
   const decidedAt = referendum.status.type === "Ongoing" ? null : referendum.status.at
-  const historyQuery = useReferendumHistory(referendum.index, decidedAt)
+  const historyQuery = useReferendumHistory(referendum.index, decidedAt, undefined, pallet)
   const history = historyQuery.data?.status.type === "Ongoing" ? historyQuery.data.status : null
   // The enactment record reads the archive too: let the history (which the
   // page's tally and call summary wait on) go first.
   const enactment = useEnactment(referendum, {
+    enabled: pallet === "referenda",
     withRecord: historyQuery.isSuccess || historyQuery.isError,
   })
   const target = localSpendTarget(intent)
@@ -404,12 +413,13 @@ export function LifecycleMini({
   track,
   amount,
   currentBlockOverride,
+  pallet = "referenda",
   className,
 }: LifecycleProgressProps) {
   const currentBlockQuery = useCurrentBlock()
   const currentBlock =
     currentBlockOverride !== undefined ? currentBlockOverride : (currentBlockQuery.data ?? null)
-  const enactment = useEnactment(referendum)
+  const enactment = useEnactment(referendum, { enabled: pallet === "referenda" })
   const lifecycle = getLifecycle(referendum, track ?? null, currentBlock, {
     enactment: enactment.state,
   })

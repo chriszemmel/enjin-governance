@@ -75,9 +75,10 @@ function useEnactmentRecord(
  */
 export function useEnactment(
   referendum: Referendum,
-  options: { withRecord?: boolean; chain?: ChainConfig } = {},
+  options: { withRecord?: boolean; chain?: ChainConfig; enabled?: boolean } = {},
 ): { state: EnactmentState | undefined; record: EnactmentRecord | null | undefined } {
-  const approvalBlock = referendum.status.type === "Approved" ? referendum.status.at : null
+  const approvalBlock =
+    referendum.status.type === "Approved" && (options.enabled ?? true) ? referendum.status.at : null
   const taskQuery = useEnactmentTask(referendum.index, {
     enabled: approvalBlock != null,
     chain: options.chain,

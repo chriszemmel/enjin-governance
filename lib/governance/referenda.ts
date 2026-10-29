@@ -32,6 +32,22 @@ export function extractReferendumIndex(
   }
 }
 
+/**
+ * The two referenda pallets: the public one, voted with conviction, and the
+ * Fellowship's, voted by rank. Their storage has the same shape, so the
+ * readers below take the pallet and default to the public one.
+ */
+export type ReferendaPallet = "referenda" | "fellowshipReferenda"
+
+/** The pallet's query section; throws on a runtime without it. */
+function referendaQuery(api: ApiPromise, pallet: ReferendaPallet) {
+  const section = api.query[pallet]
+  if (!section?.referendumInfoFor) {
+    throw new Error(`Chain does not expose ${pallet}.referendumInfoFor`)
+  }
+  return section
+}
+
 export type ReferendumFilter = {
   trackId?: number
   status?: ReferendumStatusType
@@ -47,8 +63,9 @@ export type ReferendumFilter = {
 export async function listReferenda(
   api: ApiPromise,
   filter: ReferendumFilter = {},
+  pallet: ReferendaPallet = "referenda",
 ): Promise<Referendum[]> {
-  const entries = await api.query.referenda.referendumInfoFor.entries()
+  const entries = await referendaQuery(api, pallet).referendumInfoFor.entries()
   const decoded: Referendum[] = []
 
   for (const [key, info] of entries) {
@@ -68,8 +85,9 @@ export async function listReferenda(
 export async function getReferendum(
   api: ApiPromise,
   index: number,
+  pallet: ReferendaPallet = "referenda",
 ): Promise<Referendum | null> {
-  const info = await api.query.referenda.referendumInfoFor(index)
+  const info = await referendaQuery(api, pallet).referendumInfoFor(index)
   return decodeReferendumInfo(index, info)
 }
 
@@ -83,12 +101,13 @@ export async function getReferendumHistory(
   api: ApiPromise,
   index: number,
   atBlock: number,
+  pallet: ReferendaPallet = "referenda",
 ): Promise<Referendum | null> {
   if (atBlock <= 1) return null
   try {
     const blockHash = await api.rpc.chain.getBlockHash(atBlock - 1)
     const apiAt = await api.at(blockHash)
-    const info = await apiAt.query.referenda.referendumInfoFor(index)
+    const info = await apiAt.query[pallet]!.referendumInfoFor!(index)
     return decodeReferendumInfo(index, info)
   } catch {
     return null
@@ -127,8 +146,11 @@ export async function getDecidedTrack(
 }
 
 /** Count of referenda ever submitted (max index + 1). */
-export async function getReferendumCount(api: ApiPromise): Promise<number> {
-  const count = await api.query.referenda.referendumCount()
+export async function getReferendumCount(
+  api: ApiPromise,
+  pallet: ReferendaPallet = "referenda",
+): Promise<number> {
+  const count = await referendaQuery(api, pallet).referendumCount!()
   return (count as unknown as { toNumber: () => number }).toNumber()
 }
 

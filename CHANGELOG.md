@@ -199,6 +199,13 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   as soon as such a wallet connects, before it signs in. Nobody else sees it,
   and the server is never asked about a wallet that hasn't signed in; the
   page and its routes still need the sign-in.
+- **Fellowship:** a Fellowship page for runtimes that run one (Enjin and
+  Canary Relaychain): members and ranks, what each member's vote counts on
+  every track, and every fellowship referendum on its own F# page with the
+  lifecycle, the call, a rank-weighted tally (approval by weight, support
+  by members voting aye) and the votes. Members vote Aye or Nay there,
+  weighted by rank; a rank below the track's minimum is told which rank it
+  needs. The menu shows the entry only where the pallets exist.
 - **Abstain:** the vote panel offers Abstain next to Aye and Nay. It casts
   a `SplitAbstain` vote with the whole amount on abstain: it counts toward
   support, not approval, and has no conviction, so nothing stays locked

@@ -11,6 +11,7 @@ import {
   Landmark,
   Menu,
   ShieldCheck,
+  Users,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -35,6 +36,7 @@ import {
   rememberModeratorRole,
 } from "@/lib/moderation/role-hint"
 import { useMe } from "@/lib/query/hooks/use-session"
+import { useHasFellowship } from "@/lib/query/hooks/use-fellowship"
 
 // Two top-level destinations. "Create" lives as a per-page CTA on
 // Proposals and Treasury so it doesn't crowd the menu.
@@ -74,9 +76,14 @@ export function Nav() {
     rememberModeratorRole(storage, signedInAddress, !!roleQuery.data)
   }, [signedInAddress, roleQuery.isSuccess, roleQuery.data])
   const showModeration = signedIn ? !!roleQuery.data : hinted
-  const links = showModeration
-    ? [...navLinks, { label: "Moderation", href: "/moderation", icon: ShieldCheck }]
+  // The Fellowship entry only where the runtime has its pallets.
+  const hasFellowship = useHasFellowship()
+  const baseLinks = hasFellowship
+    ? [...navLinks.slice(0, 2), { label: "Fellowship", href: "/fellowship", icon: Users }, ...navLinks.slice(2)]
     : navLinks
+  const links = showModeration
+    ? [...baseLinks, { label: "Moderation", href: "/moderation", icon: ShieldCheck }]
+    : baseLinks
 
   const connectorMeta = useMemo(
     () => (connectorId ? getConnectorMeta(connectorId) : null),
