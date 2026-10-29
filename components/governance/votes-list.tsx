@@ -245,6 +245,11 @@ function VoteRow({
                 {multiplier}x
               </span>
             )}
+            {row.abstain && (
+              <span className="text-[10px] text-muted-foreground font-semibold">
+                Abstain
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
             <span className="font-mono tabular-nums">
@@ -281,6 +286,7 @@ function VoteRow({
           chain={chain}
           voter={displayVoter}
           aye={aye}
+          abstain={row.abstain}
           conviction={conviction}
           multiplier={multiplier}
           lockBlocks={lockBlocks}

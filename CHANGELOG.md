@@ -50,8 +50,9 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   with every table, a restore script, every proposal JSON file and,
   optionally, the uploaded files. Backups are kept in R2 (the newest
   five) and downloaded through a five-minute link.
-- **Dependencies:** `pnpm audit` reports nothing; Vitest 5, and newer
-  ESLint and PostCSS.
+- **Dependencies:** `pnpm audit` reports nothing, and CI now runs it on
+  every change and every Monday (#13); Vitest 5, and newer ESLint and
+  PostCSS.
 - **Phones:** proposal tables scroll again instead of squeezing a column
   to one letter; sign-in prompts are one link that comes back to the
   page; a dialog opened by touch no longer rings its close button; the
@@ -198,6 +199,13 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   as soon as such a wallet connects, before it signs in. Nobody else sees it,
   and the server is never asked about a wallet that hasn't signed in; the
   page and its routes still need the sign-in.
+- **Abstain:** the vote panel offers Abstain next to Aye and Nay. It casts
+  a `SplitAbstain` vote with the whole amount on abstain: it counts toward
+  support, not approval, and has no conviction, so nothing stays locked
+  once the referendum ends. Your vote card, the voter list and the vote
+  details say Abstain, and a tally with only abstain votes says so instead
+  of "No votes". The form also picks up an existing vote when your votes
+  load after the page, instead of starting empty.
 - **Hidden text stays hidden in the API:** `/api/proposals/by-index` and
   `by-indices` leave out the title, summary and text of a proposal that
   moderators hid or removed, and say so in a `moderation` field, as the

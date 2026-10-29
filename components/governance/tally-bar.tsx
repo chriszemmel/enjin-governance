@@ -60,18 +60,21 @@ export function TallyBar({
 
   const total = tally.ayes + tally.nays
   if (total === 0n) {
+    // Abstain votes add to support but to neither side of the split.
+    const abstainOnly = tally.support > 0n
     if (compact) {
       return (
         <p className={cn("text-xs text-muted-foreground", className)}>
-          Awaiting votes
+          {abstainOnly ? "Only abstain votes" : "Awaiting votes"}
         </p>
       )
     }
     return (
       <div className={cn("border-t border-border pt-5", className)}>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          No votes have been cast on this referendum yet. The aye/nay split
-          will appear here within a block or two of the first vote.
+          {abstainOnly
+            ? "Only abstain votes so far. They count toward support, not toward the aye/nay split."
+            : "No votes have been cast on this referendum yet. The aye/nay split will appear here within a block or two of the first vote."}
         </p>
       </div>
     )

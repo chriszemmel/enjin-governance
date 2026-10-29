@@ -21,6 +21,7 @@ import {
   CONVICTION_LOCK_PERIODS,
   CONVICTION_MULTIPLIER,
   type Conviction,
+  type VoteRecord,
 } from "@/lib/governance/types"
 
 type DecodedVote = {
@@ -36,6 +37,17 @@ type VoteCurrencyDecoded =
   | { kind: "Enj" }
   | { kind: "SEnj"; poolId: number }
   | { kind: "Unknown" }
+
+/**
+ * A SplitAbstain vote with nothing on aye or nay - what the panel's
+ * Abstain button casts. It counts toward support only and carries no
+ * conviction.
+ */
+export function isPureAbstain(
+  vote: VoteRecord,
+): vote is Extract<VoteRecord, { type: "SplitAbstain" }> {
+  return vote.type === "SplitAbstain" && vote.aye === 0n && vote.nay === 0n
+}
 
 export function convictionFromByte(byte: number): Conviction {
   // Conviction lives in bits 0-2 (the aye flag is bit 7).

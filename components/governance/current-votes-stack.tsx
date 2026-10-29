@@ -12,7 +12,7 @@ import {
 } from "@/lib/governance/conviction-voting"
 import { CONVICTION_MULTIPLIER } from "@/lib/governance/types"
 import type { MyVoteOnPoll } from "@/lib/governance/conviction-voting"
-import { decodeCurrency } from "@/lib/governance/vote-decode"
+import { decodeCurrency, isPureAbstain } from "@/lib/governance/vote-decode"
 import { usePoolNft } from "@/lib/query/hooks/use-pool-nft"
 import { cn } from "@/lib/utils"
 import { EnjAvatar } from "./enj-avatar"
@@ -214,7 +214,8 @@ function Card({
           : "Removing…"
     : "Remove"
 
-  if (entry.vote.type !== "Standard") {
+  const abstain = isPureAbstain(entry.vote)
+  if (entry.vote.type !== "Standard" && !abstain) {
     return (
       <div className="rounded-xl bg-surface-1 border border-border p-3 text-xs text-muted-foreground space-y-2">
         <div className="flex items-center gap-2">
@@ -233,7 +234,7 @@ function Card({
           </div>
         </div>
         <p>
-          Submitting below replaces this with a Standard vote. Removing
+          Submitting below replaces this vote. Removing
           withdraws it from the tally.
         </p>
         <RemoveButton
@@ -246,12 +247,23 @@ function Card({
     )
   }
 
+  // Abstain carries no conviction: no lock after the referendum ends and
+  // the full amount counts toward support.
   const v = entry.vote
-  const multiplier = CONVICTION_MULTIPLIER[v.conviction]
+  const balance =
+    v.type === "Standard" ? v.balance : v.type === "SplitAbstain" ? v.abstain : 0n
+  const multiplier = v.type === "Standard" ? CONVICTION_MULTIPLIER[v.conviction] : 1
   const lockLabel =
-    v.conviction === "None"
+    v.type !== "Standard" || v.conviction === "None"
       ? "No lock"
       : formatBlockDuration(convictionLockBlocks(v.conviction, voteLockingPeriod))
+  const verdict = abstain ? "Abstain" : v.type === "Standard" && v.aye ? "Aye" : "Nay"
+  const tone =
+    verdict === "Aye"
+      ? "text-emerald-700 dark:text-emerald-400"
+      : verdict === "Nay"
+        ? "text-red-700 dark:text-red-400"
+        : "text-slate-700 dark:text-slate-300"
 
   return (
     <div className="rounded-xl border border-border bg-surface-1 p-3.5 space-y-2">
@@ -275,9 +287,7 @@ function Card({
           <span
             className={cn(
               "text-[10px] uppercase tracking-wider font-semibold flex items-center gap-1",
-              v.aye
-                ? "text-emerald-700 dark:text-emerald-400"
-                : "text-red-700 dark:text-red-400",
+              tone,
             )}
           >
             <Pencil className="w-2.5 h-2.5" />
@@ -291,18 +301,9 @@ function Card({
         )}
       </div>
       <div className="flex items-baseline justify-between gap-2 flex-wrap pt-1">
-        <span
-          className={cn(
-            "text-base font-semibold",
-            v.aye
-              ? "text-emerald-700 dark:text-emerald-400"
-              : "text-red-700 dark:text-red-400",
-          )}
-        >
-          {v.aye ? "Aye" : "Nay"}
-        </span>
+        <span className={cn("text-base font-semibold", tone)}>{verdict}</span>
         <span className="font-mono text-sm text-foreground">
-          {formatTokenAmount(v.balance, chain, {
+          {formatTokenAmount(balance, chain, {
             maxFractionDigits: 2,
             withTicker: false,
           })}{" "}

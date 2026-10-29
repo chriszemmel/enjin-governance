@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Copy, ExternalLink, Lock, X } from "lucide-react"
+import { Check, Copy, ExternalLink, Lock, Minus, X } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import {
@@ -29,6 +29,8 @@ interface VoteDetailModalProps {
   chain: ChainConfig
   voter: string
   aye: boolean | null
+  /** Pure abstain vote - no conviction, counts toward support only. */
+  abstain?: boolean
   conviction: Conviction | null
   multiplier: number | null
   /** Blocks the vote stays locked after the referendum ends (0 = none / unknown). */
@@ -50,6 +52,7 @@ export function VoteDetailModal({
   chain,
   voter,
   aye,
+  abstain = false,
   conviction,
   multiplier,
   lockBlocks,
@@ -58,18 +61,21 @@ export function VoteDetailModal({
   extrinsicIndex,
 }: VoteDetailModalProps) {
   const lockLabel =
-    conviction === "None"
+    abstain || conviction === "None"
       ? "No lock"
       : lockBlocks > 0
         ? formatBlockDuration(lockBlocks)
         : "-"
 
-  const verdictLabel = aye === true ? "Aye" : aye === false ? "Nay" : "Vote"
+  const verdictLabel =
+    aye === true ? "Aye" : aye === false ? "Nay" : abstain ? "Abstain" : "Vote"
   const verdictIcon =
     aye === true ? (
       <Check className="w-4 h-4 text-green-400" aria-hidden />
     ) : aye === false ? (
       <X className="w-4 h-4 text-red-400" aria-hidden />
+    ) : abstain ? (
+      <Minus className="w-4 h-4 text-muted-foreground" aria-hidden />
     ) : (
       <Lock className="w-4 h-4 text-muted-foreground" aria-hidden />
     )
@@ -129,7 +135,10 @@ export function VoteDetailModal({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <StaticField label="Conviction" value={`${multiplier ?? "-"}x`} />
+            <StaticField
+              label="Conviction"
+              value={abstain ? "None" : `${multiplier ?? "-"}x`}
+            />
             <StaticField label="Lock duration" value={lockLabel} />
           </div>
 
