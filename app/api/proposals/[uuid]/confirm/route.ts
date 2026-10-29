@@ -272,7 +272,7 @@ async function filedByProposer(
   return { ok: true }
 }
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 
 // The tx coordinates are optional: a proposer whose submission landed but
 // never got linked can link it later by index alone. The on-chain binding

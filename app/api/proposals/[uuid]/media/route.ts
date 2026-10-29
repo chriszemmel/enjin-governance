@@ -72,7 +72,7 @@ const ALLOWED_MIME = new Set([
   "application/pdf",
 ])
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 const networkSchema = z.enum(NETWORK_VALUES)
 
 export async function POST(

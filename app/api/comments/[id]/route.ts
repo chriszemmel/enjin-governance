@@ -18,7 +18,7 @@ import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.guid()
 // Same limits as posting (POST /api/proposals/[uuid]/comments).
 const patchSchema = z.object({
   body_markdown: z.string().min(1).max(10_000),
