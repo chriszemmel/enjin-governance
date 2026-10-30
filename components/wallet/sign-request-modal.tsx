@@ -1,14 +1,16 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import {
   AlertCircle,
   CheckCircle2,
   ExternalLink,
+  Loader2,
   RotateCw,
   X,
 } from "lucide-react"
 import { isMobileUserAgent } from "@/lib/wallet/deep-link"
+import { isRequestDelivered, subscribeRequestDelivery } from "@/lib/wallet/request-delivery"
 import { useModalFocus } from "@/lib/utils/use-modal-focus"
 import type { TxStatus } from "@/lib/query/hooks/use-tx"
 
@@ -103,6 +105,9 @@ export function SignRequestModal({
   useEffect(() => {
     setMobile(isMobileUserAgent())
   }, [])
+  // The wallet link shows once the relay has the request: opened before,
+  // the page would be sent to the background mid-send (see request-delivery.ts).
+  const delivered = useSyncExternalStore(subscribeRequestDelivery, isRequestDelivered, () => false)
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalFocus(dialogRef, open, onClose)
 
@@ -265,7 +270,8 @@ export function SignRequestModal({
             </div>
           ) : (
             mobile &&
-            (status.kind === "idle" || status.kind === "signing") && (
+            (status.kind === "idle" || status.kind === "signing") &&
+            (delivered ? (
               <a
                 href={deepLinkUrl}
                 target="_blank"
@@ -275,7 +281,16 @@ export function SignRequestModal({
                 <ExternalLink className="w-4 h-4" />
                 Open in {walletName}
               </a>
-            )
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary/60 text-primary-foreground text-sm font-medium"
+              >
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Sending the request to {walletName}…
+              </button>
+            ))
           )}
         </div>
       </div>

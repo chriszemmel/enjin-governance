@@ -9,6 +9,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Loader2,
   LogOut,
   X,
 } from "lucide-react"
@@ -56,7 +57,7 @@ interface WalletModalProps {
 
 type ModalView =
   | { kind: "list" }
-  | { kind: "wc-qr"; meta: ConnectorMeta; uri: string }
+  | { kind: "wc-qr"; meta: ConnectorMeta; uri: string; ready: boolean }
   | { kind: "connecting"; meta: ConnectorMeta }
   | { kind: "error"; meta: ConnectorMeta; message: string }
   | {
@@ -119,7 +120,8 @@ export function WalletDialog({ open, onClose }: WalletModalProps) {
     try {
       const session = await actions.connect({
         connectorId: meta.id,
-        onUri: (uri) => setView({ kind: "wc-qr", meta, uri }),
+        onUri: (uri) => setView({ kind: "wc-qr", meta, uri, ready: false }),
+        onReady: () => setView((v) => (v.kind === "wc-qr" ? { ...v, ready: true } : v)),
       })
       // Always show the picker on a fresh connect when there's more than
       // one account - otherwise we silently use accounts[0] which is
@@ -236,7 +238,7 @@ export function WalletDialog({ open, onClose }: WalletModalProps) {
         </div>
 
         {view.kind === "wc-qr" ? (
-          <WalletConnectQrView uri={view.uri} meta={view.meta} />
+          <WalletConnectQrView uri={view.uri} meta={view.meta} ready={view.ready} />
         ) : view.kind === "connecting" ? (
           <ConnectingView meta={view.meta} />
         ) : view.kind === "error" ? (
@@ -384,7 +386,16 @@ function ConnectorRow({
   )
 }
 
-function WalletConnectQrView({ uri, meta }: { uri: string; meta: ConnectorMeta }) {
+function WalletConnectQrView({
+  uri,
+  meta,
+  ready,
+}: {
+  uri: string
+  meta: ConnectorMeta
+  /** The relay has the connection request; until then the wallet would open to nothing. */
+  ready: boolean
+}) {
   const [mobile, setMobile] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
@@ -434,7 +445,18 @@ function WalletConnectQrView({ uri, meta }: { uri: string; meta: ConnectorMeta }
         <BrandedQr uri={uri} logoUrl={qrLogoUrl} />
       </div>
 
-      {mobile && isEnjinWallet && (
+      {mobile && isEnjinWallet && !ready && (
+        <button
+          type="button"
+          disabled
+          className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary/60 text-primary-foreground text-sm font-medium"
+        >
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Preparing the request…
+        </button>
+      )}
+
+      {mobile && isEnjinWallet && ready && (
         <a
           href={buildEnjinWalletDeepLink(uri)}
           target="_blank"

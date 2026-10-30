@@ -31,6 +31,8 @@ export type DetectionState = "installed" | "not-installed" | "n/a"
 export type ConnectOptions = {
   /** Called as soon as the connector knows how to display itself in the modal. */
   onUri?: (uri: string) => void
+  /** WalletConnect: the relay has the connection request, so the wallet will find it. */
+  onReady?: () => void
 }
 
 export interface Connector {

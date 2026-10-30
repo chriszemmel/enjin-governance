@@ -7,6 +7,7 @@ import { env } from "@/lib/env"
 import { getChain } from "@/lib/chain/chains"
 import { getActiveChain } from "@/lib/chain/use-chain"
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/config"
+import { clearRequestDelivered, markRequestDelivered } from "../request-delivery"
 import type {
   ConnectOptions,
   ConnectedSession,
@@ -462,18 +463,35 @@ function buildSigner(
     }
   }
 
-  return {
-    signPayload: async (payload: SignerPayloadJSON): Promise<SignerResult> => {
-      suppressInternalRedirect()
-      const result = await signClient.request<{ signature: `0x${string}` }>({
+  // The modal's wallet link waits until the relay has the request
+  // (request-delivery.ts): the relay acknowledges each publish with a
+  // `relayer_publish` event naming the topic it went to.
+  const send = async (request: { method: string; params: unknown }) => {
+    suppressInternalRedirect()
+    const relayer = signClient.core.relayer
+    const onPublish = (e: { params?: { topic?: string } } | undefined) => {
+      if (e?.params?.topic === topic) markRequestDelivered(topic)
+    }
+    relayer.on("relayer_publish", onPublish)
+    try {
+      return await signClient.request<{ signature: `0x${string}` }>({
         topic,
         chainId: caipChainId,
-        request: {
-          method: "polkadot_signTransaction",
-          params: {
-            address: payload.address,
-            transactionPayload: toRequestPayload(payload),
-          },
+        request,
+      })
+    } finally {
+      relayer.off("relayer_publish", onPublish)
+      clearRequestDelivered(topic)
+    }
+  }
+
+  return {
+    signPayload: async (payload: SignerPayloadJSON): Promise<SignerResult> => {
+      const result = await send({
+        method: "polkadot_signTransaction",
+        params: {
+          address: payload.address,
+          transactionPayload: toRequestPayload(payload),
         },
       })
       return { id: ++id, signature: result.signature }
@@ -491,14 +509,9 @@ function buildSigner(
         typeof raw.data === "string" && raw.data.startsWith("0x")
           ? u8aToString(hexToU8a(raw.data))
           : raw.data
-      suppressInternalRedirect()
-      const result = await signClient.request<{ signature: `0x${string}` }>({
-        topic,
-        chainId: caipChainId,
-        request: {
-          method: "polkadot_signMessage",
-          params: { address: raw.address, message },
-        },
+      const result = await send({
+        method: "polkadot_signMessage",
+        params: { address: raw.address, message },
       })
       return { id: ++id, signature: result.signature }
     },
@@ -533,6 +546,26 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       // wallet against the new chain. Requesting both up-front would let
       // the same key surface twice (en…/cn…) and cross the per-network
       // handle namespace.
+      // The proposal goes out to the pairing topic after connect() has
+      // returned the URI; onReady tells the dialog once the relay has it, so
+      // "Open in Enjin Wallet" can't send the page away before that.
+      const published = new Set<string>()
+      let pairingTopic: string | null = null
+      let readySent = false
+      let stopReady = () => {}
+      const checkReady = () => {
+        if (readySent || !pairingTopic || !published.has(pairingTopic)) return
+        readySent = true
+        stopReady()
+        options?.onReady?.()
+      }
+      const onPublish = (e: { params?: { topic?: string } } | undefined) => {
+        const t = e?.params?.topic
+        if (!t) return
+        published.add(t)
+        checkReady()
+      }
+
       const { uri, approval } = await (async () => {
         lastRelayError = null
         try {
@@ -541,6 +574,8 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
             15_000,
             "Couldn't reach WalletConnect. Check your connection and try again.",
           )
+          signClient.core.relayer.on("relayer_publish", onPublish)
+          stopReady = () => signClient.core.relayer.off("relayer_publish", onPublish)
           return await withTimeout(
             signClient.connect({
               optionalNamespaces: {
@@ -555,13 +590,19 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
             "Couldn't start the WalletConnect session. Please try again.",
           )
         } catch (err) {
+          stopReady()
           const refused = relayRefusal()
           resetSignClient()
           throw refused ?? err
         }
       })()
 
-      if (uri) options?.onUri?.(uri)
+      if (uri) {
+        // wc:<pairing topic>@2?...
+        pairingTopic = uri.slice(3).split("@")[0] ?? null
+        options?.onUri?.(uri)
+        checkReady()
+      }
 
       // connect() hands out the URI before the proposal has reached the
       // relay. If Reown refuses this origin, the QR still shows and the
@@ -579,7 +620,10 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
         stopWatching = () => refusalListeners.delete(fail)
         if (lastRelayError && isRelayRefusal(lastRelayError)) fail()
       })
-      const session = await Promise.race([approval(), refused]).finally(() => stopWatching())
+      const session = await Promise.race([approval(), refused]).finally(() => {
+        stopWatching()
+        stopReady()
+      })
       const accounts = accountsFromSession(session, id)
 
       const peerDisplay = peerDisplayFromMeta(session.peer?.metadata)
