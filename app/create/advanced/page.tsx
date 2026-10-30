@@ -244,8 +244,9 @@ export default function AdvancedCreatePage() {
   const [kind, setKind] = useState<ProposalKind>(DEFAULT_KIND)
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
   const setActiveChain = useSetActiveChain()
-  // Links may open the composer on a chamber, a call and an origin: the
-  // Fellowship's "file the public step" does (see WhitelistCallCard).
+  // Links may open the composer on a network and a chamber, nothing more: a
+  // link that filled in the call, origin or title would let anyone hand a
+  // proposer a call they sign under a harmless title, seeing only its name.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const network = q.get("network")
@@ -254,16 +255,6 @@ export default function AdvancedCreatePage() {
       setChamber("fellowship")
       setKind("whitelistCall")
     }
-    const call = q.get("call")
-    if (call && /^0x[0-9a-fA-F]+$/.test(call)) {
-      setKind("rawCall")
-      setFields((f) => ({ ...f, rawHex: call }))
-    }
-    const origin = q.get("origin")
-    const i = SUBMIT_ORIGINS.findIndex((o) => o.label === origin)
-    if (i >= 0) setOriginIdx(i)
-    const t = q.get("title")
-    if (t) setTitle(t.slice(0, 200))
   }, [setActiveChain])
   const [wasmFile, setWasmFile] = useState<WasmFile | null>(null)
   const [hashingWasm, setHashingWasm] = useState(false)

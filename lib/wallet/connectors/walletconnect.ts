@@ -106,11 +106,11 @@ async function importAndInit() {
   client.on("session_delete", ({ topic }) => announceGone(topic, "deleted"))
   client.on("session_expire", ({ topic }) => announceGone(topic, "expired"))
   try {
-    client.core.pairing.events.on("pairing_delete", (e: { topic?: string } | undefined) => {
-      if (!e?.topic) return
-      for (const s of client.session.getAll()) {
-        if (s.pairingTopic === e.topic) announceGone(s.topic, "deleted")
-      }
+    // Only a reason to look: the pairing key was in the QR code, so anyone
+    // who saw it can delete the pairing. A session ends only when it is
+    // really gone (session_delete needs the session's own key).
+    client.core.pairing.events.on("pairing_delete", () => {
+      setTimeout(() => sweepGone(client), SETTLE_MS)
     })
   } catch {
     /* an SDK without pairing events: session_delete still covers it */
