@@ -123,23 +123,31 @@ export default function FellowshipPage() {
                   icon={<Users className="w-3.5 h-3.5" />}
                   label="Members"
                   value={membersQuery.isPending ? null : String(members.length)}
-                  sub={rankSummary || "No members yet"}
+                  sub={membersQuery.isPending ? undefined : rankSummary || "No members yet"}
                 />
                 <StatCard
                   icon={<FileText className="w-3.5 h-3.5" />}
                   label="Active referenda"
                   value={referendaQuery.isPending ? null : String(active.length)}
                   sub={
-                    active.length
-                      ? `${deciding} deciding · ${active.length - deciding} preparing`
-                      : `${referenda.length} in total`
+                    referendaQuery.isPending
+                      ? undefined
+                      : active.length
+                        ? `${deciding} deciding · ${active.length - deciding} preparing`
+                        : `${referenda.length} in total`
                   }
                 />
                 <StatCard
                   icon={<ShieldCheck className="w-3.5 h-3.5" />}
                   label="Whitelisted calls"
                   value={whitelistedCount == null ? null : String(whitelistedCount)}
-                  sub={whitelistedCount ? "Waiting for a public vote" : "None waiting"}
+                  sub={
+                    whitelistedCount == null
+                      ? undefined
+                      : whitelistedCount
+                        ? "Waiting for a public vote"
+                        : "None waiting"
+                  }
                 />
                 <div className="rounded-2xl bg-card border border-border p-4">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">You</p>
@@ -148,19 +156,17 @@ export default function FellowshipPage() {
                       <p className="text-2xl font-semibold text-primary mt-1">
                         Rank {rankNumeral(rank)}
                       </p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         {rankName(rank)} · votes on tracks 0-{rank}
                       </p>
                     </>
                   ) : (
                     <>
                       <p className="text-2xl font-semibold text-foreground mt-1">
-                        {walletStatus === "connected" ? "Not a member" : "Visitor"}
+                        {walletStatus === "connected" ? "No rank" : "Visitor"}
                       </p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                        {walletStatus === "connected"
-                          ? "Follow, comment and vote in public referenda"
-                          : "Connect a wallet to see your rank"}
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {walletStatus === "connected" ? "Not a member" : "Connect to see your rank"}
                       </p>
                     </>
                   )}
@@ -274,7 +280,7 @@ function StatCard({
       ) : (
         <p className="text-2xl font-semibold text-foreground mt-1">{value}</p>
       )}
-      {sub && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{sub}</p>}
+      {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   )
 }

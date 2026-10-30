@@ -56,7 +56,6 @@ import { extractReferendumIndex, type ReferendaPallet } from "@/lib/governance/r
 import {
   FELLOWSHIP_ORIGINS,
   FELLOWSHIP_PALLET,
-  fellowshipTrackLabel,
   originTrack,
   rankNumeral,
   recommendedOrigin,
@@ -323,6 +322,11 @@ export default function AdvancedCreatePage() {
   )
 
   const setField = (k: keyof Fields, v: string) => setFields((f) => ({ ...f, [k]: v }))
+  // A field's problem shows in red only once something was typed; before
+  // that, the same line waits as a hint above Review.
+  const anyCallInput = Object.entries(fields).some(
+    ([k, v]) => k !== "memberAction" && v.trim() !== "",
+  )
 
   const beneficiaryInspection = useMemo(
     () => inspectAddress(fields.beneficiary, chain.id),
@@ -1321,7 +1325,7 @@ export default function AdvancedCreatePage() {
                     disabled={readOnly}
                   />
                 )}
-                {fieldError && isConnected && (
+                {fieldError && isConnected && anyCallInput && (
                   <p className="text-[11px] text-destructive mt-1">{fieldError}</p>
                 )}
                 {preview && !preview.error && resolvedOrigin && (
@@ -1354,41 +1358,33 @@ export default function AdvancedCreatePage() {
               <Section title="Submission origin (track)">
                 {fellowship ? (
                   <>
-                    <div className="space-y-1.5" role="radiogroup" aria-label="Submission origin">
-                      {fellowshipOrigins.map((o) => {
-                        const t = originTrack(o)!
-                        const selected = fellowshipOrigin === o
-                        return (
-                          <button
-                            key={o}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            disabled={readOnly}
-                            onClick={() => setFellowshipOrigin(o)}
-                            className={cn(
-                              "w-full flex items-center gap-3 rounded-lg border px-3 py-2 text-left text-xs disabled:opacity-50",
-                              selected
-                                ? "border-purple-border bg-primary/10"
-                                : "border-border bg-surface-1 hover:bg-surface-2",
-                            )}
-                          >
-                            <span className={cn("font-mono", selected ? "text-foreground" : "text-muted-foreground")}>
-                              {o}
-                            </span>
-                            <span className="text-muted-foreground truncate">
-                              {fellowshipTrackLabel(fellowshipTracks.data?.find((x) => x.id === t), t)} ·
-                              rank {rankNumeral(t)}+
-                            </span>
-                            {o === fellowshipRecommended && (
-                              <span className="ml-auto text-primary font-medium whitespace-nowrap">
-                                Recommended
-                              </span>
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
+                    <select
+                      value={fellowshipOrigin ?? ""}
+                      disabled={readOnly}
+                      onChange={(e) => setFellowshipOrigin(e.target.value)}
+                      aria-label="Submission origin (track)"
+                      className="w-full px-3 py-2 rounded-lg bg-surface-1 border border-border text-sm text-foreground font-mono focus:outline-none focus:border-primary/50 disabled:opacity-50"
+                    >
+                      {fellowshipOrigins.map((o) => (
+                        <option key={o} value={o}>
+                          {o} · rank {rankNumeral(originTrack(o)!)}+
+                        </option>
+                      ))}
+                    </select>
+                    {fellowshipRecommended && (
+                      <p
+                        className={cn(
+                          "text-[11px] mt-2 leading-relaxed",
+                          fellowshipOrigin === fellowshipRecommended
+                            ? "text-primary"
+                            : "text-amber-300",
+                        )}
+                      >
+                        {fellowshipOrigin === fellowshipRecommended
+                          ? `Recommended for this change: ${fellowshipRecommended}.`
+                          : `This change is meant for ${fellowshipRecommended}; another origin may fail at enactment.`}
+                      </p>
+                    )}
                     <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
                       The origin sets the track and who may vote: members of its rank and up.
                       {kind === "fellowshipMember" && !fellowshipRecommended && spec
