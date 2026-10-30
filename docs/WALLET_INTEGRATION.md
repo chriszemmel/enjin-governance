@@ -26,11 +26,13 @@ greyed out and, when it has one, links to its install page.
 | `lib/wallet/use-wallet.ts` | `useWallet`, `useWalletActions`, `useDisplayAddress` |
 | `lib/wallet/restore-mounter.tsx` | Restores the session when the app loads |
 | `lib/wallet/deep-link.ts` | Enjin Wallet deep links and mobile detection |
+| `lib/wallet/request-delivery.ts` | Whether a sign request reached the relay, and re-delivering it on a later tap |
 | `lib/wallet/use-sign-flow.ts` | State and deep link for the sign-request modal |
 | `lib/wallet/use-ensure-signed-in.ts` | Signs in before a write that needs a session |
 | `components/wallet/wallet-modal.tsx` | Loads the connect dialog when the page is idle or on first open |
 | `components/wallet/wallet-dialog.tsx` | Connect dialog, QR view, account picker and switcher |
 | `components/wallet/sign-request-modal.tsx` | Status modal for WalletConnect signatures |
+| `components/wallet/wallet-open-button.tsx` | "Open in <wallet>", held back until the relay has the request |
 | `components/wallet/branded-qr.tsx` | QR code with the wallet's logo in the middle |
 
 ## Connector interface
@@ -112,7 +114,7 @@ this site" API; the user revokes access in the extension.
 ```text
 1. getSignClient() initialises the SignClient once per page with the
    project id, the relay URL and the app metadata (APP_NAME, APP_DESCRIPTION,
-   NEXT_PUBLIC_APP_URL and its /favicon.svg).
+   the page's own origin, and NEXT_PUBLIC_APP_URL's /favicon.svg).
 2. connect() (lib/wallet/connectors/walletconnect.ts):
      signClient.connect({
        optionalNamespaces: {
@@ -123,9 +125,11 @@ this site" API; the user revokes access in the extension.
          },
        },
      })
-3. The pairing URI goes to the modal through onUri, which renders it as a
-   QR code. On a phone, the Enjin Wallet entry also shows a button that
-   opens enjinwallet://wc?uri=<encoded uri> (buildEnjinWalletDeepLink).
+3. sign-client returns the pairing URI only once the relay has acknowledged
+   the session proposal, so the wallet will find it. The URI goes to the
+   modal through onUri, which renders it as a QR code. On a phone, the
+   Enjin Wallet entry also shows a button that opens
+   enjinwallet://wc?uri=<encoded uri> (buildEnjinWalletDeepLink).
 4. The user approves in the wallet. await approval() resolves with the session.
 5. Accounts come from session.namespaces.polkadot.accounts
    ("polkadot:<genesis>:<address>"). Names come from sessionProperties,
@@ -149,6 +153,16 @@ Details that matter:
   Safari suspends the relay socket while the user is in the wallet, and the
   ping brings it back at once, so a finished signature arrives without a
   delay.
+- If the relay refuses the site (origin not in Reown's allowed domains, or
+  a wrong project id) while the modal waits for approval, the attempt ends
+  with that reason instead of waiting forever.
+- **Sessions the wallet ends.** Connected and restored sessions are
+  watched. `session_delete`, `session_expire` and `pairing_delete` (the
+  site removed from the wallet's connected apps, or the session expired),
+  or a session missing on the return to the tab, announce it through
+  `onWalletConnectSessionGone`. `WalletRestoreMounter` then resets the
+  store to disconnected and shows a notice (`walletSessionGone`), so no
+  request goes to a session nobody answers.
 
 ### Picking and switching accounts
 
@@ -170,9 +184,13 @@ would disagree.
   `restoreWallet()` once per page load. That calls the persisted
   connector's `restore()`.
 - **WalletConnect** - the SDK keeps its sessions in its own `wc@2:` keys.
-  `restore()` takes the most recent session from
-  `signClient.session.getAll()`. It doesn't check the chain; `getSigner`
-  does that before each signature.
+  `restore()` takes the most recent live Polkadot session from
+  `signClient.session.getAll()` and checks it with the relay first
+  (`verifySession`): it opens the socket and gives the relay a moment to
+  deliver a deletion sent while the page was closed. A session that is
+  gone or expired restores as disconnected; an unreachable relay keeps
+  it (the SDK reconnects, and a dead session is announced then). It
+  doesn't check the chain; `getSigner` does that before each signature.
 - **Extension** - `restore()` checks the extension is present and calls
   `web3Enable` again. Extensions remember their approval per origin, so
   there is no prompt.
@@ -249,6 +267,17 @@ signPayload: async (payload) => {
   from localStorage, which turns off the SDK's own redirect to the wallet.
   That redirect runs too late for iOS Safari and was silently ignored. The
   sign-request modal's button is the only deep link.
+- **Delivery** - the request is marked delivered when the relay
+  acknowledges its publish on the session topic (`relayer_publish`, with a
+  4 s fallback), and the JSON-RPC id it went out under is kept
+  (`session_request_sent`). Both live in `lib/wallet/request-delivery.ts`.
+- **Re-delivery** - a tap on "Open in <wallet>" after the person was in the
+  wallet and came back without an answer publishes the same pending
+  request again from the client's history (`redeliverRequest`): same id,
+  same payload, so the wallet never shows two. The first tap only opens
+  the wallet, and a double tap without leaving the page sends nothing.
+  Enjin Wallet sometimes loses a request; this was seen in Substreak on a
+  real iPhone.
 - **`id`** is a client-side counter that `@polkadot/api` uses to match
   responses to requests.
 
@@ -278,11 +307,19 @@ where things stand.
   as votes pass `in-block` and show a "Finalising on chain…" note until
   finality. An `in-block` modal closes itself after 2 s unless
   `autoDismiss` is false.
-- The "Open in <wallet>" button is a plain link the user taps, because iOS
-  Safari only follows a deep link from a live tap. Its URL comes from
-  `buildSignRequestDeepLink`: the wallet's own redirect link from
-  `peer.metadata.redirect.native` (or `enjinwallet://`), plus
-  `/wc?sessionTopic=<topic>`. The request itself arrives over the relay.
+- The "Open in <wallet>" button (`WalletOpenButton`, shared with the
+  connect dialog) is a plain link the user taps, because iOS Safari only
+  follows a deep link from a live tap. It is held back until the relay has
+  the request: tapped earlier, iOS paused the page mid-send and the wallet
+  opened to nothing. While it waits, the label stays, the fill dims and a
+  spinner replaces the icon (after 200 ms, so fast cases don't flash); a
+  fixed-height line says "Still connecting…" after 5 s and to close and
+  try again after 15 s. It stays focusable (`aria-disabled`, `aria-busy`),
+  and a polite live region announces when it is ready.
+- Its URL comes from `buildSignRequestDeepLink`: the wallet's own redirect
+  link from `peer.metadata.redirect.native`, or `enjinwallet://`. It no
+  longer names the session (`wc?sessionTopic=…`): that made Enjin Wallet
+  fetch the request a second time. The request arrives over the relay.
 
 ## Signing in
 
@@ -367,13 +404,16 @@ whatever its peer metadata says; it has advertised an Ethereum icon.
    ```
    `NEXT_PUBLIC_WALLETCONNECT_RELAY_URL` is optional and defaults to
    `wss://relay.walletconnect.com`. The page's own origin is sent to the
-   wallet as the app's URL and icon location, so a preview deployment
-   announces its own domain.
+   wallet as the app's URL, so a preview deployment announces its own
+   domain; the icon comes from `NEXT_PUBLIC_APP_URL`, which stays public
+   when a preview sits behind Vercel's login.
 3. Add every domain that should connect under **Allowed Domains** in the
-   Reown dashboard: production, the preview domains (for example
-   `*.vercel.app`, or the branch URL
-   `<project>-git-<branch>-<team>.vercel.app`) and `localhost:3000`. A
-   domain missing from the list can't open a WalletConnect session.
+   Reown dashboard: production, the branch URL of each preview you test
+   (`<project>-git-<branch>-<team>.vercel.app`, which stays the same for
+   every push to the branch) and `localhost:3000`. A domain missing from
+   the list can't open a WalletConnect session; changes take about 15
+   minutes. Avoid `*.vercel.app`: it would let any Vercel app use your
+   project id.
 
 Without a project id, extension wallets still work, and both WalletConnect
 entries show as not installed. See [`ENVIRONMENT.md`](ENVIRONMENT.md) and
@@ -394,10 +434,11 @@ entries show as not installed. See [`ENVIRONMENT.md`](ENVIRONMENT.md) and
   Polkadot wallet.
 - **"Your wallet hasn't approved <chain> in this session"** - the session
   was paired on another network. Disconnect and connect again.
-- **The sign prompt never appears on the phone** - tap "Open in <wallet>"
-  in the sign-request modal. If nothing arrives, the session topic is
-  probably stale: disconnect Enjin Governance in the wallet and in the
-  app, then connect again.
+- **The sign prompt never appears on the phone** - wait until "Open in
+  <wallet>" is fully purple, then tap it. If the wallet shows nothing, come
+  back to the page and tap it again: that re-sends the same request. If it
+  still doesn't arrive, disconnect Enjin Governance in the wallet; the
+  page notices and shows the wallet as disconnected, then connect again.
 - **"Signature did not match the address" at sign-in** - the wallet signed
   different bytes than the server issued. The server logs a
   `[auth/verify]` warning with the message hash and lengths to compare.

@@ -129,9 +129,24 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   session is for another account.
 - **WalletConnect on other domains:** the app announces the page's own
   origin to wallets, so a preview deployment no longer claims to be the
-  production site. When the relay refuses the connection, the error says
-  why (the site isn't in the Reown project's allowed domains, or the
-  project id is wrong) instead of a generic timeout.
+  production site; the icon still comes from `NEXT_PUBLIC_APP_URL`, so a
+  preview behind Vercel's login shows it too. When the relay refuses the
+  connection, the error says why (the site isn't in the Reown project's
+  allowed domains, or the project id is wrong) instead of a generic
+  timeout, also while the dialog waits for the wallet.
+- **Enjin Wallet on one tap:** while a sign request is on its way to the
+  relay, Open in Enjin Wallet keeps its label, dims and shows a spinner;
+  it opens the wallet only once the relay has the request (tapped earlier,
+  iOS paused the page mid-send and the wallet opened to nothing). A short
+  line below says when it takes long. The link opens just the wallet,
+  without naming the session, which made Enjin Wallet fetch a request
+  twice. Tapping again after coming back without an answer re-sends the
+  same request (same id, never a second one).
+- **Sessions the wallet ended:** when the site is removed from the
+  wallet's connected apps, or the session expires, the page shows the
+  wallet as disconnected and says so, instead of sending requests nobody
+  answers. A restored session is checked with the relay first, and again
+  on returning to the tab.
 - **Support is measured like the runtime does it:** against active
   issuance (total minus inactive) on spec 1070, against total issuance
   from 1080. Mainnet showed about 28% too little support: about 575M of
@@ -217,9 +232,10 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   fellowship referendum there with a title, summary and text like any
   proposal: whitelist a call by its call data or hash, remove a
   whitelisted call, add, promote, demote or remove a member, or enact a
-  raw call, with the origin that change needs recommended and the track it
-  opens shown. A call over 128 bytes is noted as a preimage in the same
-  batch. Anyone can then place the decision deposit on the F# page.
+  raw call. The origin is picked from a dropdown, with the one the change
+  needs named below it (amber when another is picked). A call over 128
+  bytes is noted as a preimage in the same batch. Anyone can then place
+  the decision deposit on the F# page.
 - **EGOV1 for fellowship referenda:** an F# carries its pinned record like
   a public referendum: title and summary on the hub and the F# page,
   comments, reports and moderation. Its JSON says
@@ -249,6 +265,15 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   pinned JSON under `/r` stays public by design, since its hash is on
   chain. Personal answers (`/api/auth/me`, `/api/users/me` and a
   proposer's own list) are sent with `Cache-Control: private, no-store`.
+- **Links keep their network:** the home page, the proposals list, the
+  treasury, `/create` and `/unlock` switch to the network a link's
+  `?network=` names, as referendum and Fellowship pages already did.
+- **Small fixes:** address chips sit centred on the text around them; an
+  active proposal filter shows by the button's border, without a dot; the
+  Fellowship cards wrap instead of cutting their second line; a decided F#
+  no longer opens with its closed vote panel on a phone.
+- **Browser tests** warm the server's cache of decided tracks first, as
+  production keeps it warm, so CI no longer times out on a cold archive.
 
 ## 1.9
 

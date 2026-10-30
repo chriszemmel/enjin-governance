@@ -214,14 +214,17 @@ apply there. So:
 3. Copy the project ID into `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`.
 4. Under **Allowed Domains**, add:
    - your production domain,
-   - `*.vercel.app` for preview deployments (or each preview's branch URL,
-     e.g. `enjin-governance-git-release-v20-<team>.vercel.app`, if the
-     wildcard isn't accepted),
+   - the branch URL of each preview you want to test, e.g.
+     `enjin-governance-git-release-v20-<team>.vercel.app` (it stays the
+     same for every push to the branch; the per-deployment URLs change),
    - `localhost:3000` for local development.
 
-Without a domain in this list, WalletConnect can't open a session from it.
-The app announces the page's own origin to the wallet, so previews and
-production each show their real domain.
+Avoid `*.vercel.app`: it would let any Vercel app use your project id.
+Without a domain in this list, WalletConnect can't open a session from it;
+changes take about 15 minutes. The app announces the page's own origin to
+the wallet, so previews and production each show their real domain. The
+icon comes from `NEXT_PUBLIC_APP_URL`, so it shows even when a preview is
+behind Vercel's login.
 
 ## Upstash Redis (rate limits)
 
