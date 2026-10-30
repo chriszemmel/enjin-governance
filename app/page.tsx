@@ -1,4 +1,6 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
+import { NetworkParam } from "@/components/layout/network-param"
 import { APP_DESCRIPTION, APP_TITLE } from "@/lib/config"
 import { HomePage } from "./home-page"
 
@@ -11,5 +13,12 @@ export const metadata: Metadata = {
 }
 
 export default function Page() {
-  return <HomePage />
+  return (
+    <>
+      <Suspense>
+        <NetworkParam />
+      </Suspense>
+      <HomePage />
+    </>
+  )
 }

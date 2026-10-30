@@ -1,3 +1,5 @@
+import { Suspense } from "react"
+import { NetworkParam } from "@/components/layout/network-param"
 import { pageMetadata } from "@/lib/seo/metadata"
 
 // The list page is a client component, so its metadata lives here. The
@@ -10,5 +12,12 @@ export const metadata = pageMetadata({
 })
 
 export default function ProposalsLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return (
+    <>
+      <Suspense>
+        <NetworkParam />
+      </Suspense>
+      {children}
+    </>
+  )
 }

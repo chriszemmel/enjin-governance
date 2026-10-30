@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useNetworkParam } from "@/lib/chain/use-network-param"
 import { ArrowLeft, Coins } from "lucide-react"
 import { toast } from "sonner"
 import type { ApiPromise } from "@polkadot/api"
@@ -120,6 +121,7 @@ function BackToProposals() {
 function CreatePageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  useNetworkParam()
   const fromDraftId = searchParams.get("from")
   const autoAdvance = searchParams.get("go") === "review"
   const chain = useActiveChain()
