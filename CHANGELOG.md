@@ -272,6 +272,13 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   active proposal filter shows by the button's border, without a dot; the
   Fellowship cards wrap instead of cutting their second line; a decided F#
   no longer opens with its closed vote panel on a phone.
+- **From the final security review:** links to the advanced composer
+  choose only the network and the chamber, never the call, origin or
+  title (a crafted link could have handed a proposer any call under a
+  harmless title); a deleted WalletConnect pairing, whose key is in the
+  QR code, no longer disconnects the wallet unless the session is gone
+  too. Vite 8.3.3 and Vitest 5.0.3 clear new advisories in the test
+  tooling.
 - **Browser tests** warm the server's cache of decided tracks first, as
   production keeps it warm, so CI no longer times out on a cold archive.
 
