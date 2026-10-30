@@ -75,16 +75,16 @@ export function PreimageDisplay({
         disabled={!hasCall && !isMissing && !decodeFailed && !preimageQuery.isPending}
         className="w-full flex items-center justify-between gap-3 text-left"
       >
-        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <FileCode className="w-4 h-4 text-primary" />
+        <h3 className="min-w-0 text-sm font-semibold text-foreground flex items-center gap-2">
+          <FileCode className="w-4 h-4 text-primary flex-shrink-0" />
           {inlineBytes ? "Call (inline)" : "Preimage"}
           {hasCall && (
-            <span className="font-mono text-xs text-muted-foreground font-normal ml-1">
+            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground font-normal ml-1">
               {data.section}.{data.method}
             </span>
           )}
         </h3>
-        <span className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5">
+        <span className="flex-shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5">
           {expanded ? "Collapse" : "Expand"}
           {expanded ? (
             <ChevronDown className="w-3 h-3" />

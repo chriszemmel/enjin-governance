@@ -1038,11 +1038,11 @@ export default function AdvancedCreatePage() {
       <main className="pt-24 pb-24 px-4 sm:px-6 lg:px-8 flex-1">
         <div className="max-w-2xl mx-auto">
           <Link
-            href="/create"
+            href={chamber === "fellowship" ? `/fellowship?network=${chain.id}` : "/create"}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            Back to treasury proposal
+            {chamber === "fellowship" ? "Back to the Fellowship" : "Back to treasury proposal"}
           </Link>
 
           {hasFellowship && step === "create" && (

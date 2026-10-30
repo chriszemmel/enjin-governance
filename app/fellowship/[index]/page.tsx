@@ -162,38 +162,36 @@ export default function FellowshipReferendumPage() {
 
                 <LifecycleProgress referendum={live} track={track} pallet={FELLOWSHIP_PALLET} />
 
-                <section className="rounded-2xl bg-card border border-border p-5">
-                  <TallyVotesSwiper
-                    slides={[
-                      {
-                        id: "tally",
-                        label: "Tally",
-                        header: <h2 className="font-semibold text-foreground">Tally</h2>,
-                        content: (
-                          <RankedTally
-                            referendum={live as FellowshipReferendum}
-                            track={track}
-                            members={membersQuery.data}
-                            voterCount={votesQuery.data?.length ?? null}
-                            currentBlock={currentBlock}
-                          />
-                        ),
-                      },
-                      {
-                        id: "votes",
-                        label: "Votes",
-                        header: <h2 className="font-semibold text-foreground">Votes</h2>,
-                        content: (
-                          <VotesList
-                            votes={votesQuery.data}
-                            members={membersQuery.data}
-                            decided={live.status.type !== "Ongoing"}
-                          />
-                        ),
-                      },
-                    ]}
-                  />
-                </section>
+                <TallyVotesSwiper
+                  slides={[
+                    {
+                      id: "tally",
+                      label: "Tally",
+                      header: <h2 className="font-semibold text-foreground">Tally</h2>,
+                      content: (
+                        <RankedTally
+                          referendum={live as FellowshipReferendum}
+                          track={track}
+                          members={membersQuery.data}
+                          voterCount={votesQuery.data?.length ?? null}
+                          currentBlock={currentBlock}
+                        />
+                      ),
+                    },
+                    {
+                      id: "votes",
+                      label: "Votes",
+                      header: <h2 className="font-semibold text-foreground">Votes</h2>,
+                      content: (
+                        <VotesList
+                          votes={votesQuery.data}
+                          members={membersQuery.data}
+                          decided={live.status.type !== "Ongoing"}
+                        />
+                      ),
+                    },
+                  ]}
+                />
 
                 {metadata && <ProposalMetadataHeader metadata={metadata} chain={chain} />}
 
@@ -216,8 +214,13 @@ export default function FellowshipReferendumPage() {
                 )}
               </div>
 
-              {/* On a phone the vote comes first, as on the public pages' sticky panel. */}
-              <div className="space-y-4 order-first lg:order-none lg:sticky lg:top-20">
+              {/* On a phone an open vote comes first; once it has ended, after the details. */}
+              <div
+                className={cn(
+                  "space-y-4 lg:order-none lg:sticky lg:top-20",
+                  live.status.type === "Ongoing" && "order-first",
+                )}
+              >
                 {live.status.type === "Ongoing" && live.status.decisionDeposit == null && (
                   <FellowshipDepositButton index={index} track={track} />
                 )}
@@ -286,7 +289,12 @@ function VotesList({
             <div className="flex-1 min-w-0">
               <UserChip address={v.voter} size="sm" />
             </div>
-            {rank != null && <RankBadge rank={rank} />}
+            {rank != null && (
+              <>
+                <RankBadge rank={rank} short className="sm:hidden" />
+                <RankBadge rank={rank} className="hidden sm:inline-flex" />
+              </>
+            )}
             <span className="font-mono text-sm font-semibold tabular-nums w-8 text-right">
               {v.weight}
             </span>
