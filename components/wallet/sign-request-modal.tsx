@@ -5,12 +5,12 @@ import {
   AlertCircle,
   CheckCircle2,
   ExternalLink,
-  Loader2,
   RotateCw,
   X,
 } from "lucide-react"
 import { isMobileUserAgent } from "@/lib/wallet/deep-link"
 import { isRequestDelivered, subscribeRequestDelivery } from "@/lib/wallet/request-delivery"
+import { WalletOpenButton } from "./wallet-open-button"
 import { useModalFocus } from "@/lib/utils/use-modal-focus"
 import type { TxStatus } from "@/lib/query/hooks/use-tx"
 
@@ -271,26 +271,9 @@ export function SignRequestModal({
           ) : (
             mobile &&
             (status.kind === "idle" || status.kind === "signing") &&
-            (delivered ? (
-              <a
-                href={deepLinkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-colors glow-purple-sm"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Open in {walletName}
-              </a>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary/60 text-primary-foreground text-sm font-medium"
-              >
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Sending the request to {walletName}…
-              </button>
-            ))
+            (
+              <WalletOpenButton href={deepLinkUrl} ready={delivered} walletName={walletName} />
+            )
           )}
         </div>
       </div>

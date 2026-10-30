@@ -8,8 +8,6 @@ import {
   ChevronRight,
   Copy,
   Download,
-  ExternalLink,
-  Loader2,
   LogOut,
   X,
 } from "lucide-react"
@@ -23,6 +21,7 @@ import {
 } from "@/lib/wallet/connector-registry"
 import type { ConnectedSession, ConnectorId, DetectionState } from "@/lib/wallet/connectors/types"
 import { buildEnjinWalletDeepLink, isMobileUserAgent } from "@/lib/wallet/deep-link"
+import { WalletOpenButton } from "./wallet-open-button"
 import { encodeForChain, samePublicKey, shortenAddress } from "@/lib/chain/ss58"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { type ChainId } from "@/lib/chain/chains"
@@ -445,27 +444,12 @@ function WalletConnectQrView({
         <BrandedQr uri={uri} logoUrl={qrLogoUrl} />
       </div>
 
-      {mobile && isEnjinWallet && !ready && (
-        <button
-          type="button"
-          disabled
-          className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary/60 text-primary-foreground text-sm font-medium"
-        >
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Preparing the request…
-        </button>
-      )}
-
-      {mobile && isEnjinWallet && ready && (
-        <a
+      {mobile && isEnjinWallet && (
+        <WalletOpenButton
           href={buildEnjinWalletDeepLink(uri)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-colors glow-purple-sm"
-        >
-          <ExternalLink className="w-4 h-4" />
-          Open in Enjin Wallet
-        </a>
+          ready={ready}
+          walletName="Enjin Wallet"
+        />
       )}
 
       {!isEnjinWallet && (
