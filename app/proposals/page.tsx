@@ -174,7 +174,7 @@ export default function ProposalsPage() {
                 <button
                   type="button"
                   className={cn(
-                    "relative flex-shrink-0 inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors",
+                    "flex-shrink-0 inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors",
                     filtersActive
                       ? "border-purple-border bg-primary/8 text-primary"
                       : "border-border bg-surface-1 text-foreground hover:bg-surface-2",
@@ -183,12 +183,6 @@ export default function ProposalsPage() {
                 >
                   <SlidersHorizontal className="w-4 h-4" />
                   <span className="hidden sm:inline">Filter & Sort</span>
-                  {filtersActive && (
-                    <span
-                      aria-hidden
-                      className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-primary"
-                    />
-                  )}
                 </button>
               </PopoverTrigger>
               <PopoverContent
