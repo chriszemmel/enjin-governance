@@ -39,7 +39,11 @@ export default defineConfig({
     screenshot: "only-on-failure",
     launchOptions: executablePath ? { executablePath } : {},
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    // Warms the server's chain caches first (see e2e/warm.setup.ts).
+    { name: "setup", testMatch: /\.setup\.ts$/ },
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, dependencies: ["setup"] },
+  ],
   webServer: {
     command: process.env.E2E_SKIP_BUILD
       ? `pnpm start -p ${PORT}`
