@@ -162,3 +162,19 @@ describe("setConnected", () => {
     expect(useWalletStore.getState().activeAddress).toBe(ALICE)
   })
 })
+
+describe("walletSessionGone", () => {
+  it("disconnects when the wallet ended the active session, and says why", async () => {
+    const { useWalletStore, walletSessionGone } = await loadStore({
+      connectorId: null,
+      activeAddress: null,
+    })
+    useWalletStore
+      .getState()
+      .setConnected({ ...session([ALICE], "enjin-wallet"), meta: { topic: "t1" } })
+    expect(walletSessionGone("other", "deleted")).toBeNull()
+    expect(useWalletStore.getState().status).toBe("connected")
+    expect(walletSessionGone("t1", "expired")).toMatch(/expired/)
+    expect(useWalletStore.getState()).toMatchObject({ status: "disconnected", session: null })
+  })
+})

@@ -91,10 +91,106 @@ async function importAndInit() {
       } catch {
         /* defensive - session store may not be ready yet */
       }
+      // Back from the wallet: a deletion sent meanwhile arrives once the
+      // socket is up again, so look again a moment later.
+      setTimeout(() => sweepGone(client), SETTLE_MS)
     })
   }
 
+  // The wallet ended the session (the site was removed from its connected
+  // apps), or it expired: the page must stop showing it as connected, or
+  // every request would go to a session nobody listens to.
+  client.on("session_delete", ({ topic }) => announceGone(topic, "deleted"))
+  client.on("session_expire", ({ topic }) => announceGone(topic, "expired"))
+  try {
+    client.core.pairing.events.on("pairing_delete", (e: { topic?: string } | undefined) => {
+      if (!e?.topic) return
+      for (const s of client.session.getAll()) {
+        if (s.pairingTopic === e.topic) announceGone(s.topic, "deleted")
+      }
+    })
+  } catch {
+    /* an SDK without pairing events: session_delete still covers it */
+  }
+
   return client
+}
+
+/** How long the relay gets to deliver what was sent while the page was away. */
+const SETTLE_MS = 1_500
+
+/** Sessions this page shows as connected, checked again on every return to the tab. */
+const watchedTopics = new Set<string>()
+const goneListeners = new Set<(topic: string, reason: "deleted" | "expired") => void>()
+
+function announceGone(topic: string, reason: "deleted" | "expired"): void {
+  if (!watchedTopics.delete(topic)) return
+  for (const l of [...goneListeners]) l(topic, reason)
+}
+
+type SessionListLike = { session: { getAll(): Array<{ topic: string; expiry: number }> } }
+
+/** Announces every watched session the client no longer has, or that has expired. */
+export function sweepGone(client: SessionListLike, now = Date.now()): void {
+  let all: Array<{ topic: string; expiry: number }>
+  try {
+    all = client.session.getAll()
+  } catch {
+    return
+  }
+  for (const topic of [...watchedTopics]) {
+    const s = all.find((x) => x.topic === topic)
+    if (!s) announceGone(topic, "deleted")
+    else if (s.expiry * 1000 <= now) announceGone(topic, "expired")
+  }
+}
+
+/** Watch `topic`: listeners hear when the wallet ends it. */
+export function watchTopic(topic: string): void {
+  watchedTopics.add(topic)
+}
+
+/** Called with the topic when a watched session is ended by the wallet or expires. */
+export function onWalletConnectSessionGone(
+  listener: (topic: string, reason: "deleted" | "expired") => void,
+): () => void {
+  goneListeners.add(listener)
+  return () => {
+    goneListeners.delete(listener)
+  }
+}
+
+type VerifyClientLike = SessionListLike & {
+  core: { relayer: { transportOpen(): Promise<void>; connected: boolean } }
+}
+
+/**
+ * Checks a restored session with the relay: open the socket, give the relay
+ * a moment to deliver what arrived while the page was closed (a deletion
+ * removes the session from the client's store), then look.
+ */
+export async function verifySession(
+  client: VerifyClientLike,
+  topic: string,
+  opts: { now?: () => number; settleMs?: number; timeoutMs?: number } = {},
+): Promise<"ok" | "gone" | "expired" | "unreachable"> {
+  const now = opts.now ?? Date.now
+  const find = () => client.session.getAll().find((x) => x.topic === topic)
+  const before = find()
+  if (!before) return "gone"
+  if (before.expiry * 1000 <= now()) return "expired"
+  try {
+    if (!client.core.relayer.connected) {
+      await withTimeout(client.core.relayer.transportOpen(), opts.timeoutMs ?? 8_000, "relay unreachable")
+    }
+  } catch {
+    return "unreachable"
+  }
+  if (!client.core.relayer.connected) return "unreachable"
+  await new Promise((r) => setTimeout(r, opts.settleMs ?? SETTLE_MS))
+  const after = find()
+  if (!after) return "gone"
+  return after.expiry * 1000 <= now() ? "expired" : "ok"
 }
 
 async function getSignClient(): Promise<SignClientType> {
@@ -432,6 +528,43 @@ export function toRequestPayload(
   return Object.fromEntries(entries)
 }
 
+/**
+ * WalletConnect's relay options for `wc_sessionRequest` (sign-client's
+ * RPC_OPTS): 5 min, push to the wallet, tag 1108. `throwOnFailedPublish`:
+ * without it a failed publish is only logged.
+ */
+const SESSION_REQUEST_PUBLISH = {
+  ttl: 300,
+  prompt: true,
+  tag: 1108,
+  internal: { throwOnFailedPublish: true },
+} as const
+
+/**
+ * Publish the still unanswered request `id` once more, as it is: the same
+ * JSON-RPC payload from the client's request history, encrypted for the
+ * session and sent like the original. The wallet sees the same request id
+ * again, never a second request. False when the client no longer has it
+ * pending (answered, expired or gone): then nothing is sent.
+ */
+export async function redeliverRequest(
+  signClient: Pick<SignClientType, "core">,
+  topic: string,
+  id: string,
+): Promise<boolean> {
+  const core = signClient.core
+  const record = core.history.pending.find(
+    (p) => p.topic === topic && String(p.request.id) === id,
+  )
+  if (!record) return false
+  const message = await core.crypto.encode(topic, record.request)
+  await core.relayer.publish(topic, message, {
+    ...SESSION_REQUEST_PUBLISH,
+    tvf: { correlationId: record.request.id },
+  } as Parameters<typeof core.relayer.publish>[2])
+  return true
+}
+
 function buildSigner(
   signClient: SignClientType,
   topic: string,
@@ -469,13 +602,22 @@ function buildSigner(
   const send = async (request: { method: string; params: unknown }) => {
     suppressInternalRedirect()
     const relayer = signClient.core.relayer
-    const onPublish = (e: { params?: { topic?: string } } | undefined) => {
-      if (e?.params?.topic === topic) markRequestDelivered(topic)
+    // The JSON-RPC id the request went out under (session_request_sent),
+    // so a later tap can send that same request again.
+    let requestId: string | null = null
+    const redeliver = () =>
+      requestId ? redeliverRequest(signClient, topic, requestId) : Promise.resolve(false)
+    const onSent = (e: { topic?: string; id?: number | string } | undefined) => {
+      if (!requestId && e?.topic === topic && e.id !== undefined) requestId = String(e.id)
     }
+    const onPublish = (e: { params?: { topic?: string } } | undefined) => {
+      if (e?.params?.topic === topic) markRequestDelivered(topic, redeliver)
+    }
+    signClient.on("session_request_sent", onSent)
     relayer.on("relayer_publish", onPublish)
     // Should the SDK ever publish without that event, the link must not
     // stay held back: by then the request has gone out anyway.
-    const fallback = setTimeout(() => markRequestDelivered(topic), 4_000)
+    const fallback = setTimeout(() => markRequestDelivered(topic, redeliver), 4_000)
     try {
       return await signClient.request<{ signature: `0x${string}` }>({
         topic,
@@ -484,6 +626,7 @@ function buildSigner(
       })
     } finally {
       clearTimeout(fallback)
+      signClient.off("session_request_sent", onSent)
       relayer.off("relayer_publish", onPublish)
       clearRequestDelivered(topic)
     }
@@ -603,6 +746,7 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       })
       const session = await Promise.race([approval(), refused]).finally(() => stopWatching())
       const accounts = accountsFromSession(session, id)
+      watchTopic(session.topic)
 
       const peerDisplay = peerDisplayFromMeta(session.peer?.metadata)
       return {
@@ -622,6 +766,8 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
     async disconnect(session: ConnectedSession): Promise<void> {
       const topic = session.meta.topic as string | undefined
       if (!topic) return
+      // Our own disconnect: not an "ended by the wallet" event.
+      watchedTopics.delete(topic)
       const signClient = await getSignClient()
       try {
         await signClient.disconnect({
@@ -670,10 +816,21 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       if (typeof window === "undefined") return null
       try {
         const signClient = await getSignClient()
-        const sessions = signClient.session.getAll()
-        if (sessions.length === 0) return null
-        const last = sessions[sessions.length - 1]!
+        // Live Polkadot sessions only: an expired one would take requests
+        // nobody answers.
+        const sessions = signClient.session
+          .getAll()
+          .filter((s) => s.expiry * 1000 > Date.now() && !!s.namespaces?.polkadot)
+        const last = sessions.at(-1)
+        if (!last) return null
+        // The wallet may have ended it while the page was closed; the relay
+        // delivers that deletion once the socket is up. Unreachable keeps it:
+        // the SDK reconnects, and a dead session is announced then.
+        const state = await verifySession(signClient, last.topic)
+        if (state === "gone" || state === "expired") return null
         const accounts = accountsFromSession(last, id)
+        if (accounts.length === 0) return null
+        watchTopic(last.topic)
         const chain = getActiveChain()
         const peerDisplay = peerDisplayFromMeta(last.peer?.metadata)
         return {

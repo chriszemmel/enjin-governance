@@ -29,10 +29,13 @@ export function WalletOpenButton({
   href,
   ready,
   walletName,
+  onTap,
 }: {
   href: string
   ready: boolean
   walletName: string
+  /** Called on each tap of the ready link (the link itself opens the wallet). */
+  onTap?: () => void
 }) {
   const [phase, setPhase] = useState<Phase>("fresh")
 
@@ -58,6 +61,7 @@ export function WalletOpenButton({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={onTap}
           className={cn(base, "bg-primary hover:bg-purple-dim glow-purple-sm")}
         >
           <ExternalLink className="w-4 h-4" />

@@ -9,7 +9,11 @@ import {
   X,
 } from "lucide-react"
 import { isMobileUserAgent } from "@/lib/wallet/deep-link"
-import { isRequestDelivered, subscribeRequestDelivery } from "@/lib/wallet/request-delivery"
+import {
+  isRequestDelivered,
+  onWalletLinkTap,
+  subscribeRequestDelivery,
+} from "@/lib/wallet/request-delivery"
 import { WalletOpenButton } from "./wallet-open-button"
 import { useModalFocus } from "@/lib/utils/use-modal-focus"
 import type { TxStatus } from "@/lib/query/hooks/use-tx"
@@ -272,7 +276,13 @@ export function SignRequestModal({
             mobile &&
             (status.kind === "idle" || status.kind === "signing") &&
             (
-              <WalletOpenButton href={deepLinkUrl} ready={delivered} walletName={walletName} />
+              <WalletOpenButton
+                href={deepLinkUrl}
+                ready={delivered}
+                walletName={walletName}
+                // A tap after coming back without an answer sends the same request again.
+                onTap={() => void onWalletLinkTap()}
+              />
             )
           )}
         </div>

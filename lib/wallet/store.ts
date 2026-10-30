@@ -126,3 +126,18 @@ export async function restoreWallet(): Promise<string | null> {
   return restorePromise
 }
 
+
+/**
+ * A watched WalletConnect session was ended by the wallet (the site was
+ * removed from its connected apps) or expired. Show it as disconnected,
+ * or every request would go to a session nobody answers. Resolves with the
+ * message to show, or null when it wasn't the active session.
+ */
+export function walletSessionGone(topic: string, reason: "deleted" | "expired"): string | null {
+  const { session, reset } = useWalletStore.getState()
+  if (!session || session.meta.topic !== topic) return null
+  reset()
+  return reason === "expired"
+    ? "Your wallet connection expired. Connect again to continue."
+    : "Your wallet ended the connection. Connect again to continue."
+}
