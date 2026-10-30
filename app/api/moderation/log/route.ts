@@ -28,6 +28,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       target_type: r.target_type,
       network: r.network,
       referendum_index: r.referendum_index,
+      referenda_pallet: r.referenda_pallet,
       action: r.action,
       reason: r.reason,
       source: r.source,

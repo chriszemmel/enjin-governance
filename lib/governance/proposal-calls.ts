@@ -30,6 +30,15 @@ export type ProposalCallSpec =
   | { kind: "cancelReferendum"; index: number }
   | { kind: "killReferendum"; index: number }
   | { kind: "whitelistCall"; callHash: `0x${string}` }
+  /** Fellowship: take back a whitelisted call before it is dispatched. */
+  | { kind: "removeWhitelistedCall"; callHash: `0x${string}` }
+  /** Fellowship: add, promote, demote or remove a member (`rank`: theirs now). */
+  | {
+      kind: "fellowshipMember"
+      action: "add" | "promote" | "demote" | "remove"
+      who: string
+      rank: number | null
+    }
   | { kind: "authorizeUpgrade"; codeHash: `0x${string}` }
   | { kind: "remark"; text: string }
   | { kind: "rawCall"; callHex: `0x${string}` }
@@ -87,6 +96,21 @@ export function buildProposalCall(api: ApiPromise, spec: ProposalCallSpec): Call
       return buildKillReferendumCall(api, spec.index)
     case "whitelistCall":
       return buildWhitelistCall(api, spec.callHash)
+    case "removeWhitelistedCall":
+      return api.tx.whitelist.removeWhitelistedCall(spec.callHash).method as Call
+    case "fellowshipMember": {
+      const c = api.tx.fellowshipCollective!
+      switch (spec.action) {
+        case "add":
+          return c.addMember!(spec.who).method as Call
+        case "promote":
+          return c.promoteMember!(spec.who).method as Call
+        case "demote":
+          return c.demoteMember!(spec.who).method as Call
+        case "remove":
+          return c.removeMember!(spec.who, spec.rank ?? 0).method as Call
+      }
+    }
     case "authorizeUpgrade":
       return api.tx.system.authorizeUpgrade(spec.codeHash).method as Call
     case "remark":
@@ -135,7 +159,19 @@ export const PROPOSAL_KIND_META: Record<
   },
   whitelistCall: {
     label: "Whitelist a call",
-    description: "Mark a call hash as whitelisted for the WhitelistedCaller track.",
+    description:
+      "Vouch for one exact call, so a public referendum can dispatch it on the WhitelistedCaller track.",
+    suggestedOrigin: null,
+  },
+  removeWhitelistedCall: {
+    label: "Remove a whitelisted call",
+    description: "Take back a whitelisted call before a public referendum dispatches it.",
+    suggestedOrigin: null,
+  },
+  fellowshipMember: {
+    label: "Member change",
+    description:
+      "Add a member, promote, demote or remove one. The rank involved decides the origin.",
     suggestedOrigin: null,
   },
   authorizeUpgrade: {

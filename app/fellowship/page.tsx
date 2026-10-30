@@ -10,7 +10,7 @@ import { Bar } from "@/components/governance/skeletons"
 import { FellowshipReferendumCard } from "@/components/fellowship/fellowship-referendum-card"
 import { MembersList } from "@/components/fellowship/members-list"
 import { WhitelistList } from "@/components/fellowship/whitelist-list"
-import { rankName, rankNumeral } from "@/lib/governance/fellowship"
+import { FELLOWSHIP_PALLET, rankName, rankNumeral } from "@/lib/governance/fellowship"
 import { useNetworkParam } from "@/lib/chain/use-network-param"
 import { useActiveChain, useChainHydrated } from "@/lib/chain/use-chain"
 import {
@@ -21,6 +21,7 @@ import {
   useMyRank,
 } from "@/lib/query/hooks/use-fellowship"
 import { useWhitelistCount, useWhitelistedCalls } from "@/lib/query/hooks/use-whitelist"
+import { useProposalMetadataBatch } from "@/lib/query/hooks/use-proposal-metadata"
 import { useWallet } from "@/lib/wallet/use-wallet"
 import { friendlyError } from "@/lib/utils/format-error"
 import { cn } from "@/lib/utils"
@@ -66,14 +67,19 @@ export default function FellowshipPage() {
   }, [members])
   const whitelistedCount = whitelistCount.data ?? null
 
+  // Their EGOV1 titles, for the cards and the search.
+  const indices = useMemo(() => referenda.map((r) => r.index), [referenda])
+  const metadataQuery = useProposalMetadataBatch(indices, undefined, FELLOWSHIP_PALLET)
   const shown = useMemo(() => {
-    const q = search
-      .trim()
-      .toLowerCase()
-      .replace(/^f\s*#\s*/, "")
-    if (!q) return referenda
-    return referenda.filter((r) => String(r.index) === q || `f#${r.index}`.includes(q))
-  }, [referenda, search])
+    const raw = search.trim().toLowerCase()
+    if (!raw) return referenda
+    const q = raw.replace(/^f\s*#\s*/, "")
+    return referenda.filter((r) => {
+      if (String(r.index) === q) return true
+      const m = metadataQuery.data?.get(r.index)
+      return [m?.title ?? "", m?.summary ?? ""].join("\n").toLowerCase().includes(raw)
+    })
+  }, [referenda, search, metadataQuery.data])
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -91,7 +97,7 @@ export default function FellowshipPage() {
             </div>
             {has && (
               <Link
-                href={`/fellowship/new?network=${chain.id}`}
+                href={`/create/advanced?chamber=fellowship&network=${chain.id}`}
                 className="flex-shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-purple-dim transition-all duration-200 glow-purple-sm"
               >
                 New referendum
@@ -221,6 +227,7 @@ export default function FellowshipPage() {
                             tracks={tracks}
                             myAddress={activeAddress ?? null}
                             myRank={rank}
+                            title={metadataQuery.data?.get(r.index)?.title ?? null}
                           />
                         ))}
                       </div>

@@ -6,10 +6,10 @@
  *
  * Usage:
  *   pnpm db:migrate               every pending file
- *   pnpm db:migrate --until 013   only pending files numbered up to 013
+ *   pnpm db:migrate --until 014   only pending files numbered up to 014
  *
  * `--until` holds back a migration that must wait for a deploy, such as
- * 014 (drop a column the previous release still writes): apply the
+ * 015 (drop a column the previous release still writes): apply the
  * earlier files before deploying, the rest after.
  *
  * Reads `DATABASE_URL_UNPOOLED` from the environment. If that isn't
@@ -45,7 +45,7 @@ function parseUntil(argv) {
   if (i < 0) return null
   const raw = argv[i].includes("=") ? argv[i].slice("--until=".length) : argv[i + 1]
   if (!raw || !/^\d+$/.test(raw)) {
-    console.error("--until needs a migration number, e.g. --until 013")
+    console.error("--until needs a migration number, e.g. --until 014")
     process.exit(1)
   }
   return raw

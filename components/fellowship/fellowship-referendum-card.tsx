@@ -29,12 +29,15 @@ export function FellowshipReferendumCard({
   tracks,
   myAddress,
   myRank,
+  title: egovTitle,
 }: {
   referendum: FellowshipReferendum
   /** The fellowship track table; a decided referendum's track comes from its history. */
   tracks: Track[]
   myAddress: string | null
   myRank: number | null
+  /** The EGOV1 title, when it has one; else the call names it. */
+  title: string | null
 }) {
   const chain = useActiveChain()
   const currentBlock = useCurrentBlock().data ?? null
@@ -60,9 +63,9 @@ export function FellowshipReferendumCard({
   const myVote = useMyFellowshipVote(referendum.index, ongoing ? myAddress : null).data ?? null
   const eligible = myRank != null && trackId != null && myRank >= trackMinRank(trackId)
 
-  const title = decoded
-    ? `${decoded.section}.${decoded.method}`
-    : `Fellowship referendum F#${referendum.index}`
+  const title =
+    egovTitle ??
+    (decoded ? `${decoded.section}.${decoded.method}` : `Fellowship referendum F#${referendum.index}`)
   const tally = referendum.rankedTally
   const total = tally ? tally.ayes + tally.nays : 0
   const ayePct = tally && total > 0 ? Math.round((tally.ayes / total) * 100) : null

@@ -19,9 +19,7 @@ import type { ApiPromise } from "@polkadot/api"
 import type { SubmittableExtrinsic } from "@polkadot/api/types"
 import type { EventRecord } from "@polkadot/types/interfaces"
 import type { Codec } from "@polkadot/types/types"
-import { u8aToHex } from "@polkadot/util"
 import { findEvent } from "@/lib/chain/events"
-import { canInline, noteAndHash } from "./preimage"
 import { decodeReferendumInfo } from "./status"
 import { decodeTracks } from "./tracks"
 import type { Referendum, Track } from "./types"
@@ -265,32 +263,6 @@ export const FELLOWSHIP_ORIGINS: { trackId: number; origin: string }[] = [
   { trackId: 9, origin: "Fellowship9Dan" },
 ]
 
-/** Members of rank I and up may file; candidates and outsiders get BadOrigin. */
-export const MIN_SUBMIT_RANK = 1
-
-/**
- * `fellowshipReferenda.submit` for `callBytes` on the track `origin` opens.
- * A call of up to 128 bytes rides inline; a longer one is noted as a
- * preimage first, in one `utility.batchAll`.
- */
-export function buildFellowshipSubmit(
-  api: ApiPromise,
-  params: { origin: string; callBytes: Uint8Array; enactAfter: number },
-): SubmittableExtrinsic<"promise"> {
-  const origin = { Origins: params.origin }
-  const enactment = { After: params.enactAfter }
-  const submit = (proposal: unknown) =>
-    api.tx.fellowshipReferenda!.submit!(origin, proposal, enactment) as SubmittableExtrinsic<"promise">
-  if (canInline(params.callBytes)) {
-    return submit({ Inline: u8aToHex(params.callBytes) })
-  }
-  const noted = noteAndHash(api, params.callBytes)
-  return api.tx.utility.batchAll([
-    noted.extrinsic,
-    submit({ Lookup: { hash: noted.hash, len: noted.len } }),
-  ]) as SubmittableExtrinsic<"promise">
-}
-
 /** The new F# index from a `fellowshipReferenda.Submitted` event. */
 export function extractFellowshipIndex(
   events: EventRecord[] | readonly EventRecord[],
@@ -307,7 +279,7 @@ export function buildFellowshipPlaceDeposit(
   return api.tx.fellowshipReferenda!.placeDecisionDeposit!(index) as SubmittableExtrinsic<"promise">
 }
 
-export type MemberAction = "add" | "promote" | "demote" | "remove"
+type MemberAction = "add" | "promote" | "demote" | "remove"
 
 /**
  * The origin a fellowship referendum needs for a call, as the runtime

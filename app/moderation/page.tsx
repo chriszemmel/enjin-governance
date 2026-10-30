@@ -10,6 +10,7 @@ import { BackupPanel } from "@/components/moderation/backup-panel"
 import { ScanSettingsPanel } from "@/components/moderation/scan-settings-panel"
 import { ScanHealthBanner, StatusPanel } from "@/components/moderation/status-panel"
 import { useActiveChain } from "@/lib/chain/use-chain"
+import { referendumName, referendumPath } from "@/lib/governance/display"
 import { encodePublicKeyForChain, shortenAddress } from "@/lib/chain/ss58"
 import {
   allowedActions,
@@ -50,7 +51,8 @@ function itemTitle(i: QueueItem): string {
 }
 
 function itemWhere(i: QueueItem): string {
-  const where = i.referendum_index != null ? `referendum #${i.referendum_index}` : "a draft"
+  const where =
+    i.referendum_index != null ? referendumName(i.referendum_index, i.referenda_pallet) : "a draft"
   const kind =
     i.target_type === "attachment"
       ? "Attachment"
@@ -274,7 +276,7 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
 
   const proposalHref =
     item.referendum_index != null
-      ? `/proposals/${item.referendum_index}?network=${item.network}`
+      ? referendumPath(item.referendum_index, item.referenda_pallet, item.network ?? "")
       : null
 
   return (
@@ -325,7 +327,8 @@ function DetailPanel({ item, role }: { item: QueueItem; role: "moderator" | "adm
       )}
       {proposalHref && (
         <Link href={proposalHref} className="inline-flex items-center gap-1 text-xs text-primary">
-          Open referendum #{item.referendum_index} <ArrowRight className="w-3 h-3" />
+          Open {referendumName(item.referendum_index!, item.referenda_pallet)}{" "}
+          <ArrowRight className="w-3 h-3" />
         </Link>
       )}
 

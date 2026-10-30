@@ -225,8 +225,8 @@ Restore the database
 1. Create an empty Postgres database (for example a new Neon branch).
 2. From the repository, at the same app version, apply the schema up to
    the last migration manifest.json lists (this backup's database had
-   exactly those), e.g. for 013:
-     DATABASE_URL_UNPOOLED="<database url>" pnpm db:migrate --until 013
+   exactly those), e.g. for 014:
+     DATABASE_URL_UNPOOLED="<database url>" pnpm db:migrate --until 014
 3. Load the data:
      psql "<database url>" -v ON_ERROR_STOP=1 -f db/restore.sql
    It runs in one transaction, parents before the tables that refer to

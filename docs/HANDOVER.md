@@ -120,8 +120,8 @@ moderation.
   `backups/`, which `/r` never serves. The newest 5 are kept, one can be
   made every 10 minutes, and a download link is valid for 5 minutes.
   Restore: on an empty database, apply the migrations up to the last one
-  `manifest.json` lists (`pnpm db:migrate --until 013` for a backup
-  taken before `014`), then
+  `manifest.json` lists (`pnpm db:migrate --until 014` for a backup
+  taken before `015`), then
   `psql "$DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 -f db/restore.sql`,
   then `pnpm db:migrate` for the rest, then copy `bucket/` into the new
   bucket with the same keys (`rclone copy` or `aws s3 sync`). A backup
@@ -285,9 +285,9 @@ code that needs it, and add it to the table in
 [`DEPLOYMENT.md`](DEPLOYMENT.md#migrations).
 
 A migration that drops something the live release still uses is the
-exception: it runs after the deploy. `014_drop_proposer_signature.sql`
+exception: it runs after the deploy. `015_drop_proposer_signature.sql`
 drops a column 1.0 still inserts, so upgrading from 1.0 means
-`pnpm db:migrate --until 013`, deploying 2.0, and only then
+`pnpm db:migrate --until 014`, deploying 2.0, and only then
 `pnpm db:migrate` (see
 [`DEPLOYMENT.md`](DEPLOYMENT.md#migrations-that-wait-for-a-deploy)).
 Say so in the file's header and in the changelog's upgrade steps.

@@ -95,6 +95,11 @@ export type ProposalJson = {
   call?: ProposalCallMeta | null
   /** 1.2.0: the enactment moment chosen at submission. */
   enactment?: ProposalEnactmentMeta | null
+  /**
+   * 1.2.0, only on a fellowship referendum (F#N, numbered apart from the
+   * public #N): the pallet it was filed in. Absent means `referenda`.
+   */
+  referenda_pallet?: "fellowshipReferenda"
   preimage_hash: string | null
   preimage_len: number | null
   created_at: string

@@ -29,11 +29,13 @@ function inputs(o: Overrides = {}): StatusInputs {
         moderation: true,
         settings: true,
         keepState: true,
+        fellowship: true,
         ledger: [
           "011_moderation.sql",
           "012_moderation_settings.sql",
           "013_moderation_keep_state.sql",
-          "014_drop_proposer_signature.sql",
+          "014_fellowship_referenda.sql",
+          "015_drop_proposer_signature.sql",
         ],
       },
       ...o.database,
@@ -110,6 +112,7 @@ describe("database", () => {
           moderation: true,
           settings: true,
           keepState: true,
+          fellowship: true,
           ledger: null as string[] | null,
           ...over,
         },
@@ -121,24 +124,27 @@ describe("database", () => {
     expect(level(schema({ settings: false }), "migration-012")).toBe("problem")
     expect(hint(schema({ settings: false }), "migration-012")).toContain("pnpm db:migrate")
     expect(level(schema({ keepState: false }), "migration-013")).toBe("problem")
+    expect(level(schema({ fellowship: false }), "migration-014")).toBe("problem")
     // Listed in the ledger, but the tables are gone.
     const gone = schema({ moderation: false, ledger: ["011_moderation.sql"] })
     expect(level(gone, "migration-011")).toBe("problem")
     expect(hint(gone, "migration-011")).toContain("tables are missing")
   })
 
-  it("reminds about migration 014 until the ledger lists it, without calling it a problem", () => {
+  it("reminds about migration 015 until the ledger lists it, without calling it a problem", () => {
     const schema = (ledger: string[] | null) => ({
-      database: { schema: { moderation: true, settings: true, keepState: true, ledger } },
+      database: {
+        schema: { moderation: true, settings: true, keepState: true, fellowship: true, ledger },
+      },
     })
-    expect(level(schema(["013_keep_state.sql"]), "migration-014")).toBe("warning")
-    expect(hint(schema(["013_keep_state.sql"]), "migration-014")).toContain(
+    expect(level(schema(["014_fellowship_referenda.sql"]), "migration-015")).toBe("warning")
+    expect(hint(schema(["014_fellowship_referenda.sql"]), "migration-015")).toContain(
       "every deployment runs 2.0",
     )
-    expect(level(schema(null), "migration-014")).toBe("warning")
-    expect(level(schema(["014_drop_proposer_signature.sql"]), "migration-014")).toBe("ok")
-    expect(() => level({ database: { reachable: false, schema: null } }, "migration-014")).toThrow(
-      "no item migration-014",
+    expect(level(schema(null), "migration-015")).toBe("warning")
+    expect(level(schema(["015_drop_proposer_signature.sql"]), "migration-015")).toBe("ok")
+    expect(() => level({ database: { reachable: false, schema: null } }, "migration-015")).toThrow(
+      "no item migration-015",
     )
   })
 })

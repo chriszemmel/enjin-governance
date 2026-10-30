@@ -75,13 +75,15 @@ const LEDGER = [
   "011_moderation.sql",
   "012_moderation_settings.sql",
   "013_moderation_keep_state.sql",
-  "014_drop_proposer_signature.sql",
+  "014_fellowship_referenda.sql",
+  "015_drop_proposer_signature.sql",
 ]
-/** What moderationSchema reports (migrations 011-013 and the ledger, which lists 014 too). */
+/** What moderationSchema reports (migrations 011-014 and the ledger, which lists 015 too). */
 export const schema = {
   moderation: true,
   settings: true,
   keepState: true,
+  fellowship: true,
   ledger: [...LEDGER] as string[] | null,
 }
 /** Scan checks reserved today, and whether the next reservation fits the limit. */

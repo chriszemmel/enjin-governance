@@ -33,6 +33,7 @@ export type StatusInputs = {
       moderation: boolean
       settings: boolean
       keepState: boolean
+      fellowship: boolean
       ledger: string[] | null
     } | null
   }
@@ -108,6 +109,7 @@ const MIGRATIONS = [
   { id: "migration-011", n: "011", label: "Migration 011: moderation", key: "moderation" },
   { id: "migration-012", n: "012", label: "Migration 012: check settings", key: "settings" },
   { id: "migration-013", n: "013", label: "Migration 013: keep decisions", key: "keepState" },
+  { id: "migration-014", n: "014", label: "Migration 014: fellowship referenda", key: "fellowship" },
 ] as const
 
 function databaseSection(db: StatusInputs["database"]): StatusSection {
@@ -154,16 +156,16 @@ function databaseSection(db: StatusInputs["database"]): StatusSection {
       )
     }
   }
-  // 014 drops a column the 1.0 code still writes, so it waits until every
+  // 015 drops a column the 1.0 code still writes, so it waits until every
   // deployment runs 2.0: a reminder, never a problem.
   const schema = db.schema
   if (schema) {
     const ledger = schema.ledger
-    const applied = ledger?.some((f) => f.startsWith("014_")) ?? false
+    const applied = ledger?.some((f) => f.startsWith("015_")) ?? false
     items.push(
       item(
-        "migration-014",
-        "Migration 014: drop proposer_signature",
+        "migration-015",
+        "Migration 015: drop proposer_signature",
         applied ? "ok" : "warning",
         applied
           ? "Applied."

@@ -362,6 +362,28 @@ describe("by-index", () => {
     expect((await get("8")).status).toBe(404)
   })
 
+  it("keeps a fellowship referendum apart from the public one with its number", async () => {
+    seed({ id: PID, status: "on_chain", referendum_index: 7, title: "Public #7" })
+    seed({
+      id: "44444444-4444-4444-8444-444444444444",
+      status: "on_chain",
+      referendum_index: 7,
+      referenda_pallet: "fellowshipReferenda",
+      title: "Fellowship F#7",
+    })
+    expect(await (await get("7")).json()).toMatchObject({ title: "Public #7", referenda_pallet: "referenda" })
+    const fellowship = await BY_INDEX(
+      new NextRequest(
+        `https://gov.test/api/proposals/by-index/7?network=${NET}&pallet=fellowshipReferenda`,
+      ),
+      { params: Promise.resolve({ index: "7" }) },
+    )
+    expect(await fellowship.json()).toMatchObject({
+      title: "Fellowship F#7",
+      referenda_pallet: "fellowshipReferenda",
+    })
+  })
+
   const moderate = (state: "hidden" | "removed" | "blurred", reason = "Phishing link") =>
     mod.states.set(mod.stateKey("proposal", PID), {
       target_type: "proposal",
@@ -434,6 +456,7 @@ const PUBLIC_FIELDS = [
   "network",
   "ok",
   "proposer_address",
+  "referenda_pallet",
   "referendum_index",
   "status",
   "summary",

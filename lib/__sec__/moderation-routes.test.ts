@@ -207,6 +207,7 @@ describe("reports", () => {
         source: "user",
         network: NET,
         referendumIndex: 214,
+        referendaPallet: "referenda",
       },
     ])
     // A repeat report from the same person isn't news.

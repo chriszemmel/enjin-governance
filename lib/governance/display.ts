@@ -68,3 +68,24 @@ export function statusDotClasses(type: ReferendumStatusType): string {
       return "bg-muted-foreground"
   }
 }
+
+/**
+ * How a referendum is named and where its page is: "referendum #12" at
+ * /proposals/12, "F#3" at /fellowship/3 for the Fellowship's (their
+ * numbers are separate).
+ */
+export function referendumName(
+  index: number,
+  pallet: "referenda" | "fellowshipReferenda" | null | undefined,
+): string {
+  return pallet === "fellowshipReferenda" ? `F#${index}` : `referendum #${index}`
+}
+
+export function referendumPath(
+  index: number,
+  pallet: "referenda" | "fellowshipReferenda" | null | undefined,
+  network: string,
+): string {
+  const base = pallet === "fellowshipReferenda" ? "/fellowship" : "/proposals"
+  return `${base}/${index}?network=${network}`
+}

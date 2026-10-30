@@ -59,7 +59,10 @@ export async function GET(
     )
   }
 
-  const row = await getProposalByIndex(network.data, idx.data)
+  // `pallet=fellowshipReferenda` for F#N; #N otherwise.
+  const pallet =
+    url.searchParams.get("pallet") === "fellowshipReferenda" ? "fellowshipReferenda" : "referenda"
+  const row = await getProposalByIndex(network.data, idx.data, pallet)
   if (!row) {
     return NextResponse.json(
       { ok: false, error: "Not found" },
@@ -80,6 +83,7 @@ export async function GET(
     id: row.id,
     network: row.network,
     referendum_index: row.referendum_index,
+    referenda_pallet: row.referenda_pallet ?? "referenda",
     ...visibleText(row, states.get(row.id)),
     track: row.track,
     beneficiary: row.beneficiary,

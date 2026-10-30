@@ -6,6 +6,7 @@
  *   proposals/{network}/{uuid}/proposal.json                   (drafts staged before v1.1)
  *   proposals/{network}/{uuid}/media/{safe-filename}
  *   proposals/{network}/index/{referendum_index}.json
+ *   proposals/{network}/fellowship-index/{referendum_index}.json
  *   user-avatars/{user_uuid}.png
  *
  * Anything that wants to find a proposal externally only needs to read
@@ -122,8 +123,11 @@ export function keyFromPublicUrl(url: string): string {
 export function proposalIndexRedirectKey(
   network: ChainId,
   referendumIndex: number,
+  pallet: "referenda" | "fellowshipReferenda" = "referenda",
 ): string {
-  return `proposals/${network}/index/${referendumIndex}.json`
+  // F#N and #N are different referenda: their files can't share a path.
+  const folder = pallet === "fellowshipReferenda" ? "fellowship-index" : "index"
+  return `proposals/${network}/${folder}/${referendumIndex}.json`
 }
 
 export function userAvatarKey(userUuid: string): string {

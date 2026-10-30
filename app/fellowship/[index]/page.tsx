@@ -37,6 +37,9 @@ import {
   useFellowshipVotes,
 } from "@/lib/query/hooks/use-fellowship"
 import { useReferendumHistory } from "@/lib/query/hooks/use-referendum-history"
+import { useProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
+import { ProposalMetadataHeader } from "@/components/governance/proposal-metadata-header"
+import { CommentsSection } from "@/components/governance/comments-section"
 import { friendlyError } from "@/lib/utils/format-error"
 import { cn } from "@/lib/utils"
 
@@ -71,6 +74,9 @@ export default function FellowshipReferendumPage() {
     decidedAt ? decidedAt - 1 : null,
   )
   const callName = decodedCall ? `${decodedCall.section}.${decodedCall.method}` : null
+  // The EGOV1 record filed with it, like any proposal's (title, text, comments).
+  const metadataQuery = useProposalMetadata(index >= 0 ? index : null, undefined, FELLOWSHIP_PALLET)
+  const metadata = metadataQuery.data ?? null
   const callBytes =
     ongoing && "type" in ongoing.proposal ? ongoing.proposal.bytes : decodedCall?.bytes
 
@@ -126,8 +132,13 @@ export default function FellowshipReferendumPage() {
                     </div>
                   </div>
                   <h1 className="text-xl sm:text-2xl font-semibold text-foreground leading-tight mb-2 break-words">
-                    {callName ?? `Fellowship referendum F#${index}`}
+                    {metadata?.title ?? callName ?? `Fellowship referendum F#${index}`}
                   </h1>
+                  {metadata?.summary && (
+                    <p className="text-sm text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
+                      {metadata.summary}
+                    </p>
+                  )}
                   <div className="flex items-center gap-x-4 gap-y-2 mt-5 pt-5 border-t border-border text-xs text-muted-foreground flex-wrap">
                     {ongoing && (
                       <span className="flex items-center gap-1.5">
@@ -183,6 +194,10 @@ export default function FellowshipReferendumPage() {
                     ]}
                   />
                 </section>
+
+                {metadata && <ProposalMetadataHeader metadata={metadata} chain={chain} />}
+
+                <CommentsSection proposalUuid={metadata?.id ?? null} />
 
                 {ongoing && (
                   <section className="rounded-2xl bg-card border border-border p-5">

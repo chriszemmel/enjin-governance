@@ -17,6 +17,7 @@ import { env } from "@/lib/env"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import { postTelegramMessage, sendTelegramMessage, type TelegramFailure } from "@/lib/telegram/send"
 import { REPORT_CATEGORY_LABELS, type ModerationTarget, type ReportCategory } from "./policy"
+import { referendumName } from "@/lib/governance/display"
 import { claimSlot } from "./slots"
 
 type ReportNotice = {
@@ -26,6 +27,8 @@ type ReportNotice = {
   source: "user" | "automatic"
   network: string | null
   referendumIndex: number | null
+  /** F#N for the Fellowship's referenda. */
+  referendaPallet?: string | null
 }
 
 const NOUN: Record<ModerationTarget, string> = {
@@ -53,7 +56,9 @@ const queueLink = (appUrl: string) => `${appUrl.replace(/\/+$/, "")}/moderation`
 /** Pure: the text of the notice. */
 export function formatReportNotice(n: ReportNotice, appUrl: string): string {
   const where = [
-    n.referendumIndex != null ? `on referendum #${n.referendumIndex}` : null,
+    n.referendumIndex != null
+      ? `on ${referendumName(n.referendumIndex, n.referendaPallet === "fellowshipReferenda" ? "fellowshipReferenda" : "referenda")}`
+      : null,
     n.network ? `(${n.network})` : null,
   ]
     .filter(Boolean)

@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { useModerationLog, type LogItem } from "@/lib/query/hooks/use-moderation"
+import { referendumName, referendumPath } from "@/lib/governance/display"
 import { cn } from "@/lib/utils"
 import { formatError } from "@/lib/utils/format-error"
 
@@ -29,7 +30,8 @@ const ACTION_BADGE: Record<string, { label: string; tone: string }> = {
 }
 
 function what(i: LogItem): string {
-  const on = i.referendum_index != null ? ` on referendum #${i.referendum_index}` : ""
+  const on =
+    i.referendum_index != null ? ` on ${referendumName(i.referendum_index, i.referenda_pallet)}` : ""
   switch (i.target_type) {
     case "attachment":
       return `Attachment${on}`
@@ -78,7 +80,7 @@ export default function ModerationLogPage() {
                   const badge = ACTION_BADGE[i.action] ?? { label: i.action, tone: "border-border" }
                   const href =
                     i.referendum_index != null && i.network
-                      ? `/proposals/${i.referendum_index}?network=${i.network}`
+                      ? referendumPath(i.referendum_index, i.referenda_pallet, i.network)
                       : null
                   return (
                     <li key={i.id} className="p-4 space-y-1.5">

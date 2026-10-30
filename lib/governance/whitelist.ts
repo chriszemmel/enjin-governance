@@ -81,13 +81,15 @@ async function proposalBytes(
  * the fellowship referenda that whitelist it. Decided referenda keep their
  * call only in history, read from `archive` at the block before the
  * decision; of the public ones only those on the WhitelistedCaller track
- * (`dispatchTrackId`), whose track a cheap raw read tells.
+ * (`dispatchTrackId`), whose track `decidedTracks` (the cached tracks of
+ * decided public referenda) or else a cheap raw read tells.
  */
 export async function findCounterparts(
   api: ApiPromise,
   archive: ApiPromise | null,
   role: WhitelistRole,
   dispatchTrackId: number | null,
+  decidedTracks: ReadonlyMap<number, number> = new Map(),
 ): Promise<WhitelistCounterpart[]> {
   const pallet: ReferendaPallet = role.role === "whitelist" ? "referenda" : "fellowshipReferenda"
   const want = role.role === "whitelist" ? "dispatch" : "whitelist"
@@ -100,7 +102,8 @@ export async function findCounterparts(
     if (!status && archive && ref.status.type !== "Killed" && "at" in ref.status) {
       if (pallet === "referenda") {
         if (dispatchTrackId == null) continue
-        const track = await getDecidedTrack(archive, ref.index, ref.status.at)
+        const track =
+          decidedTracks.get(ref.index) ?? (await getDecidedTrack(archive, ref.index, ref.status.at))
         if (track !== dispatchTrackId) continue
       }
       const history = await getReferendumHistory(archive, ref.index, ref.status.at, pallet)

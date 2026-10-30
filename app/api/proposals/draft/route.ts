@@ -86,6 +86,8 @@ const attachmentSchema = z.object({
 const bodySchema = z.object({
   proposal_id: z.guid(),
   network: z.enum(NETWORK_VALUES),
+  /** A fellowship referendum (F#N) instead of a public one (#N). */
+  referenda_pallet: z.enum(["referenda", "fellowshipReferenda"]).default("referenda"),
   proposer_address: z.string().min(1),
   title: z.string().min(1).max(200),
   summary: z.string().max(500).nullable(),
@@ -227,7 +229,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 403 },
       )
     }
-    if (existingRow.status !== "draft" || existingRow.network !== parsed.network) {
+    if (
+      existingRow.status !== "draft" ||
+      existingRow.network !== parsed.network ||
+      (existingRow.referenda_pallet ?? "referenda") !== parsed.referenda_pallet
+    ) {
       return NextResponse.json(
         { ok: false, error: "This proposal can no longer be changed here." },
         { status: 409 },
@@ -356,6 +362,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }),
     ),
     ...(withCall ? { call: parsed.call ?? null, enactment: parsed.enactment ?? null } : {}),
+    ...(parsed.referenda_pallet === "fellowshipReferenda"
+      ? { referenda_pallet: "fellowshipReferenda" as const }
+      : {}),
     preimage_hash: parsed.preimage_hash,
     preimage_len: parsed.preimage_len,
     created_at: (existingRow?.created_at ?? new Date()).toISOString(),
@@ -406,6 +415,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const draft: CreateProposalDraft = {
     id: parsed.proposal_id,
     network: parsed.network,
+    referendaPallet: parsed.referenda_pallet,
     proposerUserId,
     proposerAddress: parsed.proposer_address,
     title: parsed.title,

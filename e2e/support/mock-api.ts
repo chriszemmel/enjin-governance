@@ -174,6 +174,8 @@ export async function installApiMocks(page: Page, opts: MockOptions): Promise<Ap
         ],
       })
     }
+    // Chain reads the server caches, as in production.
+    if (/^\/api\/chain\/[^/]+\/decided-tracks$/.test(p)) return route.fallback()
     return json(route, { ok: false, error: "Not mocked in the e2e tests" }, 404)
   })
 

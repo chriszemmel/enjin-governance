@@ -6,7 +6,7 @@
 import type { ApiPromise } from "@polkadot/api"
 import { getChain, type ChainId } from "@/lib/chain/chains"
 import { samePublicKey, shortenAddress } from "@/lib/chain/ss58"
-import { getReferendum } from "./referenda"
+import { getReferendum, type ReferendaPallet } from "./referenda"
 
 /** How many referenda below `referendumCount()` the landed-batch scan reads. */
 export const LANDED_SCAN_DEPTH = 20
@@ -19,15 +19,18 @@ export type SubmissionReader = {
   depositorOf: (index: number) => Promise<string | null>
 }
 
-export function chainSubmissionReader(api: ApiPromise): SubmissionReader {
+export function chainSubmissionReader(
+  api: ApiPromise,
+  pallet: ReferendaPallet = "referenda",
+): SubmissionReader {
   return {
     metadataOf: async (index) => {
-      const raw = await api.query.referenda.metadataOf(index)
+      const raw = await api.query[pallet]!.metadataOf!(index)
       const opt = raw as unknown as { isSome: boolean; unwrap: () => { toHex: () => string } }
       return opt.isSome ? opt.unwrap().toHex() : null
     },
     depositorOf: async (index) => {
-      const status = (await getReferendum(api, index))?.status
+      const status = (await getReferendum(api, index, pallet))?.status
       if (!status || status.type === "Killed") return null
       return status.submissionDeposit?.who ?? null
     },

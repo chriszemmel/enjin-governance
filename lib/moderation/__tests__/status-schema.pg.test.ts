@@ -1,7 +1,7 @@
 /**
  * The Status tab's database probes against real Postgres (PGlite, with
  * every migration in scripts/ applied as `pnpm db:migrate` does): the
- * migrations 011-013 are judged by their tables and constraints, and the
+ * migrations 011-014 are judged by their tables and constraints, and the
  * ledger is only extra information.
  */
 import { describe, expect, it, vi } from "vitest"
@@ -21,10 +21,13 @@ describe("moderationSchema", () => {
       moderation: true,
       settings: true,
       keepState: true,
+      fellowship: true,
       ledger: [
         "011_moderation.sql",
         "012_moderation_settings.sql",
         "013_moderation_keep_state.sql",
+        "014_fellowship_referenda.sql",
+        "015_drop_proposer_signature.sql",
       ],
     })
 
@@ -39,6 +42,9 @@ describe("moderationSchema", () => {
     expect((await moderationSchema()).keepState).toBe(false)
 
     // Applied by hand: no ledger, the tables tell.
+    await db.sql.query("ALTER TABLE moderation_actions DROP COLUMN referenda_pallet")
+    expect((await moderationSchema()).fellowship).toBe(false)
+
     await db.sql.query("DROP TABLE _migrations")
     expect(await moderationSchema()).toMatchObject({ moderation: true, ledger: null })
 

@@ -105,7 +105,8 @@ keeps working from the chain.
 | `011_moderation.sql` | Roles, item state, public action log, reports, posting pauses |
 | `012_moderation_settings.sql` | Content-check settings and daily usage per model |
 | `013_moderation_keep_state.sql` | Moderation state and reports outlive a deleted draft (foreign keys `ON DELETE SET NULL`) |
-| `014_drop_proposer_signature.sql` | Drops the never-written `proposals.proposer_signature`. **Only after 2.0 is deployed** (below) |
+| `014_fellowship_referenda.sql` | Which referenda pallet a proposal's index counts in (`referenda` or `fellowshipReferenda`): F#N and #N are different referenda, so an index is unique per network and pallet; the same column on moderation actions |
+| `015_drop_proposer_signature.sql` | Drops the never-written `proposals.proposer_signature`. **Only after 2.0 is deployed** (below) |
 
 To apply them by hand instead, run each file in order with
 `psql "$DATABASE_URL_UNPOOLED" -f scripts/<file>`. Choose one method:
@@ -119,14 +120,14 @@ don't drop them) for at least one deploy, so a rollback still works.
 ### Migrations that wait for a deploy
 
 A migration that removes something the running release still uses must
-wait until the new release is live. `014` is one: 1.0 inserts
+wait until the new release is live. `015` is one: 1.0 inserts
 `proposals.proposer_signature` on every draft, 2.0 no longer does.
 Dropping it while 1.0 serves makes staging a draft fail there, and a
 rollback to 1.0 afterwards fails the same way. So, upgrading from 1.0:
 
-1. Before deploying 2.0: `pnpm db:migrate --until 013`.
+1. Before deploying 2.0: `pnpm db:migrate --until 014`.
 2. Deploy 2.0 and check it.
-3. Once you won't roll back to 1.0: `pnpm db:migrate`, which applies `014`.
+3. Once you won't roll back to 1.0: `pnpm db:migrate`, which applies `015`.
 
 A fresh database for 2.0 can take every migration at once.
 

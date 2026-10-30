@@ -99,11 +99,33 @@ describe("migrations", () => {
       "011_moderation.sql",
       "012_moderation_settings.sql",
       "013_moderation_keep_state.sql",
-      "014_drop_proposer_signature.sql",
+      "014_fellowship_referenda.sql",
+      "015_drop_proposer_signature.sql",
     ])
   })
 
-  it("drops the never-written proposals.proposer_signature (014)", async () => {
+  it("numbers a referendum per network and pallet (014)", async () => {
+    await db.sql`
+      INSERT INTO proposals (network, referendum_index, proposer_address, title, json_url, json_key, json_sha256, referenda_pallet)
+      VALUES ('canary-relay', 0, 'cnA', 'Public #0', 'u', 'k1', 's', 'referenda'),
+             ('canary-relay', 0, 'cnA', 'Fellowship F#0', 'u', 'k2', 's', 'fellowshipReferenda')
+    `
+    await expect(
+      db.sql`
+        INSERT INTO proposals (network, referendum_index, proposer_address, title, json_url, json_key, json_sha256)
+        VALUES ('canary-relay', 0, 'cnA', 'Second public #0', 'u', 'k3', 's')
+      `,
+    ).rejects.toThrow()
+    await expect(
+      db.sql`
+        INSERT INTO proposals (network, referendum_index, proposer_address, title, json_url, json_key, json_sha256, referenda_pallet)
+        VALUES ('canary-relay', 1, 'cnA', 'Bad pallet', 'u', 'k4', 's', 'democracy')
+      `,
+    ).rejects.toThrow()
+    await db.sql`DELETE FROM proposals WHERE network = 'canary-relay'`
+  })
+
+  it("drops the never-written proposals.proposer_signature (015)", async () => {
     const rows = await db.sql`
       SELECT column_name FROM information_schema.columns
        WHERE table_schema = 'public' AND table_name = 'proposals'

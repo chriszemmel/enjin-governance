@@ -107,6 +107,7 @@ export type QueueItem = {
   state_reason: string | null
   network: string | null
   referendum_index: number | null
+  referenda_pallet?: "referenda" | "fellowshipReferenda" | null
   proposal_title: string | null
   proposer_address: string | null
   attachment_name: string | null
@@ -152,6 +153,7 @@ export type LogItem = {
   target_type: string
   network: string | null
   referendum_index: number | null
+  referenda_pallet?: "referenda" | "fellowshipReferenda" | null
   action: string
   reason: string
   source: "moderator" | "proposer" | "automatic"

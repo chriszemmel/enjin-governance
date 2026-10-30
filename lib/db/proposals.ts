@@ -7,6 +7,7 @@
  */
 
 import "server-only"
+import type { ReferendaPallet } from "@/lib/governance/referenda"
 import { getSql } from "./client"
 
 export type ProposalStatus =
@@ -20,6 +21,8 @@ export type ProposalRow = {
   id: string
   network: string
   referendum_index: number | null
+  /** Which pallet `referendum_index` counts in: #N or the Fellowship's F#N (migration 014). */
+  referenda_pallet: ReferendaPallet
   proposer_user_id: string | null
   proposer_address: string
   title: string
@@ -51,6 +54,8 @@ export type CreateProposalDraft = {
   /** Client-minted UUID; must match the proposal_id used in R2 keys. */
   id: string
   network: string
+  /** Defaults to the public referenda. */
+  referendaPallet?: ReferendaPallet
   proposerUserId: string | null
   proposerAddress: string
   title: string
@@ -73,14 +78,14 @@ export async function insertProposalDraft(
   const sql = getSql()
   const rows = (await sql`
     INSERT INTO proposals (
-      id, network, proposer_user_id, proposer_address,
+      id, network, referenda_pallet, proposer_user_id, proposer_address,
       title, summary, body_markdown,
       track, beneficiary, amount_planck,
       json_url, json_key, json_sha256,
       preimage_hash, preimage_len, remark_payload,
       status
     ) VALUES (
-      ${d.id}, ${d.network}, ${d.proposerUserId}, ${d.proposerAddress},
+      ${d.id}, ${d.network}, ${d.referendaPallet ?? "referenda"}, ${d.proposerUserId}, ${d.proposerAddress},
       ${d.title}, ${d.summary}, ${d.bodyMarkdown},
       ${d.track}, ${d.beneficiary}, ${d.amountPlanck?.toString() ?? null},
       ${d.jsonUrl}, ${d.jsonKey}, ${d.jsonSha256},
@@ -326,11 +331,12 @@ export async function listProposalsByProposer(
 
 export async function listProposalsWithIndex(
   network: string,
+  pallet: ReferendaPallet = "referenda",
 ): Promise<ProposalRow[]> {
   const sql = getSql()
   return (await sql`
     SELECT * FROM proposals
-    WHERE network = ${network} AND referendum_index IS NOT NULL
+    WHERE network = ${network} AND referenda_pallet = ${pallet} AND referendum_index IS NOT NULL
     ORDER BY referendum_index DESC
     LIMIT 500
   `) as ProposalRow[]
@@ -339,11 +345,13 @@ export async function listProposalsWithIndex(
 export async function getProposalByIndex(
   network: string,
   referendumIndex: number,
+  pallet: ReferendaPallet = "referenda",
 ): Promise<ProposalRow | null> {
   const sql = getSql()
   const rows = (await sql`
     SELECT * FROM proposals
-    WHERE network = ${network} AND referendum_index = ${referendumIndex}
+    WHERE network = ${network} AND referenda_pallet = ${pallet}
+      AND referendum_index = ${referendumIndex}
     LIMIT 1
   `) as ProposalRow[]
   return rows[0] ?? null
@@ -357,12 +365,13 @@ export async function getProposalByIndex(
 export async function getProposalsByIndices(
   network: string,
   referendumIndices: ReadonlyArray<number>,
+  pallet: ReferendaPallet = "referenda",
 ): Promise<ProposalRow[]> {
   if (referendumIndices.length === 0) return []
   const sql = getSql()
   return (await sql`
     SELECT * FROM proposals
-    WHERE network = ${network}
+    WHERE network = ${network} AND referenda_pallet = ${pallet}
       AND referendum_index = ANY(${referendumIndices as number[]})
   `) as ProposalRow[]
 }

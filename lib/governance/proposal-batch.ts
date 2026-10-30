@@ -22,7 +22,7 @@ import type { SubmittableExtrinsic } from "@polkadot/api/types"
 import type { ISubmittableResult } from "@polkadot/types/types"
 import { stringToU8a, u8aToHex } from "@polkadot/util"
 import { canInline, hashCall, noteAndHash } from "./preimage"
-import { buildSetMetadata, buildSubmit } from "./referenda"
+import { buildSetMetadata, buildSubmit, type ReferendaPallet } from "./referenda"
 
 type Tx = SubmittableExtrinsic<"promise", ISubmittableResult>
 
@@ -42,6 +42,8 @@ type BuildArgs = {
   skipNote?: boolean
   /** The envelope is already noted (see useEnvelopeNoted): skip step 3. */
   skipEnvelopeNote?: boolean
+  /** File a fellowship referendum (F#N): steps 2 and 4 in its pallet. */
+  pallet?: ReferendaPallet
 }
 
 type BuiltProposalBatch = {
@@ -59,9 +61,10 @@ function envelopeCalls(
   remarkPayload: string,
   referendumIndex: number,
   skipNote = false,
+  pallet: ReferendaPallet = "referenda",
 ) {
   const { extrinsic, hash } = noteAndHash(api, stringToU8a(remarkPayload))
-  const setMetadata = buildSetMetadata(api, referendumIndex, hash) as Tx
+  const setMetadata = buildSetMetadata(api, referendumIndex, hash, pallet) as Tx
   return {
     metadataHash: hash,
     calls: (skipNote ? [setMetadata] : [extrinsic, setMetadata]) as Tx[],
@@ -80,6 +83,7 @@ export function buildProposalBatch(api: ApiPromise, args: BuildArgs): BuiltPropo
       origin: args.origin,
       proposal: inline ? { inline: bytes } : { hash, len: bytes.length },
       enactment: args.enactment,
+      pallet: args.pallet,
     }) as Tx,
   )
   const envelope = envelopeCalls(
@@ -87,6 +91,7 @@ export function buildProposalBatch(api: ApiPromise, args: BuildArgs): BuiltPropo
     args.remarkPayload,
     args.referendumIndex,
     args.skipEnvelopeNote,
+    args.pallet,
   )
   calls.push(...envelope.calls)
 
@@ -102,7 +107,18 @@ export function buildProposalBatch(api: ApiPromise, args: BuildArgs): BuiltPropo
 
 export function attachMetadataToExisting(
   api: ApiPromise,
-  args: { remarkPayload: string; referendumIndex: number; skipEnvelopeNote?: boolean },
+  args: {
+    remarkPayload: string
+    referendumIndex: number
+    skipEnvelopeNote?: boolean
+    pallet?: ReferendaPallet
+  },
 ): { metadataHash: `0x${string}`; calls: Tx[] } {
-  return envelopeCalls(api, args.remarkPayload, args.referendumIndex, args.skipEnvelopeNote)
+  return envelopeCalls(
+    api,
+    args.remarkPayload,
+    args.referendumIndex,
+    args.skipEnvelopeNote,
+    args.pallet,
+  )
 }

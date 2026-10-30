@@ -26,8 +26,8 @@ Highlights:
 ### Upgrading from 1.0
 
 1. Back up the database (a Neon branch is enough), then run
-   `pnpm db:migrate --until 013` for migrations `011`, `012` and `013`.
-   Don't apply `014` yet: it drops a column 1.0 still writes.
+   `pnpm db:migrate --until 014` for migrations `011` to `014`.
+   Don't apply `015` yet: it drops a column 1.0 still writes.
 2. Set `NEXT_PUBLIC_APP_URL` to the production domain: in production the
    app refuses to stage proposals while it points at localhost.
 3. Set `GOVERNANCE_ADMIN_PUBLIC_KEYS` to your wallet to become the first
@@ -37,9 +37,9 @@ Highlights:
 4. Redeploy, then open **Moderation → Status** as an admin: it lists
    anything still missing.
 5. Only once 2.0 is live and you won't roll back to 1.0, run
-   `pnpm db:migrate` to apply `014`, which drops the never-written
+   `pnpm db:migrate` to apply `015`, which drops the never-written
    `proposals.proposer_signature`. 1.0 inserts that column on every
-   draft: applied earlier, `014` breaks staging drafts on 1.0 and any
+   draft: applied earlier, `015` breaks staging drafts on 1.0 and any
    rollback to it.
 
 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
@@ -107,10 +107,10 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   the Destroying state can't vote or delegate. The vote panel lists such a
   pool disabled with a note and falls back to ENJ; on 1070 it can still
   vote.
-- **Migration `014`** drops `proposals.proposer_signature`, which was
+- **Migration `015`** drops `proposals.proposer_signature`, which was
   never written (drafts always stored null) and is no longer read or
   inserted. Apply it only after 2.0 is deployed (upgrade step 5);
-  `pnpm db:migrate --until 013` applies the earlier ones without it, and
+  `pnpm db:migrate --until 014` applies the earlier ones without it, and
   restoring a backup uses the same option to match the migrations its
   manifest lists.
 - **Every admin origin in the advanced composer:** StakingAdmin,
@@ -212,11 +212,23 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   each other by the call's hash, and compare both tracks' terms with Root's,
   read from the runtime. Until the call is whitelisted, the public one warns
   that enactment would fail with `CallIsNotWhitelisted`.
-- **Filing in the Fellowship:** members of rank I and up file a fellowship
-  referendum from `/fellowship/new`: whitelist a call by its call data or
-  hash, or enact a raw call, on the track its origin opens. A call over 128
-  bytes is noted as a preimage in the same batch. Anyone can then place the
-  decision deposit on the F# page.
+- **Filing in the Fellowship:** the advanced composer has a Fellowship
+  chamber (`/fellowship/new` opens it). Members of rank I and up file a
+  fellowship referendum there with a title, summary and text like any
+  proposal: whitelist a call by its call data or hash, remove a
+  whitelisted call, add, promote, demote or remove a member, or enact a
+  raw call, with the origin that change needs recommended and the track it
+  opens shown. A call over 128 bytes is noted as a preimage in the same
+  batch. Anyone can then place the decision deposit on the F# page.
+- **EGOV1 for fellowship referenda:** an F# carries its pinned record like
+  a public referendum: title and summary on the hub and the F# page,
+  comments, reports and moderation. Its JSON says
+  `"referenda_pallet": "fellowshipReferenda"`, the by-index routes take
+  `?pallet=fellowshipReferenda`, and moderation names it F#N.
+- **Migration `014`** records which referenda pallet a proposal's index
+  counts in, so #7 and F#7 are different proposals: an index is unique per
+  network and pallet, and moderation actions keep the pallet too. Apply it
+  before deploying 2.0 (upgrade step 1).
 - **Abstain:** the vote panel offers Abstain next to Aye and Nay. It casts
   a `SplitAbstain` vote with the whole amount on abstain: it counts toward
   support, not approval, and has no conviction, so nothing stays locked

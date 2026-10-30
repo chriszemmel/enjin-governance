@@ -22,8 +22,9 @@ import type { PreimageRef, Referendum, ReferendumStatusType } from "./types"
  */
 export function extractReferendumIndex(
   events: EventRecord[] | readonly EventRecord[],
+  pallet: ReferendaPallet = "referenda",
 ): number | null {
-  const submitted = findEvent(events, "referenda", "Submitted")
+  const submitted = findEvent(events, pallet, "Submitted")
   if (!submitted) return null
   try {
     return (submitted.data[0] as unknown as { toNumber: () => number }).toNumber()
@@ -181,6 +182,8 @@ export type SubmitParams = {
   proposal: SubmitProposal
   /** Enactment moment: 'After 0' = as soon as possible after passing. */
   enactment: { type: "At" | "After"; block: number }
+  /** The Fellowship's referenda instead of the public ones. */
+  pallet?: ReferendaPallet
 }
 
 /** Build an api.tx.referenda.submit extrinsic. Does NOT sign. */
@@ -193,7 +196,7 @@ export function buildSubmit(
       ? { At: params.enactment.block }
       : { After: params.enactment.block }
 
-  return api.tx.referenda.submit(
+  return api.tx[params.pallet ?? "referenda"]!.submit!(
     params.origin,
     boundedProposalArg(params.proposal),
     enactmentArg,
@@ -212,8 +215,9 @@ export function buildSetMetadata(
   api: ApiPromise,
   index: number,
   hash: `0x${string}`,
+  pallet: ReferendaPallet = "referenda",
 ): SubmittableExtrinsic<"promise", ISubmittableResult> {
-  return api.tx.referenda.setMetadata(index, hash) as SubmittableExtrinsic<
+  return api.tx[pallet]!.setMetadata!(index, hash) as SubmittableExtrinsic<
     "promise",
     ISubmittableResult
   >

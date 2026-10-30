@@ -98,6 +98,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       source: "user",
       network: target.network,
       referendumIndex: target.proposal?.referendum_index ?? null,
+      referendaPallet: target.proposal?.referenda_pallet ?? null,
     })
   }
   return NextResponse.json({ ok: true, duplicate: !created })

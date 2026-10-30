@@ -11,6 +11,7 @@ export type ProposalRow = {
   id: string
   network: string
   referendum_index: number | null
+  referenda_pallet?: "referenda" | "fellowshipReferenda"
   proposer_user_id: string | null
   proposer_address: string
   title: string
@@ -85,6 +86,7 @@ export function seedProposal(
     id: p.id,
     network: p.network,
     referendum_index: p.referendum_index ?? null,
+    referenda_pallet: p.referenda_pallet ?? "referenda",
     proposer_user_id: p.proposer_user_id ?? null,
     proposer_address: p.proposer_address,
     title: p.title ?? "Victim proposal",
@@ -378,9 +380,15 @@ export async function setProposalWithdrawn(
 export async function getProposalByIndex(
   network: string,
   referendumIndex: number,
+  pallet: string = "referenda",
 ): Promise<ProposalRow | null> {
   for (const row of proposals.values()) {
-    if (row.network === network && row.referendum_index === referendumIndex) return { ...row }
+    if (
+      row.network === network &&
+      row.referendum_index === referendumIndex &&
+      (row.referenda_pallet ?? "referenda") === pallet
+    )
+      return { ...row }
   }
   return null
 }

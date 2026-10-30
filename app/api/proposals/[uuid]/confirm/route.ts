@@ -9,6 +9,7 @@
  *      envelope (see `metadataBindingMatches`).
  *   2. Flip the DB row status → 'on_chain' and lock in the on-chain coords.
  *   3. Write a tiny redirect file at `proposals/{network}/index/{index}.json`
+ *      (`fellowship-index/` for a fellowship referendum)
  *      so an external indexer that only has the referendum index can
  *      resolve back to the canonical proposal.json without our database.
  */
@@ -33,7 +34,11 @@ import {
   expectedMetadataHash,
   type ProposalJson,
 } from "@/lib/governance/proposal-metadata"
-import { getReferendum, getReferendumHistory } from "@/lib/governance/referenda"
+import {
+  getReferendum,
+  getReferendumHistory,
+  type ReferendaPallet,
+} from "@/lib/governance/referenda"
 import type { OngoingStatus } from "@/lib/governance/types"
 import { flagText } from "@/lib/moderation/auto-flag"
 import { postingSuspendedResponse } from "@/lib/moderation/suspension"
@@ -105,6 +110,7 @@ function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
  */
 async function metadataBindingMatches(
   network: string,
+  pallet: ReferendaPallet,
   index: number,
   jsonUrl: string,
   jsonSha256: string,
@@ -123,7 +129,7 @@ async function metadataBindingMatches(
     onChain = await withDeadline(
       (async () => {
         const api = await getApi(chain.rpc, 0)
-        const raw = await api.query.referenda.metadataOf(index)
+        const raw = await api.query[pallet]!.metadataOf!(index)
         const opt = raw as unknown as {
           isSome: boolean
           unwrap: () => { toHex: () => string }
@@ -174,6 +180,7 @@ async function metadataBindingMatches(
  */
 async function filedByProposer(
   network: string,
+  pallet: ReferendaPallet,
   index: number,
   row: { proposer_address: string; preimage_hash: string | null; preimage_len: number | null },
 ): Promise<BindingCheck> {
@@ -188,7 +195,7 @@ async function filedByProposer(
   try {
     await withDeadline(
       (async () => {
-        const ref = await getReferendum(await getApi(chain.rpc, 0), index)
+        const ref = await getReferendum(await getApi(chain.rpc, 0), index, pallet)
         const status = ref?.status
         if (status?.type === "Ongoing") ongoing = status
         deposit = status && status.type !== "Killed" ? status.submissionDeposit : null
@@ -200,6 +207,7 @@ async function filedByProposer(
             await getApi(chain.archiveRpc, 0),
             index,
             status.at,
+            pallet,
           )
           if (past?.status.type === "Ongoing") {
             ongoing = past.status
@@ -357,8 +365,12 @@ export async function POST(
   // Cheap auth checks first, then the chain read: the client's tx/block
   // hashes are only shape-validated, so the on-chain binding is the only
   // thing that actually proves this row owns this referendum index.
+  // The row says which pallet its index counts in (fixed when the draft was
+  // staged): F#N and #N are different referenda.
+  const pallet: ReferendaPallet = existing.referenda_pallet ?? "referenda"
   let binding = await metadataBindingMatches(
     existing.network,
+    pallet,
     parsed.referendum_index,
     existing.json_url,
     existing.json_sha256,
@@ -389,6 +401,7 @@ export async function POST(
   }
   const filer = await filedByProposer(
     existing.network,
+    pallet,
     parsed.referendum_index,
     signed
       ? {
@@ -481,12 +494,14 @@ export async function POST(
         // The network values map 1:1 between R2 paths and the chain registry.
         row.network as "enjin-relay" | "enjin-matrix" | "canary-relay" | "canary-matrix",
         parsed.referendum_index,
+        pallet,
       )
       const put = await putJson(redirectKey, {
         proposal_id: row.id,
         json_url: row.json_url,
         json_sha256: row.json_sha256,
         referendum_index: parsed.referendum_index,
+        referenda_pallet: pallet,
         tx_hash: parsed.tx_hash ?? null,
         block_hash: parsed.block_hash ?? null,
         block_number: parsed.block_number ?? null,
@@ -510,6 +525,7 @@ export async function POST(
     ok: true,
     id: row.id,
     referendum_index: row.referendum_index,
+    referenda_pallet: pallet,
     json_url: row.json_url,
     redirect_url: redirectUrl,
     status: row.status,

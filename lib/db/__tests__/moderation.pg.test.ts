@@ -376,6 +376,7 @@ describe("public log", () => {
       "network",
       "proposal_id",
       "reason",
+      "referenda_pallet",
       "referendum_index",
       "source",
       "target_id",

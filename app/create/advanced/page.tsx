@@ -15,12 +15,13 @@ import {
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
 import type { ApiPromise } from "@polkadot/api"
-import { u8aToHex } from "@polkadot/util"
+import { hexToU8a, u8aToHex } from "@polkadot/util"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { WalletModal } from "@/components/wallet/wallet-modal"
 import { SignRequestModal } from "@/components/wallet/sign-request-modal"
 import { PlaceDepositButton } from "@/components/governance/place-deposit-button"
+import { FellowshipDepositButton } from "@/components/fellowship/fellowship-deposit-button"
 import { AddressFormatDialog } from "@/components/create/address-format-dialog"
 import {
   AttachmentDropzone,
@@ -33,7 +34,8 @@ import { FilingCosts } from "@/components/create/filing-costs"
 import { StepBar, type DraftResponse } from "@/components/create/create-ui"
 import { cn } from "@/lib/utils"
 import { subscanExtrinsicUrl } from "@/lib/chain/chains"
-import { getActiveChain, useActiveChain } from "@/lib/chain/use-chain"
+import { getActiveChain, useActiveChain, useSetActiveChain } from "@/lib/chain/use-chain"
+import { CHAINS, type ChainId } from "@/lib/chain/chains"
 import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
 import { env } from "@/lib/env"
 import {
@@ -50,7 +52,15 @@ import {
   type ProposalKind,
 } from "@/lib/governance/proposal-calls"
 import { attachMetadataToExisting, buildProposalBatch } from "@/lib/governance/proposal-batch"
-import { extractReferendumIndex } from "@/lib/governance/referenda"
+import { extractReferendumIndex, type ReferendaPallet } from "@/lib/governance/referenda"
+import {
+  FELLOWSHIP_ORIGINS,
+  FELLOWSHIP_PALLET,
+  fellowshipTrackLabel,
+  originTrack,
+  rankNumeral,
+  recommendedOrigin,
+} from "@/lib/governance/fellowship"
 import { canInline, hashCall, noteWouldAbort } from "@/lib/governance/preimage"
 import {
   envelopeBytes,
@@ -86,6 +96,12 @@ import {
 } from "@/lib/query/hooks/use-preimage"
 import { useProposalMetadata } from "@/lib/query/hooks/use-proposal-metadata"
 import { useReferendum } from "@/lib/query/hooks/use-referendum"
+import {
+  useFellowshipMembers,
+  useFellowshipReferendum,
+  useFellowshipTracks,
+  useHasFellowship,
+} from "@/lib/query/hooks/use-fellowship"
 import { useReferendumCount } from "@/lib/query/hooks/use-referenda"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
@@ -109,6 +125,27 @@ const KIND_ORDER: ProposalKind[] = [
 
 const DEFAULT_KIND: ProposalKind = "cancelReferendum"
 
+/** The Fellowship chamber's proposal types (fellowship referenda, F#N). */
+const FELLOWSHIP_KIND_ORDER: ProposalKind[] = [
+  "whitelistCall",
+  "removeWhitelistedCall",
+  "fellowshipMember",
+  "rawCall",
+]
+
+type Chamber = "public" | "fellowship"
+
+/**
+ * One origin per fellowship track, in track order. Member changes check the
+ * rank behind the origin, which only the FellowshipNDan origins carry;
+ * other calls take the named ones where a track has one.
+ */
+const FELLOWSHIP_NAMED_ORIGINS = FELLOWSHIP_ORIGINS.map((o) => o.origin)
+const FELLOWSHIP_DAN_ORIGINS = [
+  "FellowshipInitiates",
+  ...Array.from({ length: 9 }, (_, i) => `Fellowship${i + 1}Dan`),
+]
+
 // Same floors as the treasury wizard: every referendum gets a real title and
 // a summary for list views; the full text is optional here.
 const TITLE_MIN = 10
@@ -130,6 +167,8 @@ function originLabel(origin: unknown): string | null {
 }
 
 type Fields = {
+  memberAction: "add" | "promote" | "demote" | "remove"
+  memberWho: string
   amount: string
   beneficiary: string
   index: string
@@ -140,6 +179,8 @@ type Fields = {
 }
 
 const EMPTY_FIELDS: Fields = {
+  memberAction: "add",
+  memberWho: "",
   amount: "",
   beneficiary: "",
   index: "",
@@ -190,10 +231,41 @@ export default function AdvancedCreatePage() {
     isWalletConnect: sign.isWalletConnect,
   })
 
+  // Which referenda this files: the public ones (#N) or the Fellowship's
+  // (F#N), from ?chamber=fellowship or the switch at the top.
+  const hasFellowship = useHasFellowship()
+  const [chamber, setChamber] = useState<Chamber>("public")
+  const fellowship = chamber === "fellowship"
+  const pallet: ReferendaPallet = fellowship ? FELLOWSHIP_PALLET : "referenda"
+  const fellowshipMembers = useFellowshipMembers()
+  const fellowshipTracks = useFellowshipTracks()
+  const [fellowshipOrigin, setFellowshipOrigin] = useState("Fellows")
   const [mode, setMode] = useState<Mode>("new")
   const [step, setStep] = useState<Step>("create")
   const [kind, setKind] = useState<ProposalKind>(DEFAULT_KIND)
   const [fields, setFields] = useState<Fields>(EMPTY_FIELDS)
+  const setActiveChain = useSetActiveChain()
+  // Links may open the composer on a chamber, a call and an origin: the
+  // Fellowship's "file the public step" does (see WhitelistCallCard).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const network = q.get("network")
+    if (network && Object.hasOwn(CHAINS, network)) setActiveChain(network as ChainId)
+    if (q.get("chamber") === "fellowship") {
+      setChamber("fellowship")
+      setKind("whitelistCall")
+    }
+    const call = q.get("call")
+    if (call && /^0x[0-9a-fA-F]+$/.test(call)) {
+      setKind("rawCall")
+      setFields((f) => ({ ...f, rawHex: call }))
+    }
+    const origin = q.get("origin")
+    const i = SUBMIT_ORIGINS.findIndex((o) => o.label === origin)
+    if (i >= 0) setOriginIdx(i)
+    const t = q.get("title")
+    if (t) setTitle(t.slice(0, 200))
+  }, [setActiveChain])
   const [wasmFile, setWasmFile] = useState<WasmFile | null>(null)
   const [hashingWasm, setHashingWasm] = useState(false)
   const [originIdx, setOriginIdx] = useState<number>(() => suggestedOriginIdx(DEFAULT_KIND))
@@ -238,10 +310,16 @@ export default function AdvancedCreatePage() {
   // "Add details to an existing referendum"
   const [existingInput, setExistingInput] = useState("")
   const existingIndex = /^\d+$/.test(existingInput) ? Number(existingInput) : -1
-  const existingQuery = useReferendum(mode === "existing" ? existingIndex : -1)
+  const publicExistingQuery = useReferendum(mode === "existing" && !fellowship ? existingIndex : -1)
+  const fellowshipExistingQuery = useFellowshipReferendum(
+    mode === "existing" && fellowship ? existingIndex : -1,
+  )
+  const existingQuery = fellowship ? fellowshipExistingQuery : publicExistingQuery
   // Referenda that already have details here are edited from their page.
   const existingDetails = useProposalMetadata(
     mode === "existing" && existingIndex >= 0 ? existingIndex : null,
+    undefined,
+    pallet,
   )
 
   const setField = (k: keyof Fields, v: string) => setFields((f) => ({ ...f, [k]: v }))
@@ -258,6 +336,17 @@ export default function AdvancedCreatePage() {
       return activeAddress
     }
   }, [activeAddress, chain.id])
+
+  // The rank of the member a member change names, null when they aren't one.
+  const memberRank = useMemo(() => {
+    const who = fields.memberWho.trim()
+    if (!who || !fellowshipMembers.data) return null
+    try {
+      return fellowshipMembers.data.find((m) => samePublicKey(m.address, who))?.rank ?? null
+    } catch {
+      return null
+    }
+  }, [fields.memberWho, fellowshipMembers.data])
 
   // Build the proposal spec (and any field-level error) from the inputs.
   const { spec, fieldError } = useMemo<{
@@ -291,11 +380,34 @@ export default function AdvancedCreatePage() {
           }
           return { spec: { kind, index: n }, fieldError: null }
         }
-        case "whitelistCall": {
-          if (!isHex(fields.callHash, 32)) {
-            return { spec: null, fieldError: "Enter a 32-byte call hash (0x…)." }
+        case "whitelistCall":
+        case "removeWhitelistedCall": {
+          // A call hash, or the call itself: the whitelist keys it by its hash.
+          const input = fields.callHash.trim()
+          if (isHex(input, 32)) {
+            return { spec: { kind, callHash: input.toLowerCase() as `0x${string}` }, fieldError: null }
           }
-          return { spec: { kind, callHash: fields.callHash as `0x${string}` }, fieldError: null }
+          if (isHex(input) && input.length > 6) {
+            return { spec: { kind, callHash: hashCall(hexToU8a(input)) }, fieldError: null }
+          }
+          return { spec: null, fieldError: "Paste the call (0x…) or its 32-byte hash." }
+        }
+        case "fellowshipMember": {
+          const who = fields.memberWho.trim()
+          if (!who || !isValidAddressForChain(who, chain.id)) {
+            return { spec: null, fieldError: `Enter a member address on ${chain.name}.` }
+          }
+          const action = fields.memberAction
+          if (action === "add" && memberRank != null) {
+            return { spec: null, fieldError: "Already a member." }
+          }
+          if (action !== "add" && memberRank == null) {
+            return { spec: null, fieldError: "Not a member of the Fellowship." }
+          }
+          if (action === "promote" && memberRank === 9) {
+            return { spec: null, fieldError: "Already rank IX." }
+          }
+          return { spec: { kind, action, who, rank: memberRank }, fieldError: null }
         }
         case "authorizeUpgrade": {
           const codeHash = fields.codeHash.trim()
@@ -324,7 +436,7 @@ export default function AdvancedCreatePage() {
     } catch (e) {
       return { spec: null, fieldError: formatError(e) }
     }
-  }, [kind, fields, chain])
+  }, [kind, fields, chain, memberRank])
 
   // Resolve the submission origin: treasury spends derive their tier from the
   // amount and the connected runtime's spend limits; everything else uses the
@@ -338,9 +450,39 @@ export default function AdvancedCreatePage() {
       if (!tier) return null
       return { origin: { Origins: tier.origin }, label: tier.origin, track: tier.origin }
     }
+    if (fellowship) {
+      const trackId = originTrack(fellowshipOrigin) ?? 3
+      const t = fellowshipTracks.data?.find((x) => x.id === trackId)
+      return {
+        origin: { Origins: fellowshipOrigin },
+        label: fellowshipOrigin,
+        track: t?.name ?? `track ${trackId}`,
+      }
+    }
     const picked = SUBMIT_ORIGINS[originIdx] ?? SUBMIT_ORIGINS[0]
     return { origin: picked.origin, label: picked.label, track: picked.track }
-  }, [kind, spec, originIdx, tierTable])
+  }, [kind, spec, originIdx, tierTable, fellowship, fellowshipOrigin, fellowshipTracks.data])
+
+  // The Fellowship chamber preselects the origin the runtime requires.
+  const fellowshipRecommended = fellowship
+    ? recommendedOrigin(
+        kind === "whitelistCall"
+          ? "whitelist"
+          : kind === "removeWhitelistedCall"
+            ? "removeWhitelisted"
+            : kind === "fellowshipMember"
+              ? "member"
+              : "raw",
+        { action: fields.memberAction, rank: memberRank },
+      )
+    : null
+  const fellowshipOrigins =
+    kind === "fellowshipMember" ? FELLOWSHIP_DAN_ORIGINS : FELLOWSHIP_NAMED_ORIGINS
+  useEffect(() => {
+    if (!fellowship) return
+    if (fellowshipRecommended) setFellowshipOrigin(fellowshipRecommended)
+    else setFellowshipOrigin((o) => (fellowshipOrigins.includes(o) ? o : fellowshipOrigins[3]!))
+  }, [fellowship, fellowshipRecommended, fellowshipOrigins])
 
   const enactmentError = validateEnactment(enactment, {
     currentBlock: currentBlockQuery.data ?? null,
@@ -378,6 +520,20 @@ export default function AdvancedCreatePage() {
       }
     }
   }, [apiQuery.data, spec])
+
+  // Whitelisting by the call itself: what it is, decoded.
+  const whitelistedName = useMemo(() => {
+    const api = apiQuery.data as ApiPromise | undefined
+    const input = fields.callHash.trim()
+    if (!api || (kind !== "whitelistCall" && kind !== "removeWhitelistedCall")) return null
+    if (!isHex(input) || input.length <= 66) return null
+    try {
+      const call = api.createType("Call", input) as unknown as { section: string; method: string }
+      return `${call.section}.${call.method}`
+    } catch {
+      return null
+    }
+  }, [apiQuery.data, kind, fields.callHash])
 
   // Runtime upgrades: the hash voters compare with the release build.
   const codeHash = spec?.kind === "authorizeUpgrade" ? spec.codeHash : null
@@ -425,21 +581,24 @@ export default function AdvancedCreatePage() {
   }, [existingOngoing, existingPreimage.data, apiQuery.data])
   const existingTrackName = useMemo(() => {
     if (!existingOngoing) return null
-    const t = findTrack(tracksQuery.data ?? [], existingOngoing.trackId)
+    const t = findTrack(
+      (fellowship ? fellowshipTracks.data : tracksQuery.data) ?? [],
+      existingOngoing.trackId,
+    )
     return (
       originLabel(existingOngoing.origin) ??
       (t ? formatTrackName(t.name) : `Track ${existingOngoing.trackId}`)
     )
-  }, [existingOngoing, tracksQuery.data])
+  }, [existingOngoing, tracksQuery.data, fellowship, fellowshipTracks.data])
   const existingProblem: string | null = (() => {
     if (mode !== "existing") return null
     if (existingIndex < 0) return "Enter the referendum number."
     if (existingQuery.isPending) return "Loading the referendum…"
-    if (!existing) return `Referendum #${existingIndex} doesn't exist on ${chain.name}.`
-    if (!existingOngoing)
-      return `Referendum #${existingIndex} is no longer ongoing; its details can't be changed.`
+    const name = `${fellowship ? "F#" : "Referendum #"}${existingIndex}`
+    if (!existing) return `${name} doesn't exist on ${chain.name}.`
+    if (!existingOngoing) return `${name} is no longer ongoing; its details can't be changed.`
     if (existingDetails.data) {
-      return `Referendum #${existingIndex} already has details here. Edit them from its proposal page.`
+      return `${name} already has details here. Edit them from its page.`
     }
     if (!activeAddress) return "Connect the wallet that submitted it."
     if (!samePublicKey(existingOngoing.submissionDeposit.who, activeAddress)) {
@@ -508,7 +667,8 @@ export default function AdvancedCreatePage() {
     if (submissionDeposit == null || !preimageRate) return null
     if (mode === "new" && (!preview || preview.error)) return null
     return filingRequirement({
-      submissionDeposit: mode === "new" ? submissionDeposit : 0n,
+      // The Fellowship's referenda take no submission deposit.
+      submissionDeposit: mode === "new" && !fellowship ? submissionDeposit : 0n,
       rate: preimageRate,
       callLen: mode === "new" && preview && !preview.inline && !callAlreadyNoted ? preview.len : null,
       envelopeLen: draft
@@ -517,10 +677,12 @@ export default function AdvancedCreatePage() {
       feeAllowance: filingCosts.feeAllowance,
       existentialDeposit: filingCosts.existentialDeposit,
     })
-  }, [filingCosts, mode, preview, callAlreadyNoted, draft, chain.id, proposalId])
+  }, [filingCosts, mode, preview, callAlreadyNoted, draft, chain.id, proposalId, fellowship])
   const decisionTrack =
     mode === "new" && resolvedOrigin
-      ? findTrackByName(tracksQuery.data ?? [], resolvedOrigin.track)
+      ? fellowship
+        ? (fellowshipTracks.data?.find((t) => t.id === originTrack(resolvedOrigin.label)) ?? null)
+        : findTrackByName(tracksQuery.data ?? [], resolvedOrigin.track)
       : null
   const balanceError =
     filingNeeds && balanceQuery.data != null && balanceQuery.data < filingNeeds.total
@@ -585,6 +747,7 @@ export default function AdvancedCreatePage() {
         body: JSON.stringify({
           proposal_id: proposalId,
           network: chain.id,
+          referenda_pallet: pallet,
           // Same encoding as the treasury wizard, so the draft shows up in the
           // drafts panel (which matches addresses exactly).
           proposer_address: ownAddress ?? activeAddress,
@@ -631,13 +794,14 @@ export default function AdvancedCreatePage() {
     body,
     attachments,
     draft,
+    pallet,
   ])
 
   // ---- signing ---------------------------------------------------------------
   // Same fresh-read pattern as the treasury wizard: the referendum index the
   // batch binds metadata to, and whether the call's preimage is already on
   // chain (noting it again would abort the whole batch).
-  const referendumCountQuery = useReferendumCount()
+  const referendumCountQuery = useReferendumCount(undefined, pallet)
   const referendumIndexRef = useRef<number | null>(null)
   useEffect(() => {
     if (referendumCountQuery.data != null) referendumIndexRef.current = referendumCountQuery.data
@@ -707,6 +871,7 @@ export default function AdvancedCreatePage() {
           remarkPayload: draft.remark_payload,
           referendumIndex: existingIndex,
           skipEnvelopeNote: envelopeNoted.skipRef.current,
+          pallet,
         })
         builtRef.current = { mode, draft, referendumIndex: existingIndex }
         return calls
@@ -724,6 +889,7 @@ export default function AdvancedCreatePage() {
         referendumIndex,
         skipNote: skipNoteRef.current,
         skipEnvelopeNote: envelopeNoted.skipRef.current,
+        pallet,
       })
       builtRef.current = { mode, draft, referendumIndex }
       return calls
@@ -733,7 +899,9 @@ export default function AdvancedCreatePage() {
       builtRef.current = null
       if (!built) return
       const index =
-        built.mode === "existing" ? built.referendumIndex : extractReferendumIndex([...events])
+        built.mode === "existing"
+          ? built.referendumIndex
+          : extractReferendumIndex([...events], pallet)
       if (index == null) {
         setIndexLost(true)
         return
@@ -794,7 +962,7 @@ export default function AdvancedCreatePage() {
       ) {
         let landed: number | null
         try {
-          landed = await findLandedSubmission(chainSubmissionReader(api), {
+          landed = await findLandedSubmission(chainSubmissionReader(api, pallet), {
             envelopeHash: envelopeNoted.hash,
             proposer: stagedFor.proposer,
             referendumCount,
@@ -837,6 +1005,7 @@ export default function AdvancedCreatePage() {
     linkReferendum,
     sign,
     tx,
+    pallet,
   ])
   // What the sign dialog shows: a refused pre-sign check reads as a failed attempt.
   const signStatus: TxStatus = precheckError
@@ -876,12 +1045,53 @@ export default function AdvancedCreatePage() {
             Back to treasury proposal
           </Link>
 
+          {hasFellowship && step === "create" && (
+            <div className="grid grid-cols-2 gap-1 p-1 mb-6 rounded-xl bg-surface-1 border border-border" role="tablist" aria-label="Chamber">
+              {(["public", "fellowship"] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  role="tab"
+                  aria-selected={chamber === c}
+                  onClick={() => {
+                    if (c === chamber) return
+                    setChamber(c)
+                    setKind(c === "fellowship" ? "whitelistCall" : DEFAULT_KIND)
+                    setOriginIdx(suggestedOriginIdx(DEFAULT_KIND))
+                    setExistingInput("")
+                  }}
+                  className={cn(
+                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                    chamber === c
+                      ? "bg-card text-foreground border border-border"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {c === "public" ? "Public referendum" : "Fellowship"}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="mb-6">
             <h1 className="text-xl font-semibold text-foreground">
-              {mode === "new" ? "Advanced proposal" : "Add details to a referendum"}
+              {mode === "new"
+                ? fellowship
+                  ? "Fellowship referendum"
+                  : "Advanced proposal"
+                : fellowship
+                  ? "Add details to a fellowship referendum"
+                  : "Add details to a referendum"}
             </h1>
             <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-              {mode === "new" ? (
+              {mode === "new" && fellowship ? (
+                <>
+                  Members of rank I and up file F# referenda: whitelist a call for the public
+                  fast track, change a member, or run a call with a Fellowship origin. The origin
+                  sets the track and who may vote. One signature files the call and links its
+                  EGOV1 record on chain.
+                </>
+              ) : mode === "new" ? (
                 <>
                   File any OpenGov proposal on {chain.name} - referendum admin, whitelisting,
                   runtime upgrades, remarks, or a raw call - with a title and description voters can
@@ -932,7 +1142,7 @@ export default function AdvancedCreatePage() {
 
               <Section title="Proposal type">
                 <div className="grid grid-cols-2 gap-2">
-                  {KIND_ORDER.map((k) => (
+                  {(fellowship ? FELLOWSHIP_KIND_ORDER : KIND_ORDER).map((k) => (
                     <button
                       key={k}
                       type="button"
@@ -985,15 +1195,54 @@ export default function AdvancedCreatePage() {
                     disabled={readOnly}
                   />
                 )}
-                {kind === "whitelistCall" && (
+                {(kind === "whitelistCall" || kind === "removeWhitelistedCall") && (
                   <TextInput
-                    label="Call hash (32-byte H256)"
+                    label={
+                      kind === "whitelistCall"
+                        ? "Call to whitelist: the call (0x…) or its 32-byte hash"
+                        : "Whitelisted call to remove: the call (0x…) or its hash"
+                    }
                     value={fields.callHash}
                     onChange={(v) => setField("callHash", v)}
                     placeholder="0x…"
                     mono
                     disabled={readOnly}
                   />
+                )}
+                {kind === "fellowshipMember" && (
+                  <>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(["add", "promote", "demote", "remove"] as const).map((a) => (
+                        <button
+                          key={a}
+                          type="button"
+                          disabled={readOnly}
+                          onClick={() => setFields((f) => ({ ...f, memberAction: a }))}
+                          className={cn(
+                            "px-2 py-2 rounded-lg border text-xs capitalize transition-colors disabled:opacity-50",
+                            fields.memberAction === a
+                              ? "bg-primary/10 border-purple-border text-foreground"
+                              : "bg-surface-1 border-border text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                    <TextInput
+                      label="Member address"
+                      value={fields.memberWho}
+                      onChange={(v) => setField("memberWho", v)}
+                      placeholder={chain.id.startsWith("enjin") ? "en…" : "cn…"}
+                      mono
+                      disabled={readOnly}
+                    />
+                    {memberRank != null && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Rank {rankNumeral(memberRank)} now.
+                      </p>
+                    )}
+                  </>
                 )}
                 {kind === "authorizeUpgrade" && (
                   <>
@@ -1079,6 +1328,15 @@ export default function AdvancedCreatePage() {
                   <CallFacts
                     rows={[
                       ["Call", `${preview.section}.${preview.method}`],
+                      ...(spec?.kind === "whitelistCall" || spec?.kind === "removeWhitelistedCall"
+                        ? ([["Call hash", spec.callHash]] as [string, string][])
+                        : []),
+                      ...(whitelistedName
+                        ? ([[kind === "whitelistCall" ? "Whitelists" : "Removes", whitelistedName]] as [
+                            string,
+                            string,
+                          ][])
+                        : []),
                       ...(codeHash ? ([["Code hash", codeHash]] as [string, string][]) : []),
                       ["Track", formatTrackName(resolvedOrigin.label)],
                       [
@@ -1094,7 +1352,51 @@ export default function AdvancedCreatePage() {
               </Section>
 
               <Section title="Submission origin (track)">
-                {kind === "treasurySpend" ? (
+                {fellowship ? (
+                  <>
+                    <div className="space-y-1.5" role="radiogroup" aria-label="Submission origin">
+                      {fellowshipOrigins.map((o) => {
+                        const t = originTrack(o)!
+                        const selected = fellowshipOrigin === o
+                        return (
+                          <button
+                            key={o}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            disabled={readOnly}
+                            onClick={() => setFellowshipOrigin(o)}
+                            className={cn(
+                              "w-full flex items-center gap-3 rounded-lg border px-3 py-2 text-left text-xs disabled:opacity-50",
+                              selected
+                                ? "border-purple-border bg-primary/10"
+                                : "border-border bg-surface-1 hover:bg-surface-2",
+                            )}
+                          >
+                            <span className={cn("font-mono", selected ? "text-foreground" : "text-muted-foreground")}>
+                              {o}
+                            </span>
+                            <span className="text-muted-foreground truncate">
+                              {fellowshipTrackLabel(fellowshipTracks.data?.find((x) => x.id === t), t)} ·
+                              rank {rankNumeral(t)}+
+                            </span>
+                            {o === fellowshipRecommended && (
+                              <span className="ml-auto text-primary font-medium whitespace-nowrap">
+                                Recommended
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                      The origin sets the track and who may vote: members of its rank and up.
+                      {kind === "fellowshipMember" && !fellowshipRecommended && spec
+                        ? " No fellowship origin can make this change at this rank."
+                        : ""}
+                    </p>
+                  </>
+                ) : kind === "treasurySpend" ? (
                   <>
                     <p className="text-xs text-muted-foreground">
                       Derived from the amount and this runtime&apos;s spend limits:{" "}
@@ -1317,7 +1619,7 @@ export default function AdvancedCreatePage() {
                   {mode === "new" && (
                     <li>
                       File the referendum on {formatTrackName(callMeta.origin)}{" "}
-                      <span className="font-mono">(referenda.submit)</span>
+                      <span className="font-mono">({pallet}.submit)</span>
                     </li>
                   )}
                   <li>
@@ -1326,7 +1628,7 @@ export default function AdvancedCreatePage() {
                   </li>
                   <li>
                     Link it to the referendum{" "}
-                    <span className="font-mono">(referenda.setMetadata)</span>
+                    <span className="font-mono">({pallet}.setMetadata)</span>
                   </li>
                 </ol>
                 <p className="text-[11px] text-muted-foreground">
@@ -1340,8 +1642,8 @@ export default function AdvancedCreatePage() {
                 <div className="rounded-2xl bg-emerald-500/5 border border-emerald-500/30 p-5 space-y-3">
                   <p className="text-sm font-semibold text-foreground">
                     {mode === "new"
-                      ? `Referendum #${submittedIndex} submitted`
-                      : `Details added to referendum #${submittedIndex}`}
+                      ? `${fellowship ? "Fellowship referendum F#" : "Referendum #"}${submittedIndex} submitted`
+                      : `Details added to ${fellowship ? "F#" : "referendum #"}${submittedIndex}`}
                   </p>
                   {recovered && (
                     <p className="text-xs text-muted-foreground">
@@ -1368,13 +1670,16 @@ export default function AdvancedCreatePage() {
                       details as missing. */}
                   {linkState.kind !== "linking" && (
                     <Link
-                      href={`/proposals/${submittedIndex}?network=${chain.id}`}
+                      href={`/${fellowship ? "fellowship" : "proposals"}/${submittedIndex}?network=${chain.id}`}
                       className="inline-flex items-center gap-1 text-xs text-primary hover:text-purple-dim"
                     >
                       View the proposal <ArrowRight className="w-3 h-3" />
                     </Link>
                   )}
-                  {mode === "new" && (
+                  {mode === "new" && fellowship && (
+                    <FellowshipDepositButton index={submittedIndex} track={decisionTrack} />
+                  )}
+                  {mode === "new" && !fellowship && (
                     <PlaceDepositButton
                       referendumIndex={submittedIndex}
                       trackName={resolvedOrigin?.label ?? null}

@@ -153,6 +153,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     proposalId: target.proposal?.id ?? null,
     network: target.network,
     referendumIndex: target.proposal?.referendum_index ?? null,
+    referendaPallet: target.proposal?.referenda_pallet ?? null,
     action,
     reason: parsed.reason,
     source: "moderator",

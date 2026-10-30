@@ -31,6 +31,8 @@ export type ModerationActionRow = {
   proposal_id: string | null
   network: string | null
   referendum_index: number | null
+  /** Which pallet the index counts in (migration 014). */
+  referenda_pallet: string
   action: string
   reason: string
   source: Source
@@ -143,6 +145,8 @@ export async function insertAction(a: {
   proposalId: string | null
   network: string | null
   referendumIndex: number | null
+  /** Defaults to the public referenda. */
+  referendaPallet?: string | null
   action: string
   reason: string
   source: Source
@@ -151,10 +155,11 @@ export async function insertAction(a: {
 }): Promise<void> {
   await getSql()`
     INSERT INTO moderation_actions (
-      target_type, target_id, proposal_id, network, referendum_index,
+      target_type, target_id, proposal_id, network, referendum_index, referenda_pallet,
       action, reason, source, actor_public_key, actor_label
     ) VALUES (
       ${a.targetType}, ${a.targetId}, ${a.proposalId}, ${a.network}, ${a.referendumIndex},
+      ${a.referendaPallet ?? "referenda"},
       ${a.action}, ${a.reason}, ${a.source}, ${a.actorPublicKey}, ${a.actorLabel}
     )
   `
@@ -241,6 +246,7 @@ type QueueRow = {
   state_reason: string | null
   network: string | null
   referendum_index: number | null
+  referenda_pallet: string | null
   proposal_title: string | null
   proposer_address: string | null
   attachment_name: string | null
@@ -283,7 +289,8 @@ export async function listQueue(): Promise<QueueRow[]> {
            CASE o.sev WHEN 3 THEN 'high' WHEN 2 THEN 'medium' ELSE 'low' END AS severity,
            o.categories, o.notes, o.details, o.first_at, o.last_at,
            s.state, s.reason AS state_reason,
-           p.network, p.referendum_index, p.title AS proposal_title, p.proposer_address,
+           p.network, p.referendum_index, p.referenda_pallet, p.title AS proposal_title,
+           p.proposer_address,
            a.filename AS attachment_name, a.content_type AS attachment_type,
            LEFT(c.body_markdown, 400) AS comment_body, c.author_address AS comment_author
       FROM located o
@@ -381,12 +388,14 @@ type ModerationSchema = {
   settings: boolean
   /** Both proposal foreign keys are ON DELETE SET NULL (013_moderation_keep_state.sql). */
   keepState: boolean
+  /** proposals and moderation_actions say their referenda pallet (014_fellowship_referenda.sql). */
+  fellowship: boolean
   /** Migration files the `_migrations` ledger lists; null when there is no ledger. */
   ledger: string[] | null
 }
 
 /**
- * Which of migrations 011-013 are in place, judged by the tables and
+ * Which of migrations 011-014 are in place, judged by the tables and
  * constraints themselves: migrations applied by hand leave no ledger rows.
  */
 export async function moderationSchema(): Promise<ModerationSchema> {
@@ -406,17 +415,38 @@ export async function moderationSchema(): Promise<ModerationSchema> {
                 AND conname = 'moderation_state_proposal_id_fkey')
             OR (conrelid = to_regclass('moderation_reports')
                 AND conname = 'moderation_reports_proposal_id_fkey'))) AS set_null,
+      (SELECT COUNT(*)::int FROM information_schema.columns
+        WHERE column_name = 'referenda_pallet'
+          AND table_name IN ('proposals', 'moderation_actions')) AS pallet_columns,
       to_regclass('_migrations') IS NOT NULL AS ledger
-  `) as { moderation: boolean; settings: boolean; set_null: number; ledger: boolean }[]
-  const r = rows[0] ?? { moderation: false, settings: false, set_null: 0, ledger: false }
+  `) as {
+    moderation: boolean
+    settings: boolean
+    set_null: number
+    pallet_columns: number
+    ledger: boolean
+  }[]
+  const r = rows[0] ?? {
+    moderation: false,
+    settings: false,
+    set_null: 0,
+    pallet_columns: 0,
+    ledger: false,
+  }
   let ledger: string[] | null = null
   if (r.ledger) {
     const files = (await sql`
-      SELECT filename FROM _migrations WHERE filename ~ '^01[1-3]_' ORDER BY filename
+      SELECT filename FROM _migrations WHERE filename ~ '^01[1-5]_' ORDER BY filename
     `) as { filename: string }[]
     ledger = files.map((f) => f.filename)
   }
-  return { moderation: r.moderation, settings: r.settings, keepState: r.set_null === 2, ledger }
+  return {
+    moderation: r.moderation,
+    settings: r.settings,
+    keepState: r.set_null === 2,
+    fellowship: r.pallet_columns === 2,
+    ledger,
+  }
 }
 
 type ScanKindName = "images" | "pdfs" | "proposals" | "comments"
