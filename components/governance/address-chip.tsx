@@ -41,10 +41,14 @@ export function AddressChip({ address }: { address: string }) {
           type="button"
           title={address}
           onClick={() => void copy()}
-          className="inline-flex items-center gap-1 align-baseline max-w-full rounded-full border border-purple-border bg-primary/5 pl-0.5 pr-2 py-px font-mono text-[0.85em] leading-tight text-primary hover:bg-primary/10 transition-colors [overflow-wrap:normal]"
+          // The address's box is trimmed to its cap height, so the pill sits
+          // evenly around the letters. vertical-align: middle centres the chip
+          // on the text's x-height; the -0.106em lifts it to the middle of the
+          // cap height (Inter), level with the words around it.
+          className="relative -top-[0.106em] inline-flex items-center gap-1 align-middle max-w-full rounded-full border border-purple-border bg-primary/5 pl-0.5 pr-2 py-px font-mono text-[0.85em] leading-tight text-primary hover:bg-primary/10 transition-colors [overflow-wrap:normal]"
         >
           <PolkadotIdenticon address={address} size={16} className="border-0" />
-          <span>{middleTruncate(address)}</span>
+          <span className="[text-box:trim-both_cap_alphabetic]">{middleTruncate(address)}</span>
           {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3 opacity-60" />}
         </button>
       </PopoverTrigger>
