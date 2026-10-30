@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { SignerPayloadJSON } from "@polkadot/types/types"
 import {
   describeRelayRefusal,
+  isRelayRefusal,
   nativeRedirectFromPeer,
   toRequestPayload,
 } from "@/lib/wallet/connectors/walletconnect"
@@ -110,6 +111,23 @@ describe("describeRelayRefusal", () => {
     expect(describeRelayRefusal("socket hang up", ORIGIN, ID)).toBe(
       "WalletConnect closed the connection: socket hang up",
     )
+  })
+})
+
+describe("isRelayRefusal", () => {
+  it("is true when Reown refuses the origin or the project", () => {
+    expect(
+      isRelayRefusal(
+        "WebSocket connection closed abnormally with code: 3000 (Unauthorized: origin not allowed)",
+      ),
+    ).toBe(true)
+    expect(isRelayRefusal("Unauthorized: invalid key")).toBe(true)
+    expect(isRelayRefusal("Project not found")).toBe(true)
+  })
+
+  it("is false for a dropped connection the SDK reconnects from", () => {
+    expect(isRelayRefusal("WebSocket connection closed abnormally with code: 1006")).toBe(false)
+    expect(isRelayRefusal("Socket stalled when trying to connect to wss://relay.walletconnect.org")).toBe(false)
   })
 })
 

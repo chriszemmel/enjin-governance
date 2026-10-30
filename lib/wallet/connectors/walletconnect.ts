@@ -28,6 +28,17 @@ let signClientPromise: Promise<SignClientType> | null = null
  */
 let lastRelayError: string | null = null
 
+/** Called when the relay refuses this site or its project (see isRelayRefusal). */
+const refusalListeners = new Set<(reason: string) => void>()
+
+/**
+ * Whether a relay error means Reown refuses this origin or project id, as
+ * opposed to a dropped connection the SDK recovers from by itself.
+ */
+export function isRelayRefusal(reason: string): boolean {
+  return /origin|unauthori[sz]ed|project|key/i.test(reason)
+}
+
 async function importAndInit() {
   if (!env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID) {
     throw new Error(
@@ -54,6 +65,7 @@ async function importAndInit() {
 
   client.core.relayer.on("relayer_error", (err: unknown) => {
     lastRelayError = err instanceof Error ? err.message : String(err)
+    if (isRelayRefusal(lastRelayError)) for (const l of [...refusalListeners]) l(lastRelayError)
   })
 
   // Kick the relay socket awake the moment the dapp tab regains
@@ -551,7 +563,23 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
 
       if (uri) options?.onUri?.(uri)
 
-      const session = await approval()
+      // connect() hands out the URI before the proposal has reached the
+      // relay. If Reown refuses this origin, the QR still shows and the
+      // wallet opens to nothing, so stop waiting and say why instead.
+      let stopWatching = () => {}
+      const refused = new Promise<never>((_, reject) => {
+        const fail = () => {
+          const err = relayRefusal()
+          if (!err) return
+          stopWatching()
+          resetSignClient()
+          reject(err)
+        }
+        refusalListeners.add(fail)
+        stopWatching = () => refusalListeners.delete(fail)
+        if (lastRelayError && isRelayRefusal(lastRelayError)) fail()
+      })
+      const session = await Promise.race([approval(), refused]).finally(() => stopWatching())
       const accounts = accountsFromSession(session, id)
 
       const peerDisplay = peerDisplayFromMeta(session.peer?.metadata)
