@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowRight, Eye, Send, Vote } from "lucide-react"
+import { ArrowRight, Eye, Send, ShieldCheck, Vote } from "lucide-react"
 import { Nav } from "@/components/layout/nav"
 import { Footer } from "@/components/layout/footer"
 import { ProposalCard } from "@/components/governance/proposal-card"
@@ -15,7 +15,7 @@ import { useProposalMetadataBatch } from "@/lib/query/hooks/use-proposal-metadat
 
 const heroLine = (network: string) =>
   `On-chain governance for the ${network}. Browse referenda, cast conviction ` +
-  "votes, and submit treasury requests."
+  "votes, file proposals and follow the Fellowship."
 
 // The longest network name the hero line can show (see the hero below).
 const LONGEST_NETWORK_NAME = enabledChains().reduce(
@@ -187,33 +187,44 @@ export function HomePage() {
                   meaningfully in shaping the network.
                 </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                 {[
                   {
                     icon: <Vote className="w-5 h-5" />,
                     title: "Vote or delegate",
-                    desc: "Back proposals with conviction-weighted ENJ or staked sENJ, or delegate your voting power on any track to someone you trust.",
+                    href: "/proposals",
+                    desc: "Vote Aye, Nay or Abstain with conviction-weighted ENJ or staked sENJ, or delegate your voting power on any track to someone you trust.",
                   },
                   {
                     icon: <Send className="w-5 h-5" />,
                     title: "Propose & fund",
                     desc: "Request treasury funding, or file governance proposals (cancel, whitelist, runtime upgrade) with track and enactment control - end to end.",
+                    href: "/create",
+                  },
+                  {
+                    icon: <ShieldCheck className="w-5 h-5" />,
+                    title: "Fellowship fast track",
+                    desc: "The ranked technical collective votes by rank on F# referenda and can whitelist an urgent call, so the public votes on it with shorter terms than Root.",
+                    href: "/fellowship",
                   },
                   {
                     icon: <Eye className="w-5 h-5" />,
-                    title: "On-chain & transparent",
+                    title: "Fully on-chain",
                     desc: "Browse referenda, tracks, and tallies live from the chain. No wallet required to look, and every vote is recorded on-chain.",
+                    href: "/treasury",
                   },
                 ].map((feature) => (
-                  <div key={feature.title} className="space-y-3">
+                  <Link key={feature.title} href={feature.href} className="group space-y-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-primary/10 border border-purple-border flex items-center justify-center text-primary shrink-0">
                         {feature.icon}
                       </div>
-                      <h3 className="font-semibold text-foreground">{feature.title}</h3>
+                      <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                        {feature.title}
+                      </h3>
                     </div>
                     <p className="text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>

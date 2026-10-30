@@ -424,6 +424,11 @@ export default function DocsPage() {
                 a vote source (liquid ENJ or a specific sENJ pool).
               </li>
               <li>
+                <strong>Abstain</strong> - a <Code>SplitAbstain</Code> vote with the whole amount on
+                abstain. It counts toward support, not approval, and has no conviction, so nothing
+                stays locked once the referendum ends.
+              </li>
+              <li>
                 <strong>Change a vote</strong> - re-submit{" "}
                 <Code>vote</Code> for the same referendum to swap the
                 verdict, conviction, or source. The chain overwrites the
@@ -528,6 +533,85 @@ export default function DocsPage() {
               past Subscan extrinsics they may show <Code>votemanager (vote)</Code>
               {" "}or <Code>Convictionvoting (Vote)</Code> depending on which
               pallet the runtime exposed at the time.
+            </p>
+          </Section>
+
+          <Section id="fellowship" title="Fellowship & the fast track" icon={<Users />}>
+            <p>
+              The Fellowship is the relaychain&apos;s ranked technical collective (
+              <Code>fellowshipCollective</Code>), with its own referenda (
+              <Code>fellowshipReferenda</Code>). Its referenda are numbered separately and shown as{" "}
+              <strong>F#N</strong>: F#7 and public #7 are different referenda. The{" "}
+              <Link href="/fellowship" className="text-primary hover:underline">
+                Fellowship page
+              </Link>{" "}
+              lists members, every F# and the calls waiting on the whitelist; it only appears on
+              networks that run the pallets.
+            </p>
+
+            <h3 className="text-base font-semibold text-foreground pt-2">
+              Ranks, tracks and vote weight
+            </h3>
+            <ul className="list-disc pl-5 space-y-1.5">
+              <li>
+                Ten tracks, 0 (candidates) to 9 (grand masters). Track N needs rank N to vote; a
+                lower rank is told which rank it needs.
+              </li>
+              <li>
+                A vote weighs <Code>(e+1)(e+2)/2</Code> with <Code>e = rank - track minimum</Code>:
+                1 at the minimum, 3 one rank above, 6 two above. Approval is by weight, support by
+                members voting Aye.
+              </li>
+              <li>
+                Votes are Aye or Nay, without conviction or locks. The first vote on a referendum is
+                free; changing it pays the normal fee.
+              </li>
+            </ul>
+
+            <h3 className="text-base font-semibold text-foreground pt-2">Filing an F#</h3>
+            <p>
+              Members of rank I and up file from the advanced composer&apos;s Fellowship chamber,
+              with a title, summary and EGOV1 record like any proposal. It offers whitelisting a
+              call (by call data or hash), removing a whitelisted call, adding, promoting, demoting
+              or removing a member, and a raw call, and recommends the origin each needs:
+            </p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                <Code>whitelistCall</Code> and <Code>removeWhitelistedCall</Code> - Fellows (track
+                3).
+              </li>
+              <li>
+                Add a member - 1Dan; promote, demote or remove rank r - (r+2)Dan, on the track of
+                that rank.
+              </li>
+            </ul>
+            <p>
+              There is no submission deposit. The decision deposit (10 to 100,000 ENJ by track) can
+              be placed later by anyone from the F# page. In the EGOV1 JSON an F# says{" "}
+              <Code>{`"referenda_pallet": "fellowshipReferenda"`}</Code>, and{" "}
+              <Code>/api/proposals/by-index/N?pallet=fellowshipReferenda</Code> reads it.
+            </p>
+
+            <h3 className="text-base font-semibold text-foreground pt-2">The fast track</h3>
+            <ol className="list-decimal pl-5 space-y-1">
+              <li>
+                An F# on the Fellows track runs <Code>whitelist.whitelistCall(hash)</Code>.
+              </li>
+              <li>
+                Once it is enacted, the call&apos;s hash sits in{" "}
+                <Code>whitelist.whitelistedCall</Code>.
+              </li>
+              <li>
+                A public referendum on the WhitelistedCaller track runs{" "}
+                <Code>dispatchWhitelistedCallWithPreimage(call)</Code>, with shorter terms than
+                Root.
+              </li>
+              <li>When it passes, the call is dispatched as Root.</li>
+            </ol>
+            <p>
+              Both referenda show these four steps and link each other by the call&apos;s hash.
+              Until the call is whitelisted, the public one warns that enactment would fail with{" "}
+              <Code>CallIsNotWhitelisted</Code>.
             </p>
           </Section>
 
@@ -1024,6 +1108,7 @@ function TableOfContents() {
     ["egov1", "EGOV1 metadata standard"],
     ["editing", "Editing & withdrawal"],
     ["voting", "Voting & conviction locks"],
+    ["fellowship", "Fellowship & the fast track"],
     ["verification", "Verification"],
     ["wallets", "Wallet integration"],
     ["identity", "Identity & comments"],
