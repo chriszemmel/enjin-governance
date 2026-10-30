@@ -6,13 +6,13 @@
 
 <p align="center">
   <b>The web client for <a href="https://docs.enjin.io/">Enjin OpenGov</a>.</b><br/>
-  Browse referenda, vote with conviction, file treasury and admin proposals,
-  discuss them and keep the space clean - from the browser, backed by live chain RPC.
+  Browse referenda, vote Aye, Nay or Abstain, file treasury and admin proposals,
+  follow the Fellowship, discuss and keep the space clean - from the browser, backed by live chain RPC.
 </p>
 
 <p align="center">
   <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1146%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-1205%20passing-22c55e?style=flat-square" />
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
@@ -48,13 +48,18 @@
 <table>
   <tr>
     <td width="33%" valign="top"><b>Read the chain</b><br/>Referenda, tallies, voters and history straight from Enjin's RPC and archive nodes. No indexer required.</td>
-    <td width="33%" valign="top"><b>Vote and delegate</b><br/>Conviction voting, delegation per track or across all, lock and deposit reclaims. Six wallets, including Enjin Wallet.</td>
+    <td width="33%" valign="top"><b>Vote and delegate</b><br/>Aye, Nay or Abstain with conviction, delegation per track or across all, lock and deposit reclaims. Six wallets, including Enjin Wallet.</td>
     <td width="33%" valign="top"><b>Propose</b><br/>Treasury requests and admin calls - runtime upgrades, cancels, whitelists, raw calls - in one signature each.</td>
   </tr>
   <tr>
     <td valign="top"><b>Write for voters</b><br/>Markdown, inline images, PDFs and checksum-validated address chips, with a live preview of what voters will see.</td>
     <td valign="top"><b>Verifiable records</b><br/>Every proposal's text is pinned on chain with an EGOV1 hash, so anyone can check it hasn't been swapped.</td>
     <td valign="top"><b>Moderation built in</b><br/>Reports, a review queue, roles by wallet, a public log and optional AI pre-checks with a hard daily cost cap.</td>
+  </tr>
+  <tr>
+    <td valign="top"><b>The Fellowship</b><br/>Members, ranks and every F# referendum, rank-weighted voting, and filing from a Fellowship chamber.</td>
+    <td valign="top"><b>The fast track</b><br/>A call the Fellowship whitelists runs through the public WhitelistedCaller track, linked on both referenda.</td>
+    <td valign="top"><b>Built from the runtime</b><br/>Tracks, deposits, spend limits, support and vote weights are read from the chain and follow its upgrades.</td>
   </tr>
 </table>
 
@@ -80,10 +85,10 @@
   <tr>
     <td width="50%" valign="top">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/advanced-dark.png" />
-        <img src="docs/screenshots/advanced-light.png" alt="Reviewing a runtime upgrade proposal before signing" />
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/fellowship-dark.png" />
+        <img src="docs/screenshots/fellowship-light.png" alt="A fellowship referendum that whitelists a runtime upgrade, with the member's rank-weighted vote" />
       </picture>
-      <p align="center"><sub><b>Advanced proposals</b> - a runtime upgrade, reviewed before signing</sub></p>
+      <p align="center"><sub><b>The Fellowship</b> - a whitelist referendum and a rank-weighted vote</sub></p>
     </td>
     <td width="50%" valign="top">
       <picture>
@@ -98,12 +103,12 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phones-dark.png" />
-    <img src="docs/screenshots/phones-light.png" alt="The app on a phone: proposals, a proposal, its tally and text, and the report dialog" width="100%" />
+    <img src="docs/screenshots/phones-light.png" alt="The app on a phone: proposals, a proposal, its text, and voting Abstain" width="100%" />
   </picture>
   <br/><sub>Every page works on a phone.</sub>
 </p>
 
-<sub>Screenshots show test data on Canary.</sub>
+<sub>Screenshots show sample proposals on a local fork of Enjin Relaychain, with test wallets that never sign.</sub>
 
 ## Contents
 
@@ -138,8 +143,32 @@
   the 0.1x-6x tiers. "One whale or many holders" at a glance.
 - **Lifecycle progress** - visual prepare/decide/confirm timeline,
   decision-deposit awaiting state, time-elapsed badges.
-- **Conviction voting** - lock durations come from the runtime's
-  vote-locking period (the same on every track), never hardcoded.
+- **Conviction voting** - Aye, Nay or Abstain (a `SplitAbstain` vote that
+  counts toward support, not approval, with no lock). Lock durations come
+  from the runtime's vote-locking period (the same on every track), never
+  hardcoded.
+- **Runtime-correct rules** - treasury tiers, deposits and refunds, the
+  support denominator and enactment are read from the runtime and keyed
+  on its spec version, so an upgrade (1070 → 1080) changes them in an
+  open tab. Every rule was tried on Chopsticks forks of Enjin Relaychain
+  and Canary.
+
+### The Fellowship
+
+- **Members and F# referenda** - `/fellowship` lists the ranked members,
+  every fellowship referendum (numbered apart from public ones, as F#N)
+  and the calls waiting on the whitelist. Shown only where the runtime
+  has the pallets.
+- **Rank-weighted voting** - a member's vote counts (e+1)(e+2)/2, with e
+  their rank above the track's minimum; approval by weight, support by
+  members voting Aye. A rank below the track is told which rank it needs.
+- **Filing** - the advanced composer's Fellowship chamber whitelists or
+  removes a call, adds, promotes, demotes or removes a member, or enacts a
+  raw call, with the origin each change needs recommended. F# referenda
+  carry EGOV1 records, comments and moderation like public ones.
+- **The fast track** - a call the Fellowship whitelists and the public
+  WhitelistedCaller referendum that dispatches it show the same four
+  steps and link each other by the call's hash.
 
 ### Write to the chain
 
@@ -158,6 +187,11 @@
   sign-in) flows through the same modal that the connect QR uses, so
   WalletConnect sessions never get a stale prompt and the wake/redirect
   always targets the right peer.
+- **Enjin Wallet on one tap** - "Open in Enjin Wallet" waits until the
+  relay has the request, so the wallet never opens to nothing; a second
+  tap after coming back re-sends the same request. A session the wallet
+  ends shows as disconnected instead of taking requests nobody answers.
+  See [`docs/WALLET_INTEGRATION.md`](docs/WALLET_INTEGRATION.md).
 - **Treasury proposals end to end** - create wizard batches `preimage.notePreimage`
   + `referenda.submit` + `preimage.notePreimage(envelope)` +
   `referenda.setMetadata` via `utility.batchAll`. The referendum's
@@ -277,7 +311,11 @@
   Surfaces unfinished drafts at the top so the proposer can pick up where
   they left off. Beneficiary, enactment timing, and decision-deposit
   placement are all in the flow.
-- **`/create/advanced`** - general + admin proposal composer: cancel /
+- **`/fellowship`** - members, ranks, every fellowship referendum and the
+  whitelist; **`/fellowship/[index]`** shows one F# with its call, the
+  rank-weighted tally, the votes and the member's vote panel.
+- **`/create/advanced`** - general + admin proposal composer (and, with
+  `?chamber=fellowship`, the Fellowship chamber): cancel /
   kill a referendum, whitelist a call, authorize a runtime upgrade (hash
   computed in the browser from the `.wasm`), on-chain remark, or a raw SCALE
   call, under a chosen track origin (inline vs preimage chosen automatically
@@ -330,7 +368,9 @@
 - **Tested at three levels** - unit and route tests with Vitest,
   database tests against real Postgres (PGlite) with the real
   migrations, and Playwright browser tests against the production build.
-  CI runs all of them on every pull request and on `main`.
+  CI runs all of them, plus a dependency audit, on every pull request and
+  on `main`. Runtime rules were also tried on Chopsticks forks of the live
+  chains.
 
 ---
 
@@ -338,10 +378,10 @@
 
 | | |
 |---|---|
-| TypeScript source files (excl. vendored shadcn and tests) | **~300** |
+| TypeScript source files (excl. vendored shadcn and tests) | **~340** |
 | Docs files | **7** |
-| Unit tests | **1146** (97 files), including route tests and database tests against PGlite |
-| Browser tests | **21** (Playwright, against the production build) |
+| Unit tests | **1205** (102 files), including route tests and database tests against PGlite |
+| Browser tests | **28** (Playwright, against the production build) |
 | Test coverage (lines) | **88%** of API routes, **80%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and components are covered by the browser tests, not by unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
@@ -411,7 +451,7 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (1146 tests)
+pnpm test         # Vitest (1205 tests)
 pnpm test:watch   # Vitest watch
 pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
 ```
@@ -713,19 +753,18 @@ its cost.
 | Enjin Relaychain | `wss://rpc.relay.blockchain.enjin.io` | 2135 (`en…`) | ENJ | **Primary** |
 | Canary Relaychain | `wss://rpc.relay.canary.enjin.io` | 69 (`cn…`) | cENJ | **Default for canary testing** |
 | Enjin Matrixchain | `wss://rpc.matrix.blockchain.enjin.io` | 1110 (`ef…`) | ENJ | Rails only - legacy `democracy` pallet, not OpenGov |
-| Canary Matrixchain | `wss://rpc.matrix.canary.enjin.io` | 9030 (`cx…`) | cENJ | Rails only - legacy `democracy` pallet, not OpenGov |
+| Canary Matrixchain | `wss://rpc.matrix.canary.enjin.io` | 9030 (`cx…`) | cENJ | Rails only - OpenGov since spec 1042 (no treasury), planned for 2.1 |
 
 Treasury (Relay): `enD9wdMEaQa3MEDUc7dtsCC86JYGMN5JBE2NBRoMyC37dX4iA`
 Community wallet (Matrix multisig): `efRd63tR845wJ4FxoUfFgrDpxfAQ2t1iydU7LyzJCf577hgTH`
 
 The two Matrixchains are in the chain registry (RPC, SS58, archive RPC,
-treasury address) but ship `enabled: false`. They run Substrate's legacy
-`democracy` pallet plus `council` / `technicalCommittee` collectives - not the
-OpenGov stack (`referenda` + `convictionVoting`) this client is built around
-(confirmed live against the `matrix-enjin` runtime, spec 1031). Matrix
-governance is therefore a separate integration - a `democracy`-pallet read /
-write surface - rather than a config flip, and a natural future expansion for
-the ecosystem.
+treasury address) but ship `enabled: false`. Enjin Matrixchain (spec 1031)
+still runs Substrate's legacy `democracy` pallet plus `council` /
+`technicalCommittee` collectives. Canary Matrixchain moved to OpenGov in
+spec 1042: nine tracks, `convictionVoting.vote` without the Relay's
+`currency` argument, and no treasury. Matrix support is planned for 2.1,
+starting from the OpenGov side the Relay already uses.
 
 ---
 
