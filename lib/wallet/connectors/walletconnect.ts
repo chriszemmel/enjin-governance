@@ -473,6 +473,9 @@ function buildSigner(
       if (e?.params?.topic === topic) markRequestDelivered(topic)
     }
     relayer.on("relayer_publish", onPublish)
+    // Should the SDK ever publish without that event, the link must not
+    // stay held back: by then the request has gone out anyway.
+    const fallback = setTimeout(() => markRequestDelivered(topic), 4_000)
     try {
       return await signClient.request<{ signature: `0x${string}` }>({
         topic,
@@ -480,6 +483,7 @@ function buildSigner(
         request,
       })
     } finally {
+      clearTimeout(fallback)
       relayer.off("relayer_publish", onPublish)
       clearRequestDelivered(topic)
     }
@@ -546,26 +550,6 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       // wallet against the new chain. Requesting both up-front would let
       // the same key surface twice (en…/cn…) and cross the per-network
       // handle namespace.
-      // The proposal goes out to the pairing topic after connect() has
-      // returned the URI; onReady tells the dialog once the relay has it, so
-      // "Open in Enjin Wallet" can't send the page away before that.
-      const published = new Set<string>()
-      let pairingTopic: string | null = null
-      let readySent = false
-      let stopReady = () => {}
-      const checkReady = () => {
-        if (readySent || !pairingTopic || !published.has(pairingTopic)) return
-        readySent = true
-        stopReady()
-        options?.onReady?.()
-      }
-      const onPublish = (e: { params?: { topic?: string } } | undefined) => {
-        const t = e?.params?.topic
-        if (!t) return
-        published.add(t)
-        checkReady()
-      }
-
       const { uri, approval } = await (async () => {
         lastRelayError = null
         try {
@@ -574,8 +558,6 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
             15_000,
             "Couldn't reach WalletConnect. Check your connection and try again.",
           )
-          signClient.core.relayer.on("relayer_publish", onPublish)
-          stopReady = () => signClient.core.relayer.off("relayer_publish", onPublish)
           return await withTimeout(
             signClient.connect({
               optionalNamespaces: {
@@ -590,7 +572,6 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
             "Couldn't start the WalletConnect session. Please try again.",
           )
         } catch (err) {
-          stopReady()
           const refused = relayRefusal()
           resetSignClient()
           throw refused ?? err
@@ -598,15 +579,15 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       })()
 
       if (uri) {
-        // wc:<pairing topic>@2?...
-        pairingTopic = uri.slice(3).split("@")[0] ?? null
         options?.onUri?.(uri)
-        checkReady()
+        // connect() returns only once the relay has acknowledged the
+        // proposal (sign-client publishes it with throwOnFailedPublish
+        // before handing out the URI), so the wallet will find it now.
+        options?.onReady?.()
       }
 
-      // connect() hands out the URI before the proposal has reached the
-      // relay. If Reown refuses this origin, the QR still shows and the
-      // wallet opens to nothing, so stop waiting and say why instead.
+      // If Reown refuses this origin later (a reconnect, say), the wallet
+      // never answers; stop waiting and say why instead.
       let stopWatching = () => {}
       const refused = new Promise<never>((_, reject) => {
         const fail = () => {
@@ -620,10 +601,7 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
         stopWatching = () => refusalListeners.delete(fail)
         if (lastRelayError && isRelayRefusal(lastRelayError)) fail()
       })
-      const session = await Promise.race([approval(), refused]).finally(() => {
-        stopWatching()
-        stopReady()
-      })
+      const session = await Promise.race([approval(), refused]).finally(() => stopWatching())
       const accounts = accountsFromSession(session, id)
 
       const peerDisplay = peerDisplayFromMeta(session.peer?.metadata)
