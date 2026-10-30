@@ -17,21 +17,18 @@ export function buildEnjinWalletDeepLink(connectionUri: string): string {
 }
 
 /**
- * Build the deep link used by the sign-request modal - same `enjinwallet://wc?…`
- * shape the pair flow uses, but parameterised by the active session topic
- * instead of a pairing URI. We don't have the per-request id from this
- * layer (it's allocated inside signClient.request), so sessionTopic is the
- * strongest hint we can give the wallet about which channel this is for;
- * the actual request itself follows over the WC relay.
+ * Deep link used while a sign request is pending: only the wallet itself
+ * (`enjinwallet://`, or the redirect the wallet announced). The request
+ * reaches the wallet over the WalletConnect relay; a link that named the
+ * session (`wc?sessionTopic=...`) made Enjin Wallet fetch it a second time,
+ * and an iPhone showed two requests for one (seen in Substreak on a real
+ * device, 2026-10-01). The topic stays in the signature for callers.
  */
 export function buildSignRequestDeepLink(opts: {
   peerRedirect?: string | null
   sessionTopic?: string | null
 }): string {
-  const base = opts.peerRedirect ?? `${ENJIN_WALLET_DEEP_LINK_SCHEME}://`
-  const baseNoSlash = base.endsWith("/") ? base.slice(0, -1) : base
-  if (!opts.sessionTopic) return base
-  return `${baseNoSlash}/wc?sessionTopic=${encodeURIComponent(opts.sessionTopic)}`
+  return opts.peerRedirect ?? `${ENJIN_WALLET_DEEP_LINK_SCHEME}://`
 }
 
 export function isMobileUserAgent(userAgent?: string): boolean {
