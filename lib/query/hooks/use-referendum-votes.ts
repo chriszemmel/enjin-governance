@@ -5,6 +5,7 @@ import type { ApiPromise } from "@polkadot/api"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { listVotesOnPoll } from "@/lib/governance/conviction-voting"
+import { isPureAbstain } from "@/lib/governance/vote-decode"
 import { useApi } from "./use-api"
 import { useArchiveApi } from "./use-archive-api"
 import { useReferendum } from "./use-referendum"
@@ -14,6 +15,8 @@ export type ReferendumVote = {
   trackId: number
   /** Standard vote byte (0x80 | conviction = aye). Kept raw so the UI decoder owns the labels. */
   voteRaw: number | null
+  /** Pure abstain (SplitAbstain with no aye/nay part); voteRaw is null then. */
+  abstain: boolean
   /** Conviction enum index (0..6), redundant with voteRaw but explicit. */
   convictionRaw: number | null
   /** AccountVote.balance as bigint of planck. */
@@ -81,6 +84,7 @@ export function useReferendumVotes(
           r.vote.type === "Standard"
             ? encodeStandardVoteByte(r.vote.aye, conviction(r.vote.conviction))
             : null,
+        abstain: isPureAbstain(r.vote),
         convictionRaw:
           r.vote.type === "Standard" ? conviction(r.vote.conviction) : null,
         balance:

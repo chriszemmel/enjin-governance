@@ -1,20 +1,24 @@
 /**
  * Decode the referenda pallet's track table from chain runtime constants.
  *
- * Tracks change only on runtime upgrade, so we treat them as effectively
- * constant per ApiPromise instance and cache the result.
+ * Tracks change only on runtime upgrade (spec 1080, for one, changes
+ * decision deposits, support floors and maxDeciding), so the decoded table
+ * is cached per ApiPromise AND spec version: polkadot.js re-decorates
+ * `api.consts` in place on an upgrade, and the next read after it decodes
+ * the new table.
  */
 
 import type { ApiPromise } from "@polkadot/api"
 import type { Codec } from "@polkadot/types/types"
 import type { GovernanceCurve, Track } from "./types"
 
-const trackCache = new WeakMap<ApiPromise, Track[]>()
+const trackCache = new WeakMap<ApiPromise, { specVersion: number; tracks: Track[] }>()
 
 /** Read api.consts.referenda.tracks and decode into the normalized Track[]. */
 export function getTracks(api: ApiPromise): Track[] {
+  const specVersion = api.runtimeVersion.specVersion.toNumber()
   const cached = trackCache.get(api)
-  if (cached) return cached
+  if (cached && cached.specVersion === specVersion) return cached.tracks
 
   const raw = api.consts.referenda?.tracks
   if (!raw) {
@@ -22,7 +26,7 @@ export function getTracks(api: ApiPromise): Track[] {
   }
 
   const tracks = decodeTracks(raw)
-  trackCache.set(api, tracks)
+  trackCache.set(api, { specVersion, tracks })
   return tracks
 }
 

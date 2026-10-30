@@ -22,14 +22,31 @@ import type { PreimageRef, Referendum, ReferendumStatusType } from "./types"
  */
 export function extractReferendumIndex(
   events: EventRecord[] | readonly EventRecord[],
+  pallet: ReferendaPallet = "referenda",
 ): number | null {
-  const submitted = findEvent(events, "referenda", "Submitted")
+  const submitted = findEvent(events, pallet, "Submitted")
   if (!submitted) return null
   try {
     return (submitted.data[0] as unknown as { toNumber: () => number }).toNumber()
   } catch {
     return null
   }
+}
+
+/**
+ * The two referenda pallets: the public one, voted with conviction, and the
+ * Fellowship's, voted by rank. Their storage has the same shape, so the
+ * readers below take the pallet and default to the public one.
+ */
+export type ReferendaPallet = "referenda" | "fellowshipReferenda"
+
+/** The pallet's query section; throws on a runtime without it. */
+function referendaQuery(api: ApiPromise, pallet: ReferendaPallet) {
+  const section = api.query[pallet]
+  if (!section?.referendumInfoFor) {
+    throw new Error(`Chain does not expose ${pallet}.referendumInfoFor`)
+  }
+  return section
 }
 
 export type ReferendumFilter = {
@@ -47,8 +64,9 @@ export type ReferendumFilter = {
 export async function listReferenda(
   api: ApiPromise,
   filter: ReferendumFilter = {},
+  pallet: ReferendaPallet = "referenda",
 ): Promise<Referendum[]> {
-  const entries = await api.query.referenda.referendumInfoFor.entries()
+  const entries = await referendaQuery(api, pallet).referendumInfoFor.entries()
   const decoded: Referendum[] = []
 
   for (const [key, info] of entries) {
@@ -68,8 +86,9 @@ export async function listReferenda(
 export async function getReferendum(
   api: ApiPromise,
   index: number,
+  pallet: ReferendaPallet = "referenda",
 ): Promise<Referendum | null> {
-  const info = await api.query.referenda.referendumInfoFor(index)
+  const info = await referendaQuery(api, pallet).referendumInfoFor(index)
   return decodeReferendumInfo(index, info)
 }
 
@@ -83,21 +102,56 @@ export async function getReferendumHistory(
   api: ApiPromise,
   index: number,
   atBlock: number,
+  pallet: ReferendaPallet = "referenda",
 ): Promise<Referendum | null> {
   if (atBlock <= 1) return null
   try {
     const blockHash = await api.rpc.chain.getBlockHash(atBlock - 1)
     const apiAt = await api.at(blockHash)
-    const info = await apiAt.query.referenda.referendumInfoFor(index)
+    const info = await apiAt.query[pallet]!.referendumInfoFor!(index)
     return decodeReferendumInfo(index, info)
   } catch {
     return null
   }
 }
 
+/**
+ * The track a decided referendum was on, read from its raw storage at the
+ * block before the decision. Only the first bytes matter (the `Ongoing`
+ * variant, then the track as a u16), so there is no need for that block's
+ * runtime metadata the way `api.at` would fetch it - which keeps a list
+ * of these quick on an archive node. Null when the state isn't there.
+ */
+export async function getDecidedTrack(
+  api: ApiPromise,
+  index: number,
+  atBlock: number,
+): Promise<number | null> {
+  if (atBlock <= 1) return null
+  try {
+    const blockHash = await api.rpc.chain.getBlockHash(atBlock - 1)
+    const key = api.query.referenda.referendumInfoFor.key(index)
+    const raw = (await api.rpc.state.getStorage(key, blockHash)) as unknown as {
+      isSome?: boolean
+      unwrap?: () => { toU8a: (bare: boolean) => Uint8Array }
+      toU8a: (bare: boolean) => Uint8Array
+    }
+    if (raw.isSome === false) return null
+    const bytes = raw.unwrap ? raw.unwrap().toU8a(true) : raw.toU8a(true)
+    // ReferendumInfo::Ongoing is variant 0 and starts with `track: u16`.
+    if (bytes.length < 3 || bytes[0] !== 0) return null
+    return bytes[1]! | (bytes[2]! << 8)
+  } catch {
+    return null
+  }
+}
+
 /** Count of referenda ever submitted (max index + 1). */
-export async function getReferendumCount(api: ApiPromise): Promise<number> {
-  const count = await api.query.referenda.referendumCount()
+export async function getReferendumCount(
+  api: ApiPromise,
+  pallet: ReferendaPallet = "referenda",
+): Promise<number> {
+  const count = await referendaQuery(api, pallet).referendumCount!()
   return (count as unknown as { toNumber: () => number }).toNumber()
 }
 
@@ -128,6 +182,8 @@ export type SubmitParams = {
   proposal: SubmitProposal
   /** Enactment moment: 'After 0' = as soon as possible after passing. */
   enactment: { type: "At" | "After"; block: number }
+  /** The Fellowship's referenda instead of the public ones. */
+  pallet?: ReferendaPallet
 }
 
 /** Build an api.tx.referenda.submit extrinsic. Does NOT sign. */
@@ -140,7 +196,7 @@ export function buildSubmit(
       ? { At: params.enactment.block }
       : { After: params.enactment.block }
 
-  return api.tx.referenda.submit(
+  return api.tx[params.pallet ?? "referenda"]!.submit!(
     params.origin,
     boundedProposalArg(params.proposal),
     enactmentArg,
@@ -159,8 +215,9 @@ export function buildSetMetadata(
   api: ApiPromise,
   index: number,
   hash: `0x${string}`,
+  pallet: ReferendaPallet = "referenda",
 ): SubmittableExtrinsic<"promise", ISubmittableResult> {
-  return api.tx.referenda.setMetadata(index, hash) as SubmittableExtrinsic<
+  return api.tx[pallet]!.setMetadata!(index, hash) as SubmittableExtrinsic<
     "promise",
     ISubmittableResult
   >

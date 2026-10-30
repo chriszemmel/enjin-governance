@@ -117,11 +117,35 @@ describe("getLifecycle - terminal", () => {
     return { index: 1, status, trackId: null, tally: null }
   }
 
-  it("approved: every stage is done", () => {
+  it("approved without the scheduler read: decided stages done, Enact unknown (not a check)", () => {
     const lc = getLifecycle(terminal("Approved"), track, 6000)
     expect(lc.terminal).toBe("approved")
-    expect(lc.stages.every((s) => s.state === "done")).toBe(true)
-    expect(lc.overallProgress).toBe(1)
+    expect(lc.stages.map((s) => s.state)).toEqual(["done", "done", "done", "unknown"])
+    expect(lc.activeStageId).toBeNull()
+    expect(lc.overallProgress).toBe(0.75)
+  })
+
+  it("timed out: never decided, so only prepare is done", () => {
+    const lc = getLifecycle(terminal("TimedOut"), track, 6000)
+    expect(lc.stages.map((s) => s.state)).toEqual(["done", "skipped", "skipped", "skipped"])
+    expect(lc.timeline.map((e) => e.label)).toEqual(["Submitted", "Timed out"])
+  })
+
+  it("lists an outcome's rows before the history arrives, blocks unknown", () => {
+    const lc = getLifecycle(terminal("Approved"), track, 6000)
+    expect(lc.timeline.map((e) => [e.label, e.block])).toEqual([
+      ["Submitted", null],
+      ["Decision started", null],
+      ["Confirm started", null],
+      ["Approved", 5000],
+      ["Enactment", 5100],
+    ])
+    const rejected = getLifecycle(terminal("Rejected"), track, 6000)
+    expect(rejected.timeline.map((e) => e.label)).toEqual([
+      "Submitted",
+      "Decision started",
+      "Rejected",
+    ])
   })
 
   it("rejected: prep + decide done, confirm + enact skipped", () => {
@@ -149,5 +173,60 @@ describe("getLifecycle - overall progress", () => {
     // Halfway through decide → prepare done (25%) + half of decide (12.5%) = 37.5%
     const lc = getLifecycle(ref, track, 1600)
     expect(lc.overallProgress).toBeCloseTo(0.375, 3)
+  })
+})
+
+describe("getLifecycle - projected completion", () => {
+  const deciding = (over: Partial<OngoingStatus> = {}) =>
+    ongoing({
+      decisionDeposit: { who: "y", amount: 1n },
+      deciding: { since: 1100, confirming: null },
+      ...over,
+    })
+  const expected = (ref: Referendum) =>
+    Object.fromEntries(
+      getLifecycle(ref, track, 1600).stages.map((s) => [s.id, [s.expectedEnd, s.expectedApprox]]),
+    )
+
+  it("projects confirm, enact and payout from the end of the decide period", () => {
+    const lc = getLifecycle(deciding(), track, 1600, {
+      spend: { spendPeriod: 250, payout: { status: "unknown" } },
+    })
+    expect(lc.confirmStartsAt).toBeNull()
+    expect(expected(deciding())).toEqual({
+      prepare: [1100, false],
+      decide: [2100, false],
+      confirm: [2200, true],
+      enact: [2300, true],
+    })
+    expect(lc.payout).toMatchObject({ state: "upcoming", block: 2500, approx: true })
+  })
+
+  it("takes the confirm start from the alarm when it falls before the period ends", () => {
+    // Relay #14: the runtime's alarm sits where the support curve meets the tally.
+    const ref = deciding({ alarm: { when: 1800 } })
+    expect(getLifecycle(ref, track, 1600).confirmStartsAt).toBe(1800)
+    expect(expected(ref)).toMatchObject({ confirm: [1900, true], enact: [2000, true] })
+  })
+
+  it("ignores an alarm that is just the end of the decide period", () => {
+    const ref = deciding({ alarm: { when: 2100 } })
+    expect(getLifecycle(ref, track, 1600).confirmStartsAt).toBeNull()
+  })
+
+  it("uses the chain's blocks once confirming, and honours a fixed enactment block", () => {
+    const ref = deciding({
+      deciding: { since: 1100, confirming: 1700 },
+      enactment: { type: "At", block: 5000 },
+      alarm: { when: 1700 },
+    })
+    const lc = getLifecycle(ref, track, 1650)
+    expect(lc.confirmStartsAt).toBeNull()
+    expect(Object.fromEntries(lc.stages.map((s) => [s.id, s.expectedEnd]))).toEqual({
+      prepare: 1100,
+      decide: 1600,
+      confirm: 1700,
+      enact: 5000,
+    })
   })
 })

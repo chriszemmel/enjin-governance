@@ -4,12 +4,19 @@
  * Each unique RPC endpoint gets one long-lived ApiPromise; callers reuse
  * the cached instance rather than opening fresh WebSockets per query.
  *
- * Server-side note: serverless functions should still `await api.disconnect()`
- * in a finally block to free the socket before the function exits. The cache
- * survives function invocations only when the worker is warm.
+ * Server routes reuse the cached socket while their instance stays warm and
+ * don't disconnect it. An instance that lost its connection is disconnected
+ * before a new one is opened, so its provider stops reconnecting in the
+ * background.
+ *
+ * The Polkadot API library (most of it the type registry) is loaded with
+ * the first connection rather than with the page, so pages paint and
+ * hydrate without parsing it first. Browsers start that load as early as
+ * they can (see preloadApiLibrary).
  */
 
-import { ApiPromise, WsProvider } from "@polkadot/api"
+import type * as PolkadotApi from "@polkadot/api"
+import type { ApiPromise } from "@polkadot/api"
 
 const CONNECT_TIMEOUT_MS = 10_000
 const READY_TIMEOUT_MS = 15_000
@@ -19,7 +26,20 @@ const RETRY_DELAY_MS = 1_000
 const apiCache = new Map<string, ApiPromise>()
 const inFlight = new Map<string, Promise<ApiPromise>>()
 
+let library: Promise<typeof PolkadotApi> | null = null
+
+/** Start loading the Polkadot API library, once; later calls share the load. */
+export function preloadApiLibrary(): Promise<typeof PolkadotApi> {
+  library ??= import("@polkadot/api").catch((err: unknown) => {
+    // A failed chunk load (flaky network) may succeed on the next attempt.
+    library = null
+    throw err
+  })
+  return library
+}
+
 async function openConnection(endpoint: string): Promise<ApiPromise> {
+  const { ApiPromise, WsProvider } = await preloadApiLibrary()
   const provider = new WsProvider(endpoint, 1_000, {}, CONNECT_TIMEOUT_MS)
 
   let createTimer: ReturnType<typeof setTimeout> | undefined
@@ -72,7 +92,10 @@ async function openConnection(endpoint: string): Promise<ApiPromise> {
 export async function getApi(endpoint: string, retries = MAX_RETRIES): Promise<ApiPromise> {
   const cached = apiCache.get(endpoint)
   if (cached && cached.isConnected) return cached
-  if (cached && !cached.isConnected) apiCache.delete(endpoint)
+  if (cached && !cached.isConnected) {
+    apiCache.delete(endpoint)
+    void cached.disconnect().catch(() => undefined)
+  }
 
   const existing = inFlight.get(endpoint)
   if (existing) return existing

@@ -33,9 +33,11 @@ export const CONVICTION_MULTIPLIER: Record<Conviction, number> = {
 }
 
 /**
- * Lock period (in track decision periods) applied after a Standard vote.
- * None imposes no lock. Higher convictions impose exponential locks per
- * the OpenGov spec.
+ * Lock periods per conviction, in units of the runtime's
+ * `convictionVoting.voteLockingPeriod` - not the track's decision period.
+ * A winning-side Standard vote stays locked until the referendum's end
+ * block + periods × voteLockingPeriod (see `convictionLockBlocks`). None
+ * imposes no lock; each step up doubles it.
  */
 export const CONVICTION_LOCK_PERIODS: Record<Conviction, number> = {
   None: 0,

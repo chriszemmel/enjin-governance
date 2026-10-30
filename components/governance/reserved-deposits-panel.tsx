@@ -8,6 +8,11 @@ import { useQueryClient } from "@tanstack/react-query"
 import { subscanExtrinsicUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { formatTokenAmount } from "@/lib/chain/format"
+import {
+  depositHold,
+  type DepositKind,
+  type ProposalRecordRef,
+} from "@/lib/governance/deposits"
 import { buildUnnotePreimage } from "@/lib/governance/preimage"
 import {
   buildRefundDecisionDeposit,
@@ -20,12 +25,26 @@ import { useWallet } from "@/lib/wallet/use-wallet"
 import { walletDisplayFor } from "@/lib/wallet/connector-registry"
 import { SignRequestModal } from "@/components/wallet/sign-request-modal"
 import { WalletModal } from "@/components/wallet/wallet-modal"
-
-type DepositKind = "decision" | "submission"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 type ActiveAction =
   | { type: "unnote"; key: string; hash: `0x${string}` }
   | { type: "refund"; key: string; index: number; kind: DepositKind }
+
+/** A proposal-record preimage the user asked to unnote, awaiting confirmation. */
+type PendingRecordUnnote = {
+  key: string
+  hash: `0x${string}`
+  amount: bigint
+  record: ProposalRecordRef
+}
 
 /**
  * Shows the governance deposits the connected address has tied up on chain
@@ -39,6 +58,11 @@ type ActiveAction =
  * on window focus (returning from the wallet app), so a modal rendered inside
  * the row would unmount mid-success. At panel level it survives until the user
  * dismisses it.
+ *
+ * A preimage that holds a proposal's on-chain record (its EGOV1 envelope /
+ * `MetadataOf` target) is reclaimable as far as the runtime is concerned,
+ * but unnoting it leaves the proposal unreadable from chain - so its row
+ * says what it's for and the reclaim goes through a confirmation first.
  */
 export function ReservedDepositsPanel({ address }: { address: string }) {
   const chain = useActiveChain()
@@ -53,6 +77,7 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
   const walletMeta = walletDisplayFor(walletSession ?? null)
   const [active, setActive] = useState<ActiveAction | null>(null)
   const activeRef = useRef<ActiveAction | null>(null)
+  const [pendingRecord, setPendingRecord] = useState<PendingRecordUnnote | null>(null)
 
   const tx = useExtrinsic({
     build: (api) => {
@@ -118,6 +143,12 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
     void tx.submit()
   }
 
+  const confirmRecordUnnote = () => {
+    const p = pendingRecord
+    setPendingRecord(null)
+    if (p) attempt({ type: "unnote", key: p.key, hash: p.hash })
+  }
+
   const closeModal = () => {
     sign.close()
     activeRef.current = null
@@ -167,7 +198,8 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
         Deposits held when you submit a referendum or note a preimage. This is{" "}
         <span className="text-foreground">reserved</span>, not a conviction lock -
         unlocking a vote won&apos;t free it. Reclaim each below once it&apos;s
-        releasable.
+        releasable. A submission deposit comes back only if the referendum was
+        approved or cancelled; a rejected or timed-out one stays reserved.
       </p>
 
       {query.isPending ? (
@@ -187,6 +219,7 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
         <ul className="space-y-2 pt-1">
           {data!.referendumDeposits.map((d) => {
             const key = `ref-${d.index}-${d.kind}`
+            const hold = depositHold(d.kind, d.status)
             return (
               <li
                 key={key}
@@ -202,6 +235,9 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
                   <p className="text-[11px] text-muted-foreground mt-0.5 capitalize">
                     {d.kind} deposit · {formatTokenAmount(d.amount, chain)}
                   </p>
+                  {hold && d.status !== "Ongoing" && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{hold.reason}</p>
+                  )}
                 </div>
                 {d.refundable ? (
                   <ReclaimButton
@@ -213,7 +249,7 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
                   />
                 ) : (
                   <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                    Held until concluded
+                    {hold?.label ?? "Held"}
                   </span>
                 )}
               </li>
@@ -222,6 +258,7 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
 
           {data!.preimageDeposits.map((d) => {
             const key = `pre-${d.hash}`
+            const record = d.proposalRecord
             return (
               <li
                 key={key}
@@ -235,8 +272,39 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
                     {d.len != null ? `${d.len} bytes · ` : ""}
                     {formatTokenAmount(d.amount, chain)}
                   </p>
+                  {record && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {record.referendumIndex != null ? (
+                        <>
+                          Record of{" "}
+                          <Link
+                            href={`/proposals/${record.referendumIndex}?network=${chain.id}`}
+                            className="text-foreground hover:text-primary"
+                          >
+                            Referendum #{record.referendumIndex}
+                          </Link>
+                        </>
+                      ) : (
+                        "EGOV1 proposal record"
+                      )}{" "}
+                      - keeps your proposal&apos;s record readable
+                    </p>
+                  )}
                 </div>
-                {d.unnotable ? (
+                {d.unnotable && record ? (
+                  <ReclaimButton
+                    label={isConnected ? "Reclaim…" : "Connect"}
+                    title="Unnoting this breaks the proposal's on-chain record. You'll be asked to confirm."
+                    submitting={active?.key === key && tx.isSubmitting}
+                    onClick={() => {
+                      if (!isConnected) {
+                        setWalletOpen(true)
+                        return
+                      }
+                      setPendingRecord({ key, hash: d.hash, amount: d.amount, record })
+                    }}
+                  />
+                ) : d.unnotable ? (
                   <ReclaimButton
                     label={isConnected ? "Reclaim" : "Connect"}
                     submitting={active?.key === key && tx.isSubmitting}
@@ -254,6 +322,46 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
       )}
 
       <WalletModal open={walletOpen} onClose={() => setWalletOpen(false)} />
+      <Dialog
+        open={pendingRecord != null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRecord(null)
+        }}
+      >
+        <DialogContent className="w-[calc(100%-3rem)] max-w-[calc(100%-3rem)] sm:max-w-md p-5 sm:p-6 gap-4 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Unnote your proposal&apos;s record?</DialogTitle>
+            <DialogDescription className="text-left">
+              {pendingRecord?.record.referendumIndex != null
+                ? `Referendum #${pendingRecord.record.referendumIndex}'s on-chain metadata points at this preimage`
+                : "This preimage holds an EGOV1 proposal envelope"}
+              {" - "}the link from chain to the proposal&apos;s title, text and
+              attachments. The chain lets you unnote it and returns{" "}
+              {pendingRecord ? formatTokenAmount(pendingRecord.amount, chain) : ""}, but
+              afterwards the record can&apos;t be resolved from chain: explorers,
+              other clients and indexers lose it, and only this app&apos;s own
+              database still has it. Only noting the exact same bytes again
+              restores it.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex items-center justify-end gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => setPendingRecord(null)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              Keep it
+            </button>
+            <button
+              type="button"
+              onClick={confirmRecordUnnote}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-destructive text-destructive-foreground text-xs font-medium hover:bg-destructive/90 transition-colors"
+            >
+              Unnote anyway
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <SignRequestModal
         open={sign.isOpen}
         walletName={walletMeta.name}
@@ -282,10 +390,12 @@ export function ReservedDepositsPanel({ address }: { address: string }) {
 
 function ReclaimButton({
   label,
+  title = "Reclaim this reserved deposit.",
   submitting,
   onClick,
 }: {
   label: string
+  title?: string
   submitting: boolean
   onClick: () => void
 }) {
@@ -295,7 +405,7 @@ function ReclaimButton({
       onClick={onClick}
       disabled={submitting}
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-purple-border transition-all disabled:opacity-50 whitespace-nowrap"
-      title="Reclaim this reserved deposit."
+      title={title}
     >
       {submitting ? (
         <Loader2 className="w-3 h-3 animate-spin" />

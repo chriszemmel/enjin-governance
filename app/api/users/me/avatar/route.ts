@@ -1,15 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { setAvatar } from "@/lib/db/users"
-import { isR2Configured } from "@/lib/r2/client"
+import {
+  isPublicUrlMisconfigured,
+  isR2Configured,
+  PUBLIC_URL_NOT_CONFIGURED,
+} from "@/lib/r2/client"
 import { userAvatarKey } from "@/lib/r2/paths"
 import { putObject } from "@/lib/r2/upload"
 import { transcodeAvatar } from "@/lib/r2/avatar"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/uploads/limits"
 
 export const runtime = "nodejs"
 
-const MAX_BYTES = 6 * 1024 * 1024
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -19,8 +24,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 503 },
     )
   }
+  // The avatar URL is built on the site's public URL; a localhost one in
+  // production would be stored and never load.
+  if (isPublicUrlMisconfigured()) {
+    return NextResponse.json(
+      { ok: false, error: PUBLIC_URL_NOT_CONFIGURED },
+      { status: 503 },
+    )
+  }
   const me = await getCurrentUser()
   if (!me) return NextResponse.json({ ok: false }, { status: 401 })
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
 
   const rl = await enforceRateLimit({ ...RATE_LIMITS.avatarUpload, identity: me.id })
   if (!rl.allowed) {
@@ -46,9 +61,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 400 },
     )
   }
-  if (file.size === 0 || file.size > MAX_BYTES) {
+  if (file.size === 0) {
+    return NextResponse.json({ ok: false, error: "Empty file" }, { status: 400 })
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json(
-      { ok: false, error: `File must be 1 - ${MAX_BYTES} bytes` },
+      { ok: false, error: `Images can be up to ${MAX_UPLOAD_LABEL}.` },
       { status: 413 },
     )
   }
@@ -63,12 +81,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let png: Buffer
   try {
     png = await transcodeAvatar(input)
-  } catch (e) {
+  } catch {
     return NextResponse.json(
-      {
-        ok: false,
-        error: `Could not transcode image: ${e instanceof Error ? e.message : String(e)}`,
-      },
+      { ok: false, error: "This image could not be read. Try exporting it again as PNG or JPEG." },
       { status: 400 },
     )
   }

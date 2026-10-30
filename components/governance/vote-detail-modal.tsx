@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Copy, ExternalLink, Lock, X } from "lucide-react"
+import { Check, Copy, ExternalLink, Lock, Minus, X } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import {
@@ -29,10 +29,12 @@ interface VoteDetailModalProps {
   chain: ChainConfig
   voter: string
   aye: boolean | null
+  /** Pure abstain vote - no conviction, counts toward support only. */
+  abstain?: boolean
   conviction: Conviction | null
   multiplier: number | null
-  lockPeriods: number
-  decisionPeriodBlocks: number | null
+  /** Blocks the vote stays locked after the referendum ends (0 = none / unknown). */
+  lockBlocks: number
   balance: bigint
   currency: ReturnType<typeof decodeCurrency>
   extrinsicIndex: string | null
@@ -50,28 +52,30 @@ export function VoteDetailModal({
   chain,
   voter,
   aye,
+  abstain = false,
   conviction,
   multiplier,
-  lockPeriods,
-  decisionPeriodBlocks,
+  lockBlocks,
   balance,
   currency,
   extrinsicIndex,
 }: VoteDetailModalProps) {
-  const lockBlocks = decisionPeriodBlocks != null ? decisionPeriodBlocks * lockPeriods : 0
   const lockLabel =
-    conviction === "None"
+    abstain || conviction === "None"
       ? "No lock"
-      : decisionPeriodBlocks != null && lockBlocks > 0
+      : lockBlocks > 0
         ? formatBlockDuration(lockBlocks)
         : "-"
 
-  const verdictLabel = aye === true ? "Aye" : aye === false ? "Nay" : "Vote"
+  const verdictLabel =
+    aye === true ? "Aye" : aye === false ? "Nay" : abstain ? "Abstain" : "Vote"
   const verdictIcon =
     aye === true ? (
       <Check className="w-4 h-4 text-green-400" aria-hidden />
     ) : aye === false ? (
       <X className="w-4 h-4 text-red-400" aria-hidden />
+    ) : abstain ? (
+      <Minus className="w-4 h-4 text-muted-foreground" aria-hidden />
     ) : (
       <Lock className="w-4 h-4 text-muted-foreground" aria-hidden />
     )
@@ -95,9 +99,9 @@ export function VoteDetailModal({
                 className={cn(
                   "text-2xl font-semibold tabular-nums",
                   aye === true
-                    ? "text-green-400"
+                    ? "text-green-700 dark:text-green-400"
                     : aye === false
-                      ? "text-red-400"
+                      ? "text-red-700 dark:text-red-400"
                       : "text-foreground",
                 )}
               >
@@ -131,7 +135,10 @@ export function VoteDetailModal({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <StaticField label="Conviction" value={`${multiplier ?? "-"}x`} />
+            <StaticField
+              label="Conviction"
+              value={abstain ? "None" : `${multiplier ?? "-"}x`}
+            />
             <StaticField label="Lock duration" value={lockLabel} />
           </div>
 

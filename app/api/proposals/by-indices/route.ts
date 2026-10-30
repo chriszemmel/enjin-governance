@@ -5,6 +5,9 @@
  * Returns: { ok: true, proposals: ProposalMetadata[] } - only indices
  * with a row in our mirror are present. Callers map by `referendum_index`.
  *
+ * Hidden or removed proposals come without their text, as in the per-index
+ * route.
+ *
  * Avoids the N-request fan-out of `/api/proposals/by-index/[idx]` when
  * a list page renders many ProposalCards.
  */
@@ -13,6 +16,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalsByIndices } from "@/lib/db/proposals"
+import { proposalTextStates, visibleText } from "@/lib/moderation/proposal-text"
 
 export const runtime = "nodejs"
 
@@ -30,6 +34,8 @@ const NETWORK_VALUES = [
 
 const bodySchema = z.object({
   network: z.enum(NETWORK_VALUES),
+  /** F#N instead of #N. */
+  pallet: z.enum(["referenda", "fellowshipReferenda"]).default("referenda"),
   indices: z
     .array(z.number().int().nonnegative())
     .min(1)
@@ -62,16 +68,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const unique = Array.from(new Set(parsed.data.indices))
-  const rows = await getProposalsByIndices(parsed.data.network, unique)
+  const rows = await getProposalsByIndices(parsed.data.network, unique, parsed.data.pallet)
+  const states = await proposalTextStates(rows.map((r) => r.id))
+  if (!states) {
+    return NextResponse.json(
+      { ok: false, error: "Proposals are unavailable right now - try again." },
+      { status: 503 },
+    )
+  }
   const response = NextResponse.json({
     ok: true,
     proposals: rows.map((row) => ({
       id: row.id,
       network: row.network,
       referendum_index: row.referendum_index,
-      title: row.title,
-      summary: row.summary,
-      body_markdown: row.body_markdown,
+      referenda_pallet: row.referenda_pallet ?? "referenda",
+      ...visibleText(row, states.get(row.id)),
       track: row.track,
       beneficiary: row.beneficiary,
       amount_planck: row.amount_planck,

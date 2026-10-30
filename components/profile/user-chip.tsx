@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
+import type { ChainId } from "@/lib/chain/chains"
 import { encodeForChain, shortenAddress } from "@/lib/chain/ss58"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { usePublicProfile } from "@/lib/query/hooks/use-profile"
@@ -33,6 +34,8 @@ export function UserChip({
   className,
   forceAddress = false,
   hideAvatar = false,
+  chainId,
+  fallbackName,
 }: {
   address: string
   size?: Size
@@ -40,12 +43,16 @@ export function UserChip({
   /** When true, render only the shortened address - never the display name. */
   forceAddress?: boolean
   hideAvatar?: boolean
+  /** Encode for this chain instead of the active one. */
+  chainId?: ChainId
+  /** Name to show until the profile has loaded (e.g. one the server already read). */
+  fallbackName?: string | null
 }) {
-  const chain = useActiveChain()
+  const activeChain = useActiveChain()
   const [open, setOpen] = useState(false)
   const ss58 = (() => {
     try {
-      return encodeForChain(address, chain.id)
+      return encodeForChain(address, chainId ?? activeChain.id)
     } catch {
       return address
     }
@@ -54,10 +61,10 @@ export function UserChip({
 
   const displayName = profile.data?.display_name ?? null
   const handle = profile.data?.handle ?? null
-  const labelText = forceAddress
-    ? shortenAddress(ss58)
-    : (displayName ?? (handle ? `@${handle}` : shortenAddress(ss58)))
-  const labelIsAddress = forceAddress || (!displayName && !handle)
+  const name =
+    displayName ?? (handle ? `@${handle}` : profile.data === undefined ? fallbackName : null)
+  const labelText = forceAddress ? shortenAddress(ss58) : (name ?? shortenAddress(ss58))
+  const labelIsAddress = forceAddress || !name
 
   return (
     <>

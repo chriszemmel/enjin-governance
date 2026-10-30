@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  canRefundDeposit,
+  depositHold,
   extractReferendumDeposits,
   parsePreimageDeposit,
 } from "@/lib/governance/deposits"
-import type { Referendum } from "@/lib/governance/types"
+import type { Referendum, ReferendumStatusType, TerminalStatus } from "@/lib/governance/types"
 
 const ME = "enAlice"
 const OTHER = "enBob"
@@ -30,13 +32,18 @@ function ongoing(index: number, sub: string | null, dec: string | null): Referen
   }
 }
 
-function approved(index: number, sub: string | null, dec: string | null): Referendum {
+function concluded(
+  type: TerminalStatus["type"],
+  index: number,
+  sub: string | null,
+  dec: string | null,
+): Referendum {
   return {
     index,
     trackId: null,
     tally: null,
     status: {
-      type: "Approved",
+      type,
       at: 100,
       submissionDeposit: sub ? { who: sub, amount: 3n } : null,
       decisionDeposit: dec ? { who: dec, amount: 10n } : null,
@@ -44,28 +51,95 @@ function approved(index: number, sub: string | null, dec: string | null): Refere
   }
 }
 
+const approved = (index: number, sub: string | null, dec: string | null) =>
+  concluded("Approved", index, sub, dec)
+
 function killed(index: number): Referendum {
   return { index, trackId: null, tally: null, status: { type: "Killed", at: 100 } }
 }
 
+describe("canRefundDeposit", () => {
+  // pallet_referenda's take_submission_deposit / take_decision_deposit.
+  const table: [ReferendumStatusType, boolean, boolean][] = [
+    // status, submission, decision
+    ["Ongoing", false, false],
+    ["Approved", true, true],
+    ["Cancelled", true, true],
+    ["Rejected", false, true],
+    ["TimedOut", false, true],
+    ["Killed", false, false],
+  ]
+  it.each(table)("%s: submission %s, decision %s", (status, submission, decision) => {
+    expect(canRefundDeposit("submission", status)).toBe(submission)
+    expect(canRefundDeposit("decision", status)).toBe(decision)
+  })
+})
+
+describe("depositHold", () => {
+  it("is null whenever the deposit can be refunded", () => {
+    expect(depositHold("submission", "Approved")).toBeNull()
+    expect(depositHold("submission", "Cancelled")).toBeNull()
+    expect(depositHold("decision", "Rejected")).toBeNull()
+    expect(depositHold("decision", "TimedOut")).toBeNull()
+  })
+
+  it("says a rejected or timed-out referendum's submission deposit stays reserved", () => {
+    const rejected = depositHold("submission", "Rejected")
+    expect(rejected?.label).toBe("Stays reserved")
+    expect(rejected?.reason).toMatch(/was rejected/)
+    expect(rejected?.reason).toMatch(/only for approved or cancelled/)
+    expect(depositHold("submission", "TimedOut")?.reason).toMatch(/timed out/)
+  })
+
+  it("holds both deposits of an ongoing referendum until it concludes", () => {
+    expect(depositHold("submission", "Ongoing")?.label).toBe("Held until concluded")
+    expect(depositHold("submission", "Ongoing")?.reason).toMatch(/approved or cancelled/)
+    expect(depositHold("decision", "Ongoing")?.reason).toMatch(/concludes/)
+  })
+
+  it("calls a killed referendum's deposits slashed", () => {
+    expect(depositHold("submission", "Killed")?.label).toBe("Slashed")
+    expect(depositHold("decision", "Killed")?.label).toBe("Slashed")
+  })
+})
+
 describe("extractReferendumDeposits", () => {
-  it("returns my deposits on a terminal referendum as refundable", () => {
+  it("returns my deposits on an approved referendum as refundable", () => {
     const out = extractReferendumDeposits([approved(5, ME, ME)], ME)
     expect(out).toEqual([
-      { index: 5, kind: "submission", amount: 3n, refundable: true },
-      { index: 5, kind: "decision", amount: 10n, refundable: true },
+      { index: 5, kind: "submission", amount: 3n, status: "Approved", refundable: true },
+      { index: 5, kind: "decision", amount: 10n, status: "Approved", refundable: true },
     ])
+  })
+
+  it("refunds a cancelled referendum's submission deposit too", () => {
+    const out = extractReferendumDeposits([concluded("Cancelled", 6, ME, null)], ME)
+    expect(out).toEqual([
+      { index: 6, kind: "submission", amount: 3n, status: "Cancelled", refundable: true },
+    ])
+  })
+
+  it("keeps a rejected or timed-out referendum's submission deposit, but not its decision deposit", () => {
+    for (const type of ["Rejected", "TimedOut"] as const) {
+      const out = extractReferendumDeposits([concluded(type, 11, ME, ME)], ME)
+      expect(out).toEqual([
+        { index: 11, kind: "submission", amount: 3n, status: type, refundable: false },
+        { index: 11, kind: "decision", amount: 10n, status: type, refundable: true },
+      ])
+    }
   })
 
   it("marks ongoing deposits as not refundable yet", () => {
     const out = extractReferendumDeposits([ongoing(7, ME, ME)], ME)
-    expect(out.every((d) => d.refundable === false)).toBe(true)
+    expect(out.every((d) => d.refundable === false && d.status === "Ongoing")).toBe(true)
     expect(out).toHaveLength(2)
   })
 
   it("ignores deposits placed by other accounts (pubkey compare)", () => {
     const out = extractReferendumDeposits([approved(8, OTHER, ME)], ME)
-    expect(out).toEqual([{ index: 8, kind: "decision", amount: 10n, refundable: true }])
+    expect(out).toEqual([
+      { index: 8, kind: "decision", amount: 10n, status: "Approved", refundable: true },
+    ])
   })
 
   it("skips Killed referenda (deposits were slashed)", () => {
@@ -74,7 +148,9 @@ describe("extractReferendumDeposits", () => {
 
   it("handles a missing decision deposit", () => {
     const out = extractReferendumDeposits([approved(10, ME, null)], ME)
-    expect(out).toEqual([{ index: 10, kind: "submission", amount: 3n, refundable: true }])
+    expect(out).toEqual([
+      { index: 10, kind: "submission", amount: 3n, status: "Approved", refundable: true },
+    ])
   })
 })
 

@@ -35,9 +35,25 @@ describe("isPublicReadableKey", () => {
     expect(isPublicReadableKey("")).toBe(false)
   })
 
+  it("never serves backups", () => {
+    expect(isPublicReadableKey(`backups/2026-09-26T09:00:00Z-${"0".repeat(32)}.zip`)).toBe(false)
+    expect(isPublicReadableKey("proposals/../backups/x.zip")).toBe(false)
+  })
+
   it("rejects path traversal and absolute paths", () => {
     expect(isPublicReadableKey("proposals/../secrets/x")).toBe(false)
+    expect(isPublicReadableKey("proposals/enjin-relay/u/media/..")).toBe(false)
+    expect(isPublicReadableKey("proposals/..")).toBe(false)
     expect(isPublicReadableKey("/proposals/enjin-relay/u/proposal.json")).toBe(false)
     expect(isPublicReadableKey("proposals\\..\\x")).toBe(false)
+  })
+
+  it("serves an upload whose name contains double dots (it is a name, not a traversal)", () => {
+    // uniqueMediaName keeps dots and ownMediaKey accepts "a..b.pdf", so such a
+    // file is stored and pinned in the proposal JSON; it must stay readable.
+    expect(isPublicReadableKey("proposals/enjin-relay/u/media/ab12cd34-report..v2.pdf")).toBe(true)
+    expect(
+      isPublicReadableKey("proposals/enjin-relay/u/media/ab12cd34-.._.._x.png.thumb.webp"),
+    ).toBe(true)
   })
 })

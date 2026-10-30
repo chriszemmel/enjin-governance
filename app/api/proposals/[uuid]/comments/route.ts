@@ -3,11 +3,17 @@ import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
 import { isDbConfigured } from "@/lib/db/client"
 import {
+  commentEditableUntil,
   createComment,
+  getCommentById,
   listCommentsForProposalWithAuthors,
 } from "@/lib/db/comments"
 import { getProposalById } from "@/lib/db/proposals"
+import { listStatesForProposal } from "@/lib/db/moderation"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { flagText } from "@/lib/moderation/auto-flag"
 import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
+import { isMissingTable } from "@/lib/db/errors"
 
 export const runtime = "nodejs"
 
@@ -36,6 +42,24 @@ export async function GET(
     )
   }
   const rows = await listCommentsForProposalWithAuthors(parsed.data)
+  // Moderated comments: hidden ones lose their text here, on the server;
+  // blurred ones keep it behind a tap in the UI. If the states can't be
+  // read, nothing is shown rather than something hidden.
+  let stateRows: Awaited<ReturnType<typeof listStatesForProposal>>
+  try {
+    stateRows = await listStatesForProposal(parsed.data)
+  } catch (err) {
+    if (!isMissingTable(err)) {
+      return NextResponse.json(
+        { ok: false, error: "Comments are unavailable right now - try again." },
+        { status: 503 },
+      )
+    }
+    stateRows = [] // migration 011 not applied yet: nothing is moderated
+  }
+  const states = new Map(
+    stateRows.filter((s) => s.target_type === "comment").map((s) => [s.target_id, s]),
+  )
   return NextResponse.json({
     ok: true,
     items: rows.map((r) => ({
@@ -48,9 +72,17 @@ export async function GET(
       author_display_name: r.author_display_name,
       author_avatar_url: r.author_avatar_url,
       author_is_verified: r.author_is_verified,
-      body_markdown: r.is_deleted ? "" : r.body_markdown,
+      body_markdown:
+        r.is_deleted || ["hidden", "removed"].includes(states.get(r.id)?.state ?? "")
+          ? ""
+          : r.body_markdown,
       is_deleted: r.is_deleted,
+      moderation: states.get(r.id)
+        ? { state: states.get(r.id)!.state, reason: states.get(r.id)!.reason }
+        : null,
       edited_at: r.edited_at,
+      // The author's Edit action is offered until then.
+      editable_until: commentEditableUntil(new Date(r.created_at)),
       created_at: r.created_at,
     })),
   })
@@ -74,6 +106,9 @@ export async function POST(
     )
   }
 
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
+
   const rl = await enforceRateLimit({ ...RATE_LIMITS.commentCreate, identity: me.id })
   if (!rl.allowed) {
     return NextResponse.json(
@@ -90,8 +125,11 @@ export async function POST(
       { status: 400 },
     )
   }
+  // Only published proposals take comments. A draft or a cancelled row
+  // gets the same answer as a missing one, so the route doesn't reveal
+  // that it exists.
   const proposal = await getProposalById(uid.data)
-  if (!proposal) {
+  if (!proposal || proposal.status !== "on_chain") {
     return NextResponse.json(
       { ok: false, error: "Proposal not found" },
       { status: 404 },
@@ -108,12 +146,29 @@ export async function POST(
     )
   }
 
+  // A reply must answer a comment on the same proposal.
+  if (parsed.parent_id) {
+    const parent = await getCommentById(parsed.parent_id)
+    if (!parent || parent.proposal_id !== proposal.id) {
+      return NextResponse.json(
+        { ok: false, error: "The comment you are replying to doesn't exist." },
+        { status: 400 },
+      )
+    }
+  }
+
   const row = await createComment({
     proposalId: proposal.id,
     parentId: parsed.parent_id ?? null,
     userId: me.id,
     authorAddress: me.address,
     bodyMarkdown: parsed.body_markdown,
+  })
+  flagText({
+    targetType: "comment",
+    targetId: row.id,
+    proposalId: proposal.id,
+    text: parsed.body_markdown,
   })
 
   return NextResponse.json({
@@ -132,6 +187,7 @@ export async function POST(
       body_markdown: row.body_markdown,
       is_deleted: row.is_deleted,
       edited_at: row.edited_at,
+      editable_until: commentEditableUntil(new Date(row.created_at)),
       created_at: row.created_at,
     },
   })

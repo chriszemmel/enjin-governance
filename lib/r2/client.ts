@@ -54,6 +54,44 @@ export function r2PublicBase(): string {
   return env.R2_PUBLIC_URL
 }
 
+/** What a route should answer (503) while `isPublicUrlMisconfigured()`. */
+export const PUBLIC_URL_NOT_CONFIGURED = "The site's public URL isn't configured."
+
+export class PublicUrlNotConfiguredError extends Error {
+  constructor() {
+    super(PUBLIC_URL_NOT_CONFIGURED)
+    this.name = "PublicUrlNotConfiguredError"
+  }
+}
+
+function isLocalOrigin(url: string): boolean {
+  let host: string
+  try {
+    host = new URL(url).hostname.replace(/^\[|\]$/g, "")
+  } catch {
+    return true
+  }
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    /^127\./.test(host)
+  )
+}
+
+/**
+ * True on the production deployment (VERCEL_ENV=production) when
+ * NEXT_PUBLIC_APP_URL still points at this machine - usually because it was
+ * never set and fell back to http://localhost:3000. URLs built from it would
+ * be pinned on chain in EGOV1 records and never resolve, so
+ * `publicAssetBase` refuses to build them. Local dev, tests and preview
+ * deployments are never flagged. Also for the admin status page.
+ */
+export function isPublicUrlMisconfigured(): boolean {
+  return process.env.VERCEL_ENV === "production" && isLocalOrigin(env.NEXT_PUBLIC_APP_URL)
+}
+
 /**
  * Base for the URLs we hand out (and pin on chain in the EGOV1 remark).
  *
@@ -62,8 +100,13 @@ export function r2PublicBase(): string {
  * pointer on a durable, official domain, decoupled from where R2 actually
  * lives, and off the rate-limited public dev URL. Falls back to the raw
  * bucket URL only if no app origin is configured.
+ *
+ * Throws PublicUrlNotConfiguredError while `isPublicUrlMisconfigured()`:
+ * routes that build these URLs should check that first and answer 503
+ * with PUBLIC_URL_NOT_CONFIGURED.
  */
 export function publicAssetBase(): string {
+  if (isPublicUrlMisconfigured()) throw new PublicUrlNotConfiguredError()
   const appOrigin = env.NEXT_PUBLIC_APP_URL
   if (appOrigin) {
     return `${appOrigin.replace(/\/+$/, "")}/r`

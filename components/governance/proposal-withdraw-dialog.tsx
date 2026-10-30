@@ -95,19 +95,16 @@ export function ProposalWithdrawDialog({ open, onOpenChange, metadata }: Props) 
         {!signedIn && !meQuery.isPending && (
           <div className="rounded-lg bg-amber-500/5 border border-amber-500/30 p-3 flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-amber-300 flex-shrink-0 mt-0.5" />
-            <div className="text-xs leading-relaxed">
-              <p className="font-medium text-foreground">Sign in first</p>
-              <p className="text-muted-foreground mt-0.5">
-                <Link
-                  href="/account"
-                  className="text-primary hover:text-purple-dim underline-offset-2 hover:underline"
-                  onClick={() => onOpenChange(false)}
-                >
-                  Sign in on /account
-                </Link>{" "}
-                with the proposer wallet, then come back.
-              </p>
-            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              <Link
+                href={`/account?next=${encodeURIComponent(window.location.pathname + window.location.search)}`}
+                className="font-medium text-primary hover:text-purple-dim underline-offset-2 hover:underline"
+                onClick={() => onOpenChange(false)}
+              >
+                Sign in
+              </Link>{" "}
+              with the wallet that filed this proposal.
+            </p>
           </div>
         )}
 

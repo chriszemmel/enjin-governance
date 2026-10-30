@@ -11,7 +11,13 @@
  * - `shortenAddress`: display helper (don't use for matching).
  */
 
-import { decodeAddress, encodeAddress, cryptoWaitReady } from "@polkadot/util-crypto"
+import {
+  base58Decode,
+  checkAddressChecksum,
+  cryptoWaitReady,
+  decodeAddress,
+  encodeAddress,
+} from "@polkadot/util-crypto"
 import { hexToU8a } from "@polkadot/util"
 import { type ChainId, getChain } from "./chains"
 
@@ -114,6 +120,66 @@ export function encodeForChain(address: string, chainId: ChainId): string {
 export function encodePublicKeyForChain(hexPubkey: string, chainId: ChainId): string {
   const chain = getChain(chainId)
   return encodeAddress(hexToU8a(hexPubkey), chain.ss58Prefix)
+}
+
+/** SS58 prefixes we can name when an address comes in another format. */
+const SS58_NETWORK_LABELS: Record<number, string> = {
+  0: "Polkadot",
+  2: "Kusama",
+  42: "generic Substrate",
+  69: "Canary Relaychain",
+  1110: "Enjin Matrixchain",
+  2135: "Enjin Relaychain",
+  9030: "Canary Matrixchain",
+}
+
+export type AddressInspection =
+  | { status: "empty" }
+  | { status: "invalid" }
+  /** Valid and already in this chain's format. */
+  | { status: "native"; address: string }
+  /**
+   * Valid, but in another network's format (or a raw public key). `address`
+   * is the same key re-encoded for this chain - what would actually be paid.
+   */
+  | { status: "foreign"; input: string; networkLabel: string; address: string }
+
+/**
+ * Classify what someone typed into an address field. Unlike
+ * `encodeForChain`, this never converts silently: a valid address in
+ * another network's format comes back as "foreign" with the matching
+ * address for this chain, so the UI can ask before converting.
+ */
+export function inspectAddress(raw: string, chainId: ChainId): AddressInspection {
+  const input = raw.trim()
+  if (!input) return { status: "empty" }
+  const chain = getChain(chainId)
+
+  if (/^0x[0-9a-fA-F]{64}$/.test(input)) {
+    return {
+      status: "foreign",
+      input,
+      networkLabel: "raw public key",
+      address: encodeAddress(hexToU8a(input), chain.ss58Prefix),
+    }
+  }
+
+  let prefix: number
+  try {
+    const [valid, , , decodedPrefix] = checkAddressChecksum(base58Decode(input))
+    if (!valid || !isValidSs58(input)) return { status: "invalid" }
+    prefix = decodedPrefix
+  } catch {
+    return { status: "invalid" }
+  }
+
+  if (prefix === chain.ss58Prefix) return { status: "native", address: input }
+  return {
+    status: "foreign",
+    input,
+    networkLabel: SS58_NETWORK_LABELS[prefix] ?? `another network (prefix ${prefix})`,
+    address: encodeForChain(input, chainId),
+  }
 }
 
 /**

@@ -163,6 +163,7 @@ function SlideTab({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
         "px-3 py-1.5 rounded-full text-xs font-semibold transition-colors",
         active
@@ -189,6 +190,7 @@ function ArrowBtn({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={dir === "left" ? "Previous slide" : "Next slide"}
       className="w-7 h-7 inline-flex items-center justify-center rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-purple-border disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
     >
       {dir === "left" ? (

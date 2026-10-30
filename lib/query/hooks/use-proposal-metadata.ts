@@ -4,6 +4,18 @@ import { useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
+import type { ReferendaPallet } from "@/lib/governance/referenda"
+
+/**
+ * The cache key of one referendum's metadata. Public referenda keep the key
+ * other hooks invalidate; a fellowship referendum's names its pallet, since
+ * F#N and #N are different referenda.
+ */
+function metadataKey(chainId: string, index: number | null, pallet: ReferendaPallet) {
+  return pallet === "referenda"
+    ? (["proposal-metadata", chainId, index] as const)
+    : (["proposal-metadata", chainId, pallet, index] as const)
+}
 
 /**
  * Off-chain proposal metadata for a referendum, fetched from our Neon
@@ -16,7 +28,8 @@ export type ProposalMetadata = {
   id: string
   network: string
   referendum_index: number
-  title: string
+  /** Null (with an empty body) when moderators hid or removed the text. */
+  title: string | null
   summary: string | null
   body_markdown: string
   track: string | null
@@ -30,20 +43,26 @@ export type ProposalMetadata = {
   edit_count: number
   withdrawn_at: string | null
   withdrawn_reason: string | null
+  /** Set when moderators changed how the text is shown. */
+  moderation?: { state: string; reason: string | null } | null
   created_at: string
 }
 
-export function useProposalMetadata(index: number | null, chain?: ChainConfig) {
+export function useProposalMetadata(
+  index: number | null,
+  chain?: ChainConfig,
+  pallet: ReferendaPallet = "referenda",
+) {
   const active = useActiveChain()
   const target = chain ?? active
   return useQuery<ProposalMetadata | null>({
-    queryKey: ["proposal-metadata", target.id, index],
+    queryKey: metadataKey(target.id, index, pallet),
     queryFn: async () => {
       if (index == null) return null
       // no-store so an edit/withdraw lands on the next refetch even
       // if a stale CDN/browser cache entry would otherwise serve it.
       const res = await fetch(
-        `/api/proposals/by-index/${index}?network=${target.id}`,
+        `/api/proposals/by-index/${index}?network=${target.id}${pallet === "referenda" ? "" : `&pallet=${pallet}`}`,
         { cache: "no-store" },
       )
       if (res.status === 404) return null
@@ -77,6 +96,7 @@ export function useProposalMetadata(index: number | null, chain?: ChainConfig) {
 export function useProposalMetadataBatch(
   indices: ReadonlyArray<number>,
   chain?: ChainConfig,
+  pallet: ReferendaPallet = "referenda",
 ) {
   const active = useActiveChain()
   const target = chain ?? active
@@ -93,14 +113,14 @@ export function useProposalMetadataBatch(
   const cacheKey = unique.join(",")
 
   return useQuery<Map<number, ProposalMetadata | null>>({
-    queryKey: ["proposal-metadata-batch", target.id, cacheKey],
+    queryKey: ["proposal-metadata-batch", target.id, pallet, cacheKey],
     queryFn: async () => {
       const result = new Map<number, ProposalMetadata | null>()
       if (unique.length === 0) return result
       const res = await fetch("/api/proposals/by-indices", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ network: target.id, indices: unique }),
+        body: JSON.stringify({ network: target.id, indices: unique, pallet }),
         cache: "no-store",
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -113,7 +133,7 @@ export function useProposalMetadataBatch(
       for (const i of unique) {
         const m = byIndex.get(i) ?? null
         result.set(i, m)
-        qc.setQueryData(["proposal-metadata", target.id, i], m)
+        qc.setQueryData(metadataKey(target.id, i, pallet), m)
       }
       return result
     },

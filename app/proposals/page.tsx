@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils"
 import { useActiveChain, useChainHydrated } from "@/lib/chain/use-chain"
 import { useReferenda } from "@/lib/query/hooks/use-referenda"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
+import { useDecidedTracks } from "@/lib/query/hooks/use-decided-tracks"
 import { useProposalMetadataBatch } from "@/lib/query/hooks/use-proposal-metadata"
 import { statusLabel } from "@/lib/governance/display"
 import type { ReferendumStatusType, Track } from "@/lib/governance/types"
@@ -124,6 +125,9 @@ export default function ProposalsPage() {
   const safePage = Math.min(page, pageCount)
   const pageStart = (safePage - 1) * PAGE_SIZE
   const pageItems = filtered.slice(pageStart, pageStart + PAGE_SIZE)
+  // Decided referenda lose their track on chain: read the visible ones'
+  // from the archive so their cards still name it.
+  const decidedTracks = useDecidedTracks(pageItems)
   const pageNumbers = useMemo(
     () => buildPageList(safePage, pageCount),
     [safePage, pageCount],
@@ -170,7 +174,7 @@ export default function ProposalsPage() {
                 <button
                   type="button"
                   className={cn(
-                    "relative flex-shrink-0 inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors",
+                    "flex-shrink-0 inline-flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors",
                     filtersActive
                       ? "border-purple-border bg-primary/8 text-primary"
                       : "border-border bg-surface-1 text-foreground hover:bg-surface-2",
@@ -179,12 +183,6 @@ export default function ProposalsPage() {
                 >
                   <SlidersHorizontal className="w-4 h-4" />
                   <span className="hidden sm:inline">Filter & Sort</span>
-                  {filtersActive && (
-                    <span
-                      aria-hidden
-                      className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-primary"
-                    />
-                  )}
                 </button>
               </PopoverTrigger>
               <PopoverContent
@@ -262,12 +260,14 @@ export default function ProposalsPage() {
                 </div>
               ) : (
                 <>
+                  {/* The cards' titles are h3s; this names the list above them. */}
+                  <h2 className="sr-only">Referenda</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {pageItems.map((ref) => (
                       <ProposalCard
                         key={ref.index}
                         referendum={ref}
-                        track={ref.trackId != null ? trackById.get(ref.trackId) : null}
+                        track={trackById.get(ref.trackId ?? decidedTracks.tracks.get(ref.index) ?? -1) ?? null}
                         metadata={metadataQuery.data?.get(ref.index) ?? null}
                         metadataPending={metadataQuery.isLoading}
                       />

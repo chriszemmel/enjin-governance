@@ -26,7 +26,11 @@ export function useWallet() {
   )
 }
 
-type ConnectArgs = { connectorId: ConnectorId; onUri?: (uri: string) => void }
+type ConnectArgs = {
+  connectorId: ConnectorId
+  onUri?: (uri: string) => void
+  onReady?: () => void
+}
 
 type ConnectActions = {
   /**
@@ -44,11 +48,11 @@ export function useWalletActions(): ConnectActions {
   const { setConnecting, setConnected, setError, reset, session } = useWalletStore.getState()
 
   return {
-    async connect({ connectorId, onUri }) {
+    async connect({ connectorId, onUri, onReady }) {
       setConnecting(connectorId)
       try {
         const meta = getConnectorMeta(connectorId)
-        const newSession = await meta.connector.connect({ onUri })
+        const newSession = await meta.connector.connect({ onUri, onReady })
         setConnected(newSession)
         return newSession
       } catch (err) {

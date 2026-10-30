@@ -7,7 +7,7 @@ import { env } from "@/lib/env"
 import { getChain } from "@/lib/chain/chains"
 import { getActiveChain } from "@/lib/chain/use-chain"
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/config"
-import { isMobileUserAgent } from "@/lib/wallet/deep-link"
+import { clearRequestDelivered, markRequestDelivered } from "../request-delivery"
 import type {
   ConnectOptions,
   ConnectedSession,
@@ -21,6 +21,25 @@ type SignClientType = Awaited<ReturnType<typeof importAndInit>>
 
 let signClientPromise: Promise<SignClientType> | null = null
 
+/**
+ * The last reason the relay gave for closing the socket. When Reown refuses
+ * a connection it closes with code 3000 and a reason like "Unauthorized:
+ * origin not allowed"; the SDK keeps retrying and `connect` just times out,
+ * so we hold on to the reason and report it instead of the timeout.
+ */
+let lastRelayError: string | null = null
+
+/** Called when the relay refuses this site or its project (see isRelayRefusal). */
+const refusalListeners = new Set<(reason: string) => void>()
+
+/**
+ * Whether a relay error means Reown refuses this origin or project id, as
+ * opposed to a dropped connection the SDK recovers from by itself.
+ */
+export function isRelayRefusal(reason: string): boolean {
+  return /origin|unauthori[sz]ed|project|key/i.test(reason)
+}
+
 async function importAndInit() {
   if (!env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID) {
     throw new Error(
@@ -30,15 +49,27 @@ async function importAndInit() {
     )
   }
   const { SignClient } = await import("@walletconnect/sign-client")
+  // The page's own origin, not NEXT_PUBLIC_APP_URL: wallets compare the
+  // metadata URL with the origin Reown verifies, so a preview deployment
+  // has to announce its own domain.
+  const origin = typeof window === "undefined" ? env.NEXT_PUBLIC_APP_URL : window.location.origin
   const client = await SignClient.init({
     projectId: env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
     relayUrl: env.NEXT_PUBLIC_WALLETCONNECT_RELAY_URL,
     metadata: {
       name: APP_NAME,
       description: APP_DESCRIPTION,
-      url: env.NEXT_PUBLIC_APP_URL,
+      url: origin,
+      // The icon from the canonical, public domain: a preview deployment
+      // can sit behind Vercel's login, and the wallet would get that page
+      // instead of the image (no icon). The url stays the page's own.
       icons: [`${env.NEXT_PUBLIC_APP_URL}/favicon.svg`],
     },
+  })
+
+  client.core.relayer.on("relayer_error", (err: unknown) => {
+    lastRelayError = err instanceof Error ? err.message : String(err)
+    if (isRelayRefusal(lastRelayError)) for (const l of [...refusalListeners]) l(lastRelayError)
   })
 
   // Kick the relay socket awake the moment the dapp tab regains
@@ -63,10 +94,106 @@ async function importAndInit() {
       } catch {
         /* defensive - session store may not be ready yet */
       }
+      // Back from the wallet: a deletion sent meanwhile arrives once the
+      // socket is up again, so look again a moment later.
+      setTimeout(() => sweepGone(client), SETTLE_MS)
     })
   }
 
+  // The wallet ended the session (the site was removed from its connected
+  // apps), or it expired: the page must stop showing it as connected, or
+  // every request would go to a session nobody listens to.
+  client.on("session_delete", ({ topic }) => announceGone(topic, "deleted"))
+  client.on("session_expire", ({ topic }) => announceGone(topic, "expired"))
+  try {
+    // Only a reason to look: the pairing key was in the QR code, so anyone
+    // who saw it can delete the pairing. A session ends only when it is
+    // really gone (session_delete needs the session's own key).
+    client.core.pairing.events.on("pairing_delete", () => {
+      setTimeout(() => sweepGone(client), SETTLE_MS)
+    })
+  } catch {
+    /* an SDK without pairing events: session_delete still covers it */
+  }
+
   return client
+}
+
+/** How long the relay gets to deliver what was sent while the page was away. */
+const SETTLE_MS = 1_500
+
+/** Sessions this page shows as connected, checked again on every return to the tab. */
+const watchedTopics = new Set<string>()
+const goneListeners = new Set<(topic: string, reason: "deleted" | "expired") => void>()
+
+function announceGone(topic: string, reason: "deleted" | "expired"): void {
+  if (!watchedTopics.delete(topic)) return
+  for (const l of [...goneListeners]) l(topic, reason)
+}
+
+type SessionListLike = { session: { getAll(): Array<{ topic: string; expiry: number }> } }
+
+/** Announces every watched session the client no longer has, or that has expired. */
+export function sweepGone(client: SessionListLike, now = Date.now()): void {
+  let all: Array<{ topic: string; expiry: number }>
+  try {
+    all = client.session.getAll()
+  } catch {
+    return
+  }
+  for (const topic of [...watchedTopics]) {
+    const s = all.find((x) => x.topic === topic)
+    if (!s) announceGone(topic, "deleted")
+    else if (s.expiry * 1000 <= now) announceGone(topic, "expired")
+  }
+}
+
+/** Watch `topic`: listeners hear when the wallet ends it. */
+export function watchTopic(topic: string): void {
+  watchedTopics.add(topic)
+}
+
+/** Called with the topic when a watched session is ended by the wallet or expires. */
+export function onWalletConnectSessionGone(
+  listener: (topic: string, reason: "deleted" | "expired") => void,
+): () => void {
+  goneListeners.add(listener)
+  return () => {
+    goneListeners.delete(listener)
+  }
+}
+
+type VerifyClientLike = SessionListLike & {
+  core: { relayer: { transportOpen(): Promise<void>; connected: boolean } }
+}
+
+/**
+ * Checks a restored session with the relay: open the socket, give the relay
+ * a moment to deliver what arrived while the page was closed (a deletion
+ * removes the session from the client's store), then look.
+ */
+export async function verifySession(
+  client: VerifyClientLike,
+  topic: string,
+  opts: { now?: () => number; settleMs?: number; timeoutMs?: number } = {},
+): Promise<"ok" | "gone" | "expired" | "unreachable"> {
+  const now = opts.now ?? Date.now
+  const find = () => client.session.getAll().find((x) => x.topic === topic)
+  const before = find()
+  if (!before) return "gone"
+  if (before.expiry * 1000 <= now()) return "expired"
+  try {
+    if (!client.core.relayer.connected) {
+      await withTimeout(client.core.relayer.transportOpen(), opts.timeoutMs ?? 8_000, "relay unreachable")
+    }
+  } catch {
+    return "unreachable"
+  }
+  if (!client.core.relayer.connected) return "unreachable"
+  await new Promise((r) => setTimeout(r, opts.settleMs ?? SETTLE_MS))
+  const after = find()
+  if (!after) return "gone"
+  return after.expiry * 1000 <= now() ? "expired" : "ok"
 }
 
 async function getSignClient(): Promise<SignClientType> {
@@ -103,6 +230,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
  */
 function resetSignClient(): void {
   signClientPromise = null
+  lastRelayError = null
   if (typeof window === "undefined") return
   try {
     const keys: string[] = []
@@ -116,6 +244,43 @@ function resetSignClient(): void {
   } catch {
     /* private mode etc. - non-fatal */
   }
+}
+
+/**
+ * Turn the relay's close reason into something an admin can act on. The
+ * project id is public (it ships in the bundle), so naming its last
+ * characters is fine and tells them which Reown project the build uses.
+ */
+export function describeRelayRefusal(
+  reason: string,
+  origin: string,
+  projectId: string | undefined,
+): string {
+  const project = projectId ? `project …${projectId.slice(-6)}` : "the project"
+  if (/origin/i.test(reason)) {
+    return (
+      `WalletConnect refused this site (${origin}). ` +
+      `Add it to the allowed domains of Reown ${project}.`
+    )
+  }
+  if (/key|project/i.test(reason)) {
+    return (
+      `WalletConnect rejected ${project}. Check NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ` +
+      "for this deployment and redeploy."
+    )
+  }
+  return `WalletConnect closed the connection: ${reason}`
+}
+
+function relayRefusal(): Error | null {
+  if (!lastRelayError || typeof window === "undefined") return null
+  return new Error(
+    describeRelayRefusal(
+      lastRelayError,
+      window.location.origin,
+      env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+    ),
+  )
 }
 
 /**
@@ -273,14 +438,36 @@ function approvedChainsFromSession(session: {
  * a request. Falls back to null if the wallet didn't provide one; the
  * caller can then default to `enjinwallet://`.
  */
-function nativeRedirectFromPeer(meta: unknown): string | null {
+// Custom app schemes ("enjinwallet:", "novawallet:") and https. The value is
+// rendered as a link, so "javascript:", "data:" and the like must never pass.
+// "https:" or a custom app scheme of at least three characters.
+const REDIRECT_SCHEME = /^[a-z][a-z0-9+.-]{2,}:$/
+const FORBIDDEN_SCHEMES = new Set([
+  "javascript:",
+  "data:",
+  "vbscript:",
+  "file:",
+  "blob:",
+  "http:",
+  "about:",
+])
+
+export function nativeRedirectFromPeer(meta: unknown): string | null {
   if (!meta || typeof meta !== "object") return null
   const m = meta as Record<string, unknown>
   const redirect = m.redirect as Record<string, unknown> | undefined
   if (!redirect) return null
   const native = redirect.native
-  if (typeof native === "string" && native.length > 0) return native
-  return null
+  if (typeof native !== "string" || native.length === 0 || native.length > 512) return null
+  if (/[\s\u0000-\u001f\u007f]/.test(native)) return null
+  let protocol: string
+  try {
+    protocol = new URL(native).protocol.toLowerCase()
+  } catch {
+    return null
+  }
+  if (FORBIDDEN_SCHEMES.has(protocol) || !REDIRECT_SCHEME.test(protocol)) return null
+  return native
 }
 
 /**
@@ -320,32 +507,6 @@ function chainNameForCaip(caip: string): string | null {
 }
 
 /**
- * Synchronously click a synthetic `<a target="_blank">` pointing at the
- * wallet's deep link. Has to be invoked inside a live user-gesture
- * window (i.e. directly inside a click handler, no awaits in front) so
- * iOS Safari honours the navigation. Using a hidden anchor rather than
- * `window.location.href` keeps the dapp's tab alive - setting
- * location.href on iOS tends to surface an "Open in Enjin Wallet?"
- * prompt that re-mounts React on return, which has previously caused
- * double-fired sign requests.
- */
-function fireDeepLink(url: string): void {
-  if (typeof window === "undefined") return
-  try {
-    const a = document.createElement("a")
-    a.href = url
-    a.target = "_blank"
-    a.rel = "noopener noreferrer"
-    a.style.display = "none"
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-  } catch {
-    /* non-fatal */
-  }
-}
-
-/**
  * Trim `SignerPayloadJSON` down to the fields `polkadot_signTransaction`
  * actually defines.
  *
@@ -370,6 +531,43 @@ export function toRequestPayload(
   return Object.fromEntries(entries)
 }
 
+/**
+ * WalletConnect's relay options for `wc_sessionRequest` (sign-client's
+ * RPC_OPTS): 5 min, push to the wallet, tag 1108. `throwOnFailedPublish`:
+ * without it a failed publish is only logged.
+ */
+const SESSION_REQUEST_PUBLISH = {
+  ttl: 300,
+  prompt: true,
+  tag: 1108,
+  internal: { throwOnFailedPublish: true },
+} as const
+
+/**
+ * Publish the still unanswered request `id` once more, as it is: the same
+ * JSON-RPC payload from the client's request history, encrypted for the
+ * session and sent like the original. The wallet sees the same request id
+ * again, never a second request. False when the client no longer has it
+ * pending (answered, expired or gone): then nothing is sent.
+ */
+export async function redeliverRequest(
+  signClient: Pick<SignClientType, "core">,
+  topic: string,
+  id: string,
+): Promise<boolean> {
+  const core = signClient.core
+  const record = core.history.pending.find(
+    (p) => p.topic === topic && String(p.request.id) === id,
+  )
+  if (!record) return false
+  const message = await core.crypto.encode(topic, record.request)
+  await core.relayer.publish(topic, message, {
+    ...SESSION_REQUEST_PUBLISH,
+    tvf: { correlationId: record.request.id },
+  } as Parameters<typeof core.relayer.publish>[2])
+  return true
+}
+
 function buildSigner(
   signClient: SignClientType,
   topic: string,
@@ -386,12 +584,12 @@ function buildSigner(
   // wallet never opens, the request hangs at the relay, and the
   // wallet eventually returns code 5000.
   //
-  // The reliable path is the pair flow's mechanism: a deep link fired
-  // synchronously from inside the click handler (`wakeWallet` on the
-  // connector, called from useExtrinsic.submit / useSignIn.submit).
-  // Wipe WALLETCONNECT_DEEPLINK_CHOICE here so the library's redirect
-  // short-circuits at `if (!wcDeepLink) return` - our sync wake is
-  // the single authoritative deep link.
+  // The reliable path is the pair flow's mechanism: a deep link the user
+  // taps. SignRequestModal renders an "Open in <wallet>" `<a>` built by
+  // buildSignRequestDeepLink (via useSignFlow) while the request is
+  // pending. Wipe WALLETCONNECT_DEEPLINK_CHOICE here so the library's
+  // redirect short-circuits at `if (!wcDeepLink) return` - the modal's
+  // link is the single authoritative deep link.
   const suppressInternalRedirect = (): void => {
     if (typeof window === "undefined") return
     try {
@@ -401,18 +599,49 @@ function buildSigner(
     }
   }
 
-  return {
-    signPayload: async (payload: SignerPayloadJSON): Promise<SignerResult> => {
-      suppressInternalRedirect()
-      const result = await signClient.request<{ signature: `0x${string}` }>({
+  // The modal's wallet link waits until the relay has the request
+  // (request-delivery.ts): the relay acknowledges each publish with a
+  // `relayer_publish` event naming the topic it went to.
+  const send = async (request: { method: string; params: unknown }) => {
+    suppressInternalRedirect()
+    const relayer = signClient.core.relayer
+    // The JSON-RPC id the request went out under (session_request_sent),
+    // so a later tap can send that same request again.
+    let requestId: string | null = null
+    const redeliver = () =>
+      requestId ? redeliverRequest(signClient, topic, requestId) : Promise.resolve(false)
+    const onSent = (e: { topic?: string; id?: number | string } | undefined) => {
+      if (!requestId && e?.topic === topic && e.id !== undefined) requestId = String(e.id)
+    }
+    const onPublish = (e: { params?: { topic?: string } } | undefined) => {
+      if (e?.params?.topic === topic) markRequestDelivered(topic, redeliver)
+    }
+    signClient.on("session_request_sent", onSent)
+    relayer.on("relayer_publish", onPublish)
+    // Should the SDK ever publish without that event, the link must not
+    // stay held back: by then the request has gone out anyway.
+    const fallback = setTimeout(() => markRequestDelivered(topic, redeliver), 4_000)
+    try {
+      return await signClient.request<{ signature: `0x${string}` }>({
         topic,
         chainId: caipChainId,
-        request: {
-          method: "polkadot_signTransaction",
-          params: {
-            address: payload.address,
-            transactionPayload: toRequestPayload(payload),
-          },
+        request,
+      })
+    } finally {
+      clearTimeout(fallback)
+      signClient.off("session_request_sent", onSent)
+      relayer.off("relayer_publish", onPublish)
+      clearRequestDelivered(topic)
+    }
+  }
+
+  return {
+    signPayload: async (payload: SignerPayloadJSON): Promise<SignerResult> => {
+      const result = await send({
+        method: "polkadot_signTransaction",
+        params: {
+          address: payload.address,
+          transactionPayload: toRequestPayload(payload),
         },
       })
       return { id: ++id, signature: result.signature }
@@ -430,14 +659,9 @@ function buildSigner(
         typeof raw.data === "string" && raw.data.startsWith("0x")
           ? u8aToString(hexToU8a(raw.data))
           : raw.data
-      suppressInternalRedirect()
-      const result = await signClient.request<{ signature: `0x${string}` }>({
-        topic,
-        chainId: caipChainId,
-        request: {
-          method: "polkadot_signMessage",
-          params: { address: raw.address, message },
-        },
+      const result = await send({
+        method: "polkadot_signMessage",
+        params: { address: raw.address, message },
       })
       return { id: ++id, signature: result.signature }
     },
@@ -473,6 +697,7 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       // the same key surface twice (en…/cn…) and cross the per-network
       // handle namespace.
       const { uri, approval } = await (async () => {
+        lastRelayError = null
         try {
           const signClient = await withTimeout(
             getSignClient(),
@@ -493,15 +718,38 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
             "Couldn't start the WalletConnect session. Please try again.",
           )
         } catch (err) {
+          const refused = relayRefusal()
           resetSignClient()
-          throw err
+          throw refused ?? err
         }
       })()
 
-      if (uri) options?.onUri?.(uri)
+      if (uri) {
+        options?.onUri?.(uri)
+        // connect() returns only once the relay has acknowledged the
+        // proposal (sign-client publishes it with throwOnFailedPublish
+        // before handing out the URI), so the wallet will find it now.
+        options?.onReady?.()
+      }
 
-      const session = await approval()
+      // If Reown refuses this origin later (a reconnect, say), the wallet
+      // never answers; stop waiting and say why instead.
+      let stopWatching = () => {}
+      const refused = new Promise<never>((_, reject) => {
+        const fail = () => {
+          const err = relayRefusal()
+          if (!err) return
+          stopWatching()
+          resetSignClient()
+          reject(err)
+        }
+        refusalListeners.add(fail)
+        stopWatching = () => refusalListeners.delete(fail)
+        if (lastRelayError && isRelayRefusal(lastRelayError)) fail()
+      })
+      const session = await Promise.race([approval(), refused]).finally(() => stopWatching())
       const accounts = accountsFromSession(session, id)
+      watchTopic(session.topic)
 
       const peerDisplay = peerDisplayFromMeta(session.peer?.metadata)
       return {
@@ -521,6 +769,8 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
     async disconnect(session: ConnectedSession): Promise<void> {
       const topic = session.meta.topic as string | undefined
       if (!topic) return
+      // Our own disconnect: not an "ended by the wallet" event.
+      watchedTopics.delete(topic)
       const signClient = await getSignClient()
       try {
         await signClient.disconnect({
@@ -565,35 +815,25 @@ function createWalletConnectConnector(id: ConnectorId): Connector {
       return buildSigner(signClient, topic, active.caip2)
     },
 
-    wakeWallet(session: ConnectedSession): void {
-      if (typeof window === "undefined") return
-      if (!isMobileUserAgent()) return
-      const peerRedirect =
-        (session.meta.peerRedirect as string | null | undefined) ?? null
-      const topic = (session.meta.topic as string | undefined) ?? null
-      // Mirror the pair flow's deep-link shape - `enjinwallet://wc?...` -
-      // so the wallet routes through its WalletConnect handler rather
-      // than just opening to home. We don't have the per-request id
-      // synchronously (it's generated inside signClient.request), so
-      // include sessionTopic as the strongest hint we can give the
-      // wallet about which session this is for. The request itself
-      // arrives over the WC relay a moment later.
-      const base = peerRedirect ?? "enjinwallet://"
-      const baseNoSlash = base.endsWith("/") ? base.slice(0, -1) : base
-      const url = topic
-        ? `${baseNoSlash}/wc?sessionTopic=${encodeURIComponent(topic)}`
-        : base
-      fireDeepLink(url)
-    },
-
     async restore(): Promise<ConnectedSession | null> {
       if (typeof window === "undefined") return null
       try {
         const signClient = await getSignClient()
-        const sessions = signClient.session.getAll()
-        if (sessions.length === 0) return null
-        const last = sessions[sessions.length - 1]!
+        // Live Polkadot sessions only: an expired one would take requests
+        // nobody answers.
+        const sessions = signClient.session
+          .getAll()
+          .filter((s) => s.expiry * 1000 > Date.now() && !!s.namespaces?.polkadot)
+        const last = sessions.at(-1)
+        if (!last) return null
+        // The wallet may have ended it while the page was closed; the relay
+        // delivers that deletion once the socket is up. Unreachable keeps it:
+        // the SDK reconnects, and a dead session is announced then.
+        const state = await verifySession(signClient, last.topic)
+        if (state === "gone" || state === "expired") return null
         const accounts = accountsFromSession(last, id)
+        if (accounts.length === 0) return null
+        watchTopic(last.topic)
         const chain = getActiveChain()
         const peerDisplay = peerDisplayFromMeta(last.peer?.metadata)
         return {
