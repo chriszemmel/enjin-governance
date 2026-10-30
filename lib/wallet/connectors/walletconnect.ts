@@ -60,7 +60,10 @@ async function importAndInit() {
       name: APP_NAME,
       description: APP_DESCRIPTION,
       url: origin,
-      icons: [`${origin}/favicon.svg`],
+      // The icon from the canonical, public domain: a preview deployment
+      // can sit behind Vercel's login, and the wallet would get that page
+      // instead of the image (no icon). The url stays the page's own.
+      icons: [`${env.NEXT_PUBLIC_APP_URL}/favicon.svg`],
     },
   })
 
