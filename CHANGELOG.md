@@ -3,6 +3,16 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.1 - 2026-11-11
+
+- **Addresses in backticks are address chips too:** a code span that holds
+  exactly one valid address now shows as the same chip as a bare address,
+  with its identicon, copy and profile link. Anything else in backticks,
+  such as an EVM address or a call name, stays code.
+- **The place-deposit button stays on one line:** on a phone the decision
+  deposit takes its own row in a referendum's details, so "Connect to
+  place" and the amount no longer wrap.
+
 ## 2.0.0 - 2026-11-11
 
 Everything since 1.0.0 in one release: the patches 1.1 to 1.9 below.

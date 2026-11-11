@@ -566,6 +566,10 @@ export default function ProposalDetailPage() {
                   label="Decision"
                   deposit={decisionDeposit}
                   chain={chain}
+                  // The place-deposit button needs a full row on a phone.
+                  className={
+                    isOngoing && decisionDeposit == null ? "col-span-2 sm:col-span-1" : undefined
+                  }
                   fallback={
                     ref.status.type === "Approved" ||
                     ref.status.type === "Rejected" ||
@@ -1131,6 +1135,7 @@ function DepositRow({
   fallback,
   fallbackLabel = "Not placed",
   action,
+  className,
 }: {
   label: string
   deposit: Deposit | null
@@ -1138,9 +1143,10 @@ function DepositRow({
   fallback?: React.ReactNode
   fallbackLabel?: string
   action?: React.ReactNode
+  className?: string
 }) {
   return (
-    <div>
+    <div className={className}>
       <p className="text-xs text-muted-foreground mb-1">{label} deposit</p>
       {deposit ? (
         <>

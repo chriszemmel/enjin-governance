@@ -110,7 +110,7 @@ export function PlaceDepositButton(p: Props) {
         type="button"
         onClick={handleClick}
         disabled={tx.isSubmitting}
-        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-purple-dim transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+        className="inline-flex items-center gap-2 whitespace-nowrap px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-purple-dim transition-all disabled:opacity-60 disabled:cursor-not-allowed"
         title={
           amountLabel
             ? `Reserve ${amountLabel} as the decision deposit for this referendum`
