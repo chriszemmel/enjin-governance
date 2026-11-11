@@ -131,6 +131,36 @@ rollback to 1.0 afterwards fails the same way. So, upgrading from 1.0:
 
 A fresh database for 2.0 can take every migration at once.
 
+### A database migrated by hand
+
+If the SQL files were pasted into the Neon SQL editor instead of applied
+with `pnpm db:migrate`, the `_migrations` ledger is missing or empty and
+**Moderation → Status** says a migration was "probably applied by hand".
+The first files are not idempotent, so the runner stops on such a
+database before running anything. Two ways on:
+
+- Record what is in place, then let the runner continue. Name the last
+  file that is already applied:
+
+  ```bash
+  DATABASE_URL_UNPOOLED="postgres://..." pnpm db:migrate --baseline 013 --until 014
+  ```
+
+  `--baseline` writes the ledger rows for the files up to that number
+  without running them; `--until` works as above.
+
+- Or keep pasting: run the next file in the SQL editor, then add its
+  ledger row, so the status page and a later `pnpm db:migrate` know:
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS _migrations (
+    filename   TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  INSERT INTO _migrations (filename) VALUES ('014_fellowship_referenda.sql')
+    ON CONFLICT (filename) DO NOTHING;
+  ```
+
 ### Schema overview
 
 | Table | Purpose |

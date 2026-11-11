@@ -390,13 +390,15 @@ type ModerationSchema = {
   keepState: boolean
   /** proposals and moderation_actions say their referenda pallet (014_fellowship_referenda.sql). */
   fellowship: boolean
+  /** proposals.proposer_signature is gone (015_drop_proposer_signature.sql). */
+  signatureDropped: boolean
   /** Migration files the `_migrations` ledger lists; null when there is no ledger. */
   ledger: string[] | null
 }
 
 /**
- * Which of migrations 011-014 are in place, judged by the tables and
- * constraints themselves: migrations applied by hand leave no ledger rows.
+ * Which of migrations 011-015 are in place, judged by the tables, columns
+ * and constraints themselves: migrations applied by hand leave no ledger rows.
  */
 export async function moderationSchema(): Promise<ModerationSchema> {
   const sql = getSql()
@@ -418,12 +420,17 @@ export async function moderationSchema(): Promise<ModerationSchema> {
       (SELECT COUNT(*)::int FROM information_schema.columns
         WHERE column_name = 'referenda_pallet'
           AND table_name IN ('proposals', 'moderation_actions')) AS pallet_columns,
+      (to_regclass('proposals') IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'proposals'
+            AND column_name = 'proposer_signature')) AS signature_dropped,
       to_regclass('_migrations') IS NOT NULL AS ledger
   `) as {
     moderation: boolean
     settings: boolean
     set_null: number
     pallet_columns: number
+    signature_dropped: boolean
     ledger: boolean
   }[]
   const r = rows[0] ?? {
@@ -431,6 +438,7 @@ export async function moderationSchema(): Promise<ModerationSchema> {
     settings: false,
     set_null: 0,
     pallet_columns: 0,
+    signature_dropped: false,
     ledger: false,
   }
   let ledger: string[] | null = null
@@ -445,6 +453,7 @@ export async function moderationSchema(): Promise<ModerationSchema> {
     settings: r.settings,
     keepState: r.set_null === 2,
     fellowship: r.pallet_columns === 2,
+    signatureDropped: r.signature_dropped,
     ledger,
   }
 }

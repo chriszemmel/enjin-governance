@@ -27,7 +27,11 @@ Highlights:
 
 1. Back up the database (a Neon branch is enough), then run
    `pnpm db:migrate --until 014` for migrations `011` to `014`.
-   Don't apply `015` yet: it drops a column 1.0 still writes.
+   Don't apply `015` yet: it drops a column 1.0 still writes. If the
+   earlier migrations were pasted into a SQL editor by hand, the ledger
+   is empty: run `pnpm db:migrate --baseline 013 --until 014` instead,
+   naming the last file already applied, or paste `014` by hand as
+   before.
 2. Set `NEXT_PUBLIC_APP_URL` to the production domain: in production the
    app refuses to stage proposals while it points at localhost.
 3. Set `GOVERNANCE_ADMIN_PUBLIC_KEYS` to your wallet to become the first
@@ -52,7 +56,18 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   five) and downloaded through a five-minute link.
 - **Dependencies:** `pnpm audit` reports nothing, and CI now runs it on
   every change and every Monday (#13); Vitest 5, and newer ESLint and
-  PostCSS.
+  PostCSS. Next.js 16.4.6 takes in the November 2026 security release
+  (fixed in 16.4.5); the AWS SDK, Vite and PostCSS are current too.
+- **Checked on the live 1080 runtime:** with mainnet on spec 1080, the
+  treasury tier limits, support against total issuance, deposit refunds,
+  Abstain and the Fellowship flow were run again on a Chopsticks fork
+  of mainnet.
+- **Databases migrated by hand:** `pnpm db:migrate` stops, before running
+  anything, on a database that has the tables but no migrations ledger
+  (the first files would fail on tables that exist).
+  `pnpm db:migrate --baseline 013` records the files up to `013` as
+  applied without running them. The status page reads migration `015`
+  from the table itself, so it is right without a ledger too.
 - **Phones:** proposal tables scroll again instead of squeezing a column
   to one letter; sign-in prompts are one link that comes back to the
   page; a dialog opened by touch no longer rings its close button; the

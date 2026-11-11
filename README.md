@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1205%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-1207%20passing-22c55e?style=flat-square" />
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
@@ -380,7 +380,7 @@
 |---|---|
 | TypeScript source files (excl. vendored shadcn and tests) | **~340** |
 | Docs files | **7** |
-| Unit tests | **1205** (102 files), including route tests and database tests against PGlite |
+| Unit tests | **1207** (103 files), including route tests and database tests against PGlite |
 | Browser tests | **28** (Playwright, against the production build) |
 | Test coverage (lines) | **88%** of API routes, **80%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and components are covered by the browser tests, not by unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
@@ -451,7 +451,7 @@ pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (1205 tests)
+pnpm test         # Vitest (1207 tests)
 pnpm test:watch   # Vitest watch
 pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
 ```
@@ -679,7 +679,8 @@ In Reown Cloud → **Allowed Domains**: add your production domain.
 Run `pnpm db:migrate` against the Neon project; it records what it applied,
 so don't also paste the SQL files by hand. Upgrading a live 1.0 database,
 hold back `015` until 2.0 is deployed: `pnpm db:migrate --until 014` first
-(see the changelog's upgrade steps).
+(see the changelog's upgrade steps). A database whose earlier files were
+pasted by hand needs `--baseline` once; see the deployment guide.
 Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---

@@ -34,6 +34,7 @@ export type StatusInputs = {
       settings: boolean
       keepState: boolean
       fellowship: boolean
+      signatureDropped: boolean
       ledger: string[] | null
     } | null
   }
@@ -160,18 +161,17 @@ function databaseSection(db: StatusInputs["database"]): StatusSection {
   // deployment runs 2.0: a reminder, never a problem.
   const schema = db.schema
   if (schema) {
-    const ledger = schema.ledger
-    const applied = ledger?.some((f) => f.startsWith("015_")) ?? false
+    const listed = schema.ledger?.some((f) => f.startsWith("015_")) ?? false
     items.push(
       item(
         "migration-015",
         "Migration 015: drop proposer_signature",
-        applied ? "ok" : "warning",
-        applied
-          ? "Applied."
-          : ledger
-            ? "Not applied yet. Once every deployment runs 2.0, run pnpm db:migrate to drop the unused column."
-            : "Can't tell without the migrations ledger. Once every deployment runs 2.0, run pnpm db:migrate.",
+        schema.signatureDropped ? "ok" : "warning",
+        schema.signatureDropped
+          ? listed
+            ? "Applied."
+            : "Applied. The column is gone but the migrations ledger doesn't list it, so it was probably applied by hand."
+          : "Not applied yet. Once every deployment runs 2.0, run pnpm db:migrate to drop the unused column.",
       ),
     )
   }
