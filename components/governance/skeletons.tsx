@@ -70,47 +70,19 @@ export function ProposalCardSkeleton({ className }: { className?: string }) {
 }
 
 /**
- * Mirrors the proposal detail page - header card, tally card, votes
- * card, deposits card, preimage card, plus the sticky "cast your
- * vote" sidebar. Used in place of the previous `h-64 animate-pulse`
- * lump so the header bar doesn't jump when content loads.
+ * Mirrors the proposal detail page below its header card - tally card,
+ * votes card, deposits card, preimage card - while the referendum is read
+ * from the chain. The header card itself renders at once (it has its own
+ * placeholders for the chain parts), so its text never moves when the
+ * rest arrives. Pair with `VotePanelSkeleton` in the sidebar.
  */
-export function ProposalDetailSkeleton() {
+export function ProposalDetailBodySkeleton() {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-pulse">
-      <div className="lg:col-span-2 space-y-5">
-        <DetailHeaderCardSkeleton />
-        <TallyCardSkeleton />
-        <VotesCardSkeleton />
-        <DepositsCardSkeleton />
-        <PreimageCardSkeleton />
-      </div>
-      <div className="space-y-4">
-        <VotePanelSkeleton />
-      </div>
-    </div>
-  )
-}
-
-function DetailHeaderCardSkeleton() {
-  return (
-    <div className="rounded-2xl bg-card border border-border p-6">
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <Pill className="h-6 w-20" />
-        <Pill className="h-6 w-24" />
-        <Bar className="h-4 w-10 ml-auto" />
-      </div>
-      <Bar className="h-7 w-2/3 mb-3" />
-      <div className="space-y-2">
-        <Bar className="h-4 w-full" />
-        <Bar className="h-4 w-5/6" />
-      </div>
-      <div className="flex items-center gap-4 mt-5 pt-5 border-t border-border flex-wrap">
-        <Bar className="h-3 w-36" />
-        <Bar className="h-3 w-36" />
-        <Bar className="h-3 w-32" />
-        <Bar className="h-3 w-24 ml-auto" />
-      </div>
+    <div className="space-y-5 animate-pulse">
+      <TallyCardSkeleton />
+      <VotesCardSkeleton />
+      <DepositsCardSkeleton />
+      <PreimageCardSkeleton />
     </div>
   )
 }
@@ -206,9 +178,10 @@ function PreimageCardSkeleton() {
   )
 }
 
-function VotePanelSkeleton() {
+/** The "cast your vote" sidebar while the referendum loads. */
+export function VotePanelSkeleton() {
   return (
-    <div className="rounded-2xl bg-card border border-border overflow-hidden">
+    <div className="rounded-2xl bg-card border border-border overflow-hidden animate-pulse">
       <div className="px-5 py-4 border-b border-border">
         <Bar className="h-4 w-24 mb-2" />
         <Bar className="h-3 w-40" />

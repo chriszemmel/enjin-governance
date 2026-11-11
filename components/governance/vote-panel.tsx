@@ -1,7 +1,15 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { CheckCircle2, ChevronDown, ChevronUp, Lock, XCircle, Zap } from "lucide-react"
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Lock,
+  MinusCircle,
+  XCircle,
+  Zap,
+} from "lucide-react"
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
@@ -16,16 +24,20 @@ import {
 } from "@/lib/chain/format"
 import {
   buildRemoveVote,
+  buildSplitAbstainVote,
   buildVote,
+  convictionLockBlocks,
+  getVoteLockingPeriod,
   type VoteCurrency,
 } from "@/lib/governance/conviction-voting"
 import {
-  CONVICTION_LOCK_PERIODS,
   CONVICTION_MULTIPLIER,
   CONVICTIONS,
   type Conviction,
 } from "@/lib/governance/types"
-import { decodeCurrency } from "@/lib/governance/vote-decode"
+import { decodeCurrency, isPureAbstain } from "@/lib/governance/vote-decode"
+import { senjCanVote } from "@/lib/governance/staking-pools"
+import { useApi } from "@/lib/query/hooks/use-api"
 import { useBalance } from "@/lib/query/hooks/use-balance"
 import { useMyVotesOnPoll } from "@/lib/query/hooks/use-my-votes"
 import { useStakedEnjBalances } from "@/lib/query/hooks/use-staked-enj-balances"
@@ -43,20 +55,31 @@ import {
 interface VotingPanelProps {
   referendumIndex: number
   isOngoing: boolean
-  decisionPeriodBlocks: number | null
   trackId: number | null
 }
 
 const DEFAULT_AMOUNT = "1"
 
+type VoteChoice = "aye" | "nay" | "abstain"
+
+// Three buttons share a phone-width row: tighter padding below sm keeps
+// "Abstain" and its icon from squeezing.
+const VOTE_BUTTON =
+  "flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-3 rounded-xl border text-sm font-medium transition-all duration-200 disabled:opacity-50 [&>svg]:shrink-0"
+
+const CHOICE_LABEL: Record<VoteChoice, string> = {
+  aye: "Aye",
+  nay: "Nay",
+  abstain: "Abstain",
+}
+
 export function VotingPanel({
   referendumIndex,
   isOngoing,
-  decisionPeriodBlocks,
   trackId,
 }: VotingPanelProps) {
   const [walletOpen, setWalletOpen] = useState(false)
-  const [vote, setVote] = useState<"aye" | "nay" | null>(null)
+  const [vote, setVote] = useState<VoteChoice | null>(null)
   const [conviction, setConviction] = useState<Conviction>("Locked1x")
   const [showConviction, setShowConviction] = useState(false)
   const [amountInput, setAmountInput] = useState(DEFAULT_AMOUNT)
@@ -64,6 +87,11 @@ export function VotingPanel({
 
   const chain = useActiveChain()
   const queryClient = useQueryClient()
+  // Conviction locks run in the runtime's voteLockingPeriod on every track.
+  const api = useApi().data
+  const voteLockingPeriod = getVoteLockingPeriod(api)
+  // Decides whether sENJ of a pool being destroyed can still vote.
+  const specVersion = api?.runtimeVersion.specVersion.toNumber() ?? 0
   const { status: walletStatus, activeAddress, session: walletSession } = useWallet()
   const { short: addressShort } = useDisplayAddress()
   const walletMeta = walletDisplayFor(walletSession ?? null)
@@ -112,9 +140,10 @@ export function VotingPanel({
       return
     }
     const match = stakedHoldings.find((h) => h.poolId === currency.poolId)
-    if (!match) {
-      // The pool dropped out of holdings (transfer? unstake?) - fall
-      // back to ENJ rather than leaving a stale option selected.
+    if (!match || !senjCanVote(match.poolState, specVersion)) {
+      // The pool dropped out of holdings (transfer? unstake?), or is being
+      // destroyed - fall back to ENJ rather than leaving a stale option
+      // selected.
       setCurrency({ kind: "Enj", freeBalance: balanceQuery.data ?? null })
       return
     }
@@ -130,7 +159,7 @@ export function VotingPanel({
         realEnjBalance: match.realEnjBalance,
       })
     }
-  }, [balanceQuery.data, stakedHoldings, currency])
+  }, [balanceQuery.data, stakedHoldings, currency, specVersion])
 
   // Match an on-chain vote to the form's currently selected source so
   // the form reads as a "Change vote" for that source. With multi-
@@ -156,12 +185,23 @@ export function VotingPanel({
     const key =
       currency.kind === "Enj" ? "enj" : `senj:${currency.poolId}`
     if (lastHydratedKey.current === key) return
+    // Wait for the wallet's votes: hydrating before they load would mark
+    // this source done and leave an existing vote unselected.
+    if (!myVotesQuery.isSuccess) return
     lastHydratedKey.current = key
-    if (selectedVote?.type !== "Standard") return
-    setVote(selectedVote.aye ? "aye" : "nay")
-    setConviction(selectedVote.conviction)
-    const whole = selectedVote.balance / 10n ** BigInt(chain.decimals)
-    const frac = selectedVote.balance % 10n ** BigInt(chain.decimals)
+    let balance: bigint
+    if (selectedVote?.type === "Standard") {
+      setVote(selectedVote.aye ? "aye" : "nay")
+      setConviction(selectedVote.conviction)
+      balance = selectedVote.balance
+    } else if (selectedVote && isPureAbstain(selectedVote)) {
+      setVote("abstain")
+      balance = selectedVote.abstain
+    } else {
+      return
+    }
+    const whole = balance / 10n ** BigInt(chain.decimals)
+    const frac = balance % 10n ** BigInt(chain.decimals)
     if (frac === 0n) {
       setAmountInput(whole.toString())
     } else {
@@ -171,18 +211,17 @@ export function VotingPanel({
         .replace(/0+$/, "")
       setAmountInput(`${whole.toString()}.${trimmed}`)
     }
-  }, [currency, selectedVote, chain.decimals])
+  }, [currency, selectedVote, chain.decimals, myVotesQuery.isSuccess])
 
+  // Abstain carries no conviction: the full amount counts toward support
+  // and nothing stays locked once the referendum ends.
+  const abstain = vote === "abstain"
   const multiplier = CONVICTION_MULTIPLIER[conviction]
-  const lockPeriods = CONVICTION_LOCK_PERIODS[conviction]
-  const lockBlocks =
-    decisionPeriodBlocks != null ? decisionPeriodBlocks * lockPeriods : 0
+  const effectiveMultiplier = abstain ? 1 : multiplier
   const lockLabel =
     conviction === "None"
       ? "No lock"
-      : decisionPeriodBlocks != null
-        ? formatBlockDuration(lockBlocks)
-        : `${lockPeriods} decision periods`
+      : formatBlockDuration(convictionLockBlocks(conviction, voteLockingPeriod))
 
   let parsedAmount: bigint | null = null
   try {
@@ -208,18 +247,26 @@ export function VotingPanel({
   const votingPower = (() => {
     if (parsedAmount == null) return 0
     const centi = parsedAmount / 10n ** BigInt(chain.decimals - 2)
-    return (Number(centi) / 100) * multiplier
+    return (Number(centi) / 100) * effectiveMultiplier
   })()
 
   const tx = useExtrinsic({
     build: (api) =>
-      buildVote(api, {
-        pollIndex: referendumIndex,
-        aye: vote === "aye",
-        balance: parsedAmount ?? 0n,
-        conviction,
-        currency: selectionToVoteCurrency(currency),
-      }),
+      vote === "abstain"
+        ? buildSplitAbstainVote(api, {
+            pollIndex: referendumIndex,
+            aye: 0n,
+            nay: 0n,
+            abstain: parsedAmount ?? 0n,
+            currency: selectionToVoteCurrency(currency),
+          })
+        : buildVote(api, {
+            pollIndex: referendumIndex,
+            aye: vote === "aye",
+            balance: parsedAmount ?? 0n,
+            conviction,
+            currency: selectionToVoteCurrency(currency),
+          }),
     onStatus(status) {
       if (status.kind === "finalized") {
         // Passive confirmation that GRANDPA locked it in. Fires for both
@@ -418,7 +465,7 @@ export function VotingPanel({
           <CurrentVotesStack
             votes={myVotes}
             chain={chain}
-            decisionPeriodBlocks={decisionPeriodBlocks}
+            voteLockingPeriod={voteLockingPeriod}
             removing={removeTx.isSubmitting}
             removeStatus={removeTx.status.kind}
             canRemove={effectiveTrackId != null && !tx.isSubmitting}
@@ -437,10 +484,20 @@ export function VotingPanel({
               <div>
                 <p className="font-semibold text-foreground">Vote recorded on chain</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  <span className={vote === "aye" ? "text-green-400" : "text-red-400"}>
-                    {vote === "aye" ? "Aye" : "Nay"}
+                  <span
+                    className={
+                      vote === "aye"
+                        ? "text-green-700 dark:text-green-400"
+                        : vote === "abstain"
+                          ? "text-slate-700 dark:text-slate-300"
+                          : "text-red-700 dark:text-red-400"
+                    }
+                  >
+                    {vote ? CHOICE_LABEL[vote] : "Vote"}
                   </span>{" "}
-                  at {multiplier}x conviction.
+                  {abstain
+                    ? "counted toward support."
+                    : `at ${multiplier}x conviction.`}
                 </p>
               </div>
               <button
@@ -475,6 +532,7 @@ export function VotingPanel({
                   chain={chain}
                   freeEnjBalance={balanceQuery.data ?? null}
                   stakedHoldings={stakedHoldings}
+                  specVersion={specVersion}
                   selected={currency}
                   onChange={(next) => {
                     setCurrency(next)
@@ -495,15 +553,15 @@ export function VotingPanel({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setVote("aye")}
                   disabled={tx.isSubmitting}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-medium transition-all duration-200 disabled:opacity-50",
+                    VOTE_BUTTON,
                     vote === "aye"
-                      ? "border-green-500/50 bg-green-500/10 text-green-400"
-                      : "border-border text-muted-foreground hover:border-green-500/30 hover:text-green-400 hover:bg-green-500/5",
+                      ? "border-green-500/50 bg-green-500/10 text-green-800 dark:text-green-400"
+                      : "border-border text-muted-foreground hover:border-green-500/30 hover:text-green-800 dark:hover:text-green-400 hover:bg-green-500/5",
                   )}
                 >
                   <CheckCircle2 className="w-4 h-4" />
@@ -513,14 +571,30 @@ export function VotingPanel({
                   onClick={() => setVote("nay")}
                   disabled={tx.isSubmitting}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-medium transition-all duration-200 disabled:opacity-50",
+                    VOTE_BUTTON,
                     vote === "nay"
-                      ? "border-red-500/50 bg-red-500/10 text-red-400"
-                      : "border-border text-muted-foreground hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/5",
+                      ? "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-400"
+                      : "border-border text-muted-foreground hover:border-red-500/30 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-500/5",
                   )}
                 >
                   <XCircle className="w-4 h-4" />
                   Nay
+                </button>
+                <button
+                  onClick={() => {
+                    setVote("abstain")
+                    setShowConviction(false)
+                  }}
+                  disabled={tx.isSubmitting}
+                  className={cn(
+                    VOTE_BUTTON,
+                    vote === "abstain"
+                      ? "border-slate-500/50 bg-slate-500/10 text-slate-700 dark:text-slate-300"
+                      : "border-border text-muted-foreground hover:border-slate-500/30 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-500/5",
+                  )}
+                >
+                  <MinusCircle className="w-4 h-4" />
+                  Abstain
                 </button>
               </div>
 
@@ -557,15 +631,17 @@ export function VotingPanel({
               <div className="rounded-xl border border-border overflow-hidden">
                 <button
                   onClick={() => setShowConviction((s) => !s)}
-                  disabled={tx.isSubmitting}
+                  disabled={tx.isSubmitting || abstain}
                   className="w-full flex items-center justify-between px-3.5 py-3 text-sm hover:bg-surface-1 transition-colors disabled:opacity-50"
                 >
                   <span className="flex items-center gap-2 text-muted-foreground">
                     <Lock className="w-3.5 h-3.5" />
-                    Conviction: {lockLabel}
+                    Conviction: {abstain ? "None for Abstain" : lockLabel}
                   </span>
                   <span className="flex items-center gap-2 text-xs">
-                    <span className="text-primary font-medium">{multiplier}x</span>
+                    <span className="text-primary font-medium">
+                      {effectiveMultiplier}x
+                    </span>
                     {showConviction ? (
                       <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
                     ) : (
@@ -574,16 +650,13 @@ export function VotingPanel({
                   </span>
                 </button>
 
-                {showConviction && (
+                {showConviction && !abstain && (
                   <div className="border-t border-border divide-y divide-border">
                     {CONVICTIONS.map((c) => {
-                      const periods = CONVICTION_LOCK_PERIODS[c]
                       const label =
                         c === "None"
                           ? "No lock"
-                          : decisionPeriodBlocks != null
-                            ? formatBlockDuration(decisionPeriodBlocks * periods)
-                            : `${periods} decision periods`
+                          : formatBlockDuration(convictionLockBlocks(c, voteLockingPeriod))
                       return (
                         <button
                           key={c}
@@ -615,7 +688,7 @@ export function VotingPanel({
               <div className="rounded-xl bg-primary/5 border border-purple-border px-3.5 py-3 flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <Zap className="w-3.5 h-3.5 text-primary" />
-                  Voting power
+                  {abstain ? "Support" : "Voting power"}
                 </span>
                 <span className="font-semibold text-primary font-mono">
                   ≈{" "}
@@ -657,17 +730,19 @@ export function VotingPanel({
                   "Not enough balance"
                 ) : vote ? (
                   selectedVote
-                    ? `Change to ${vote === "aye" ? "Aye" : "Nay"}`
-                    : `Vote ${vote === "aye" ? "Aye" : "Nay"}`
+                    ? `Change to ${CHOICE_LABEL[vote]}`
+                    : `Vote ${CHOICE_LABEL[vote]}`
                 ) : (
                   "Select a vote"
                 )}
               </button>
 
               <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
-                {conviction === "None"
-                  ? "No lock - vote with 0.1x weight"
-                  : `Lock for ${lockLabel} after the referendum ends`}
+                {abstain
+                  ? "No lock - counts toward support only"
+                  : conviction === "None"
+                    ? "No lock - vote with 0.1x weight"
+                    : `Lock for ${lockLabel} after the referendum ends`}
               </p>
             </div>
           )}

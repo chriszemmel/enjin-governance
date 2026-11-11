@@ -107,7 +107,7 @@ function ModeButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50",
+        "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         active
           ? "bg-primary/10 border-purple-border text-foreground"
           : "bg-surface-1 border-border text-muted-foreground hover:text-foreground",

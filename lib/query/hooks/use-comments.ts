@@ -15,7 +15,11 @@ export type Comment = {
   body_markdown: string
   is_deleted: boolean
   edited_at: string | null
+  /** The author can edit the comment until then (15 minutes after posting). */
+  editable_until: string
   created_at: string
+  /** Set when moderators blurred or hid the comment. */
+  moderation?: { state: "visible" | "blurred" | "hidden" | "removed"; reason: string | null } | null
 }
 
 export function useComments(proposalUuid: string | null | undefined) {
@@ -58,22 +62,47 @@ export function useCreateComment(proposalUuid: string | null | undefined) {
   })
 }
 
+/** The route's `error` text; a generic line for anything else (e.g. an HTML error page). */
+async function errorFrom(res: Response): Promise<Error> {
+  let message = `Something went wrong (HTTP ${res.status}) - try again.`
+  try {
+    const parsed = JSON.parse(await res.text()) as { error?: string }
+    if (parsed?.error) message = parsed.error
+  } catch {
+    // not JSON - keep the generic line
+  }
+  return new Error(message)
+}
+
+export function useEditComment(proposalUuid: string | null | undefined) {
+  const qc = useQueryClient()
+  return useMutation<Comment, Error, { id: string; body_markdown: string }>({
+    mutationFn: async ({ id, body_markdown }) => {
+      const res = await fetch(`/api/comments/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body_markdown }),
+      })
+      if (!res.ok) throw await errorFrom(res)
+      const json = (await res.json()) as { ok: true; comment: Comment }
+      return json.comment
+    },
+    onSuccess: (updated) => {
+      // Show the new text right away rather than the old one until the refetch.
+      qc.setQueryData<Comment[]>(["comments", proposalUuid], (list) =>
+        list?.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)),
+      )
+      void qc.invalidateQueries({ queryKey: ["comments", proposalUuid] })
+    },
+  })
+}
+
 export function useDeleteComment(proposalUuid: string | null | undefined) {
   const qc = useQueryClient()
   return useMutation<void, Error, string>({
     mutationFn: async (commentId) => {
       const res = await fetch(`/api/comments/${commentId}`, { method: "DELETE" })
-      if (!res.ok) {
-        const text = await res.text()
-        let message = text || `HTTP ${res.status}`
-        try {
-          const parsed = JSON.parse(text) as { error?: string }
-          if (parsed?.error) message = parsed.error
-        } catch {
-          // not JSON - fall through with raw text
-        }
-        throw new Error(message)
-      }
+      if (!res.ok) throw await errorFrom(res)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["comments", proposalUuid] })

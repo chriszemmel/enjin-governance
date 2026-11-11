@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { Ban, Hash } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useActiveChain } from "@/lib/chain/use-chain"
 import type { Referendum, Track } from "@/lib/governance/types"
 import { StatusChip } from "./status-chip"
 import {
@@ -13,6 +14,10 @@ import { BlockTime } from "./block-time"
 import { TrackBadge } from "./track-badge"
 import { TallyBar } from "./tally-bar"
 import { LifecycleMini } from "./lifecycle-progress"
+import { formatTokenAmount } from "@/lib/chain/format"
+import { intentFromPreimage } from "@/lib/governance/call-extract"
+import { localSpendTarget } from "@/lib/governance/payout"
+import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 
 interface ProposalCardProps {
   referendum: Referendum
@@ -39,6 +44,7 @@ export function ProposalCard({
   metadata,
   metadataPending,
 }: ProposalCardProps) {
+  const chain = useActiveChain()
   const { index, status, tally, trackId } = referendum
   const metadataQuery = useProposalMetadata(metadata === undefined ? index : null)
   const data = metadata === undefined ? metadataQuery.data : metadata
@@ -53,13 +59,14 @@ export function ProposalCard({
   // anymore" signal from the author, mirrored on the detail page's banner.
   const isWithdrawn = data?.withdrawn_at != null
 
-  const submittedBlock =
-    status.type === "Ongoing" ? status.submitted : status.type === "Killed" ? status.at : status.at
+  // Submitted while ongoing; once decided, the block it ended at.
+  const submittedBlock = status.type === "Ongoing" ? status.submitted : status.at
   const isOngoing = status.type === "Ongoing"
+  const spendAmount = useSpendAmount(referendum)
 
   return (
     <Link
-      href={`/proposals/${index}`}
+      href={`/proposals/${index}?network=${chain.id}`}
       className={cn(
         "block rounded-2xl border border-border bg-card p-5 transition-colors duration-200",
         "hover:border-muted-foreground/40",
@@ -88,7 +95,7 @@ export function ProposalCard({
 
       <h3
         className={cn(
-          "text-base font-semibold leading-snug mb-3 line-clamp-2",
+          "text-base font-semibold leading-snug mb-3 line-clamp-2 [overflow-wrap:anywhere]",
           isWithdrawn
             ? "text-muted-foreground line-through decoration-destructive/60 decoration-1"
             : "text-foreground",
@@ -110,15 +117,42 @@ export function ProposalCard({
         </div>
       )}
 
-      {isOngoing && (
-        <div className="mb-4">
-          <LifecycleMini referendum={referendum} track={track ?? null} />
-        </div>
+      {/* An Approved referendum's call still waits in the scheduler until
+          it's enacted; the bar shows that too, then hides itself. */}
+      {(isOngoing || status.type === "Approved") && (
+        <LifecycleMini
+          referendum={referendum}
+          track={track ?? null}
+          amount={spendAmount}
+          className="mb-4"
+        />
       )}
 
-      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <BlockTime block={submittedBlock} showBlock />
-      </div>
+      {/* An Approved card's line above already dates it. */}
+      {status.type !== "Approved" && (
+        <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <span>
+            {isOngoing ? "Submitted" : "Ended"} <BlockTime block={submittedBlock} />
+          </span>
+        </div>
+      )}
     </Link>
   )
+}
+
+/**
+ * What a live treasury spend_local pays, decoded from its call on chain
+ * (the preimage, or the inline call) - never from the off-chain metadata,
+ * whose amount the proposer typed. Null for any other call.
+ */
+function useSpendAmount(referendum: Referendum): string | null {
+  const chain = useActiveChain()
+  const proposal = referendum.status.type === "Ongoing" ? referendum.status.proposal : null
+  const inline = proposal && "type" in proposal && proposal.type === "Inline" ? proposal.bytes : null
+  const lookup = proposal && !inline ? (proposal as { hash: `0x${string}`; len: number }) : null
+  const preimage = usePreimage(lookup)
+  const inlineCall = useInlineCall(inline)
+  const decoded = preimage.data?.section ? preimage.data : inlineCall.data
+  const target = decoded?.section ? localSpendTarget(intentFromPreimage(decoded, chain)) : null
+  return target ? formatTokenAmount(target.amount, chain, { maxFractionDigits: 2 }) : null
 }

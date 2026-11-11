@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { isIP } from "node:net"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { isDbConfigured } from "@/lib/db/client"
@@ -13,6 +14,7 @@ import {
 } from "@/lib/auth/siwe"
 import { enforceRateLimit, ipFromHeaders, RATE_LIMITS } from "@/lib/rate-limit"
 import { initializeWasm, isValidSs58 } from "@/lib/chain/ss58"
+import { signInFormatError, signInNetworkOf } from "@/lib/auth/sign-in-network"
 
 export const runtime = "nodejs"
 
@@ -58,6 +60,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!isValidSs58(parsed.address)) {
     return NextResponse.json(
       { ok: false, error: "Invalid address." },
+      { status: 400 },
+    )
+  }
+  // Same rule as the nonce route (a nonce issued before it still can't
+  // make a user row without a network).
+  if (!signInNetworkOf(parsed.address)) {
+    return NextResponse.json(
+      { ok: false, error: signInFormatError() },
       { status: 400 },
     )
   }
@@ -115,8 +125,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     address: parsed.address,
     expiresAt,
     userAgent: request.headers.get("user-agent"),
-    ipAddress:
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    ipAddress: clientIp(request),
   })
 
   const response = NextResponse.json({
@@ -139,4 +148,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     expires: expiresAt,
   })
   return response
+}
+
+/**
+ * The caller's IP for the session row, or null. The column is INET, so a
+ * proxy header like "unknown" must not reach it: the insert would fail
+ * after the nonce was already used.
+ */
+function clientIp(request: NextRequest): string | null {
+  const first = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? ""
+  return isIP(first) ? first : null
 }

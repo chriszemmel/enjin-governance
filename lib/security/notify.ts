@@ -9,27 +9,10 @@
 
 import "server-only"
 import { env } from "@/lib/env"
+import { sendTelegramMessage } from "@/lib/telegram/send"
 import { formatDisclosureMessage, type DisclosureInput } from "./disclosure"
 
-export async function notifySecurityDisclosure(
-  input: DisclosureInput,
-  id: string,
-): Promise<void> {
-  const token = env.TELEGRAM_BOT_TOKEN
-  const chatId = env.TELEGRAM_CHAT_ID
-  if (!token || !chatId) return
-
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: formatDisclosureMessage(input, id),
-        disable_web_page_preview: true,
-      }),
-    })
-  } catch {
-    // swallow - durable copy is in the DB; notifications are non-critical
-  }
+export async function notifySecurityDisclosure(input: DisclosureInput, id: string): Promise<void> {
+  // Durable copy is in the DB; the notification is non-critical.
+  await sendTelegramMessage(env.TELEGRAM_CHAT_ID, formatDisclosureMessage(input, id))
 }

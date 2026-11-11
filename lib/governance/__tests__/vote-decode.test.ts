@@ -5,6 +5,7 @@ import {
   decodeVote,
   decodeVoteByte,
   formatCurrencyLabel,
+  isPureAbstain,
 } from "@/lib/governance/vote-decode"
 
 describe("decodeVoteByte", () => {
@@ -141,5 +142,31 @@ describe("formatCurrencyLabel", () => {
       "sENJ · pool #3",
     )
     expect(formatCurrencyLabel({ kind: "Unknown" })).toBe("ENJ")
+  })
+})
+
+describe("isPureAbstain", () => {
+  const base = { pollIndex: 1, trackId: 0 }
+
+  it("is true for a SplitAbstain vote with only an abstain part", () => {
+    expect(
+      isPureAbstain({ ...base, type: "SplitAbstain", aye: 0n, nay: 0n, abstain: 5n }),
+    ).toBe(true)
+  })
+
+  it("is false when the SplitAbstain vote also carries aye or nay", () => {
+    expect(
+      isPureAbstain({ ...base, type: "SplitAbstain", aye: 1n, nay: 0n, abstain: 5n }),
+    ).toBe(false)
+    expect(
+      isPureAbstain({ ...base, type: "SplitAbstain", aye: 0n, nay: 1n, abstain: 5n }),
+    ).toBe(false)
+  })
+
+  it("is false for Standard and Split votes", () => {
+    expect(
+      isPureAbstain({ ...base, type: "Standard", aye: true, balance: 5n, conviction: "None" }),
+    ).toBe(false)
+    expect(isPureAbstain({ ...base, type: "Split", aye: 0n, nay: 0n })).toBe(false)
   })
 })

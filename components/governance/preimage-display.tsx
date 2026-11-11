@@ -13,13 +13,27 @@ import type { PreimageRef } from "@/lib/governance/types"
 type PreimageDisplayProps = {
   className?: string
 } & (
-  | { preimageRef: PreimageRef; inlineBytes?: never; inlineAt?: never }
+  | {
+      preimageRef: PreimageRef
+      /**
+       * For a decided referendum, the block its history was read at, where
+       * an unnoted preimage can still be read (see usePreimage).
+       */
+      preimageAt?: number | null
+      inlineBytes?: never
+      inlineAt?: never
+    }
   /**
    * A call that rides inline in its referendum - decoded, never fetched.
    * `inlineAt` is the block the bytes were read at, for a decided
    * referendum (see useInlineCall).
    */
-  | { inlineBytes: Uint8Array; inlineAt?: number | null; preimageRef?: never }
+  | {
+      inlineBytes: Uint8Array
+      inlineAt?: number | null
+      preimageRef?: never
+      preimageAt?: never
+    }
 )
 
 /**
@@ -32,12 +46,13 @@ type PreimageDisplayProps = {
  */
 export function PreimageDisplay({
   preimageRef,
+  preimageAt,
   inlineBytes,
   inlineAt,
   className,
 }: PreimageDisplayProps) {
   const chain = useActiveChain()
-  const lookupQuery = usePreimage(preimageRef)
+  const lookupQuery = usePreimage(preimageRef, undefined, preimageAt)
   const inlineQuery = useInlineCall(inlineBytes, inlineAt)
   const preimageQuery = inlineBytes ? inlineQuery : lookupQuery
   // Default to collapsed - the preimage block is rarely useful at a
@@ -60,16 +75,16 @@ export function PreimageDisplay({
         disabled={!hasCall && !isMissing && !decodeFailed && !preimageQuery.isPending}
         className="w-full flex items-center justify-between gap-3 text-left"
       >
-        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <FileCode className="w-4 h-4 text-primary" />
+        <h3 className="min-w-0 text-sm font-semibold text-foreground flex items-center gap-2">
+          <FileCode className="w-4 h-4 text-primary flex-shrink-0" />
           {inlineBytes ? "Call (inline)" : "Preimage"}
           {hasCall && (
-            <span className="font-mono text-xs text-muted-foreground font-normal ml-1">
+            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground font-normal ml-1">
               {data.section}.{data.method}
             </span>
           )}
         </h3>
-        <span className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5">
+        <span className="flex-shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5">
           {expanded ? "Collapse" : "Expand"}
           {expanded ? (
             <ChevronDown className="w-3 h-3" />

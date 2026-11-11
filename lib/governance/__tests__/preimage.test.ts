@@ -1,7 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest"
 import type { ApiPromise } from "@polkadot/api"
 import { cryptoWaitReady } from "@polkadot/util-crypto"
-import { canInline, getPreimage, hashCall, INLINE_PROPOSAL_MAX_BYTES } from "@/lib/governance/preimage"
+import {
+  canInline,
+  getPreimage,
+  hashCall,
+  INLINE_PROPOSAL_MAX_BYTES,
+  noteWouldAbort,
+} from "@/lib/governance/preimage"
 
 beforeAll(async () => {
   await cryptoWaitReady()
@@ -74,6 +80,22 @@ function preimageForReturning(matchLen: number | null, bytes: Uint8Array, keys: 
 }
 
 const HEX32 = (b: string) => (`0x${b.repeat(32)}`) as `0x${string}`
+
+describe("noteWouldAbort", () => {
+  it("is true only for a preimage an account already noted (Unrequested)", () => {
+    expect(noteWouldAbort("Unrequested")).toBe(true)
+  })
+
+  it("is false for a Requested preimage: it takes the note, and may hold no bytes", () => {
+    expect(noteWouldAbort("Requested")).toBe(false)
+  })
+
+  it("is false when there is nothing on chain, or no answer yet", () => {
+    expect(noteWouldAbort("Missing")).toBe(false)
+    expect(noteWouldAbort(undefined)).toBe(false)
+    expect(noteWouldAbort(null)).toBe(false)
+  })
+})
 
 describe("getPreimage - len recovery strategies", () => {
   it("strategy 1: reads bytes directly with the supplied len", async () => {

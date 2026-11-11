@@ -15,6 +15,9 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { GetObjectCommand } from "@aws-sdk/client-s3"
+import { isDbConfigured } from "@/lib/db/client"
+import { getState } from "@/lib/db/moderation"
+import { mediaServable, parseMediaKey } from "@/lib/moderation/policy"
 import { getR2Client, isR2Configured, r2Bucket } from "@/lib/r2/client"
 import { isPublicReadableKey } from "@/lib/r2/paths"
 
@@ -36,8 +39,46 @@ export async function GET(
   }
 
   const { key: segments } = await context.params
-  const key = (segments ?? []).map((s) => decodeURIComponent(s)).join("/")
+  let parts: string[]
+  try {
+    parts = (segments ?? []).map((s) => decodeURIComponent(s))
+  } catch {
+    return notFound() // malformed %-escape
+  }
+  // "." or empty segments would name the same object under a key that
+  // skips the moderation lookup below.
+  if (parts.some((p) => p === "" || p === "." || p.includes("/"))) return notFound()
+  const key = parts.join("/")
   if (!isPublicReadableKey(key)) return notFound()
+
+  // Proposal media (and its thumbnail) can be withheld by moderators. The
+  // state lives in the DB; the proposal JSON itself is never withheld.
+  // Both the key and, for thumbnails, the file it belongs to are checked.
+  const isMedia = parseMediaKey(key) != null
+  if (!isMedia && key.includes("/media/")) return notFound()
+  if (isMedia && isDbConfigured()) {
+    const candidates = key.endsWith(".thumb.webp") ? [key, key.slice(0, -".thumb.webp".length)] : [key]
+    for (const candidate of candidates) {
+      let state: Awaited<ReturnType<typeof getState>>
+      try {
+        state = await getState("attachment", candidate)
+      } catch (err) {
+        // Before migration 011 the table doesn't exist: nothing is moderated.
+        // Any other failure must not serve something that may be hidden.
+        if ((err as { code?: string } | null)?.code === "42P01") break
+        return NextResponse.json(
+          { ok: false, error: "Temporarily unavailable" },
+          { status: 503, headers: { "Cache-Control": "no-store" } },
+        )
+      }
+      if (!mediaServable(state)) {
+        return NextResponse.json(
+          { ok: false, error: "Withheld by moderators" },
+          { status: 404, headers: { "Cache-Control": "no-store" } },
+        )
+      }
+    }
+  }
 
   try {
     const res = await getR2Client().send(
@@ -52,10 +93,16 @@ export async function GET(
     // editable proposal.json, immutable for media/avatars).
     headers.set(
       "Cache-Control",
-      res.CacheControl ?? "public, max-age=30, must-revalidate",
+      // Media is stored as immutable, but a moderator may hide it later, so
+      // browsers and CDNs only keep it for a few minutes.
+      isMedia
+        ? "public, max-age=300"
+        : (res.CacheControl ?? "public, max-age=30, must-revalidate"),
     )
     // Public, read-only bytes: allow cross-origin fetch + sha256 verify.
     headers.set("Access-Control-Allow-Origin", "*")
+    // Serve exactly the stored type; never let the browser guess another.
+    headers.set("X-Content-Type-Options", "nosniff")
     if (res.ETag) headers.set("ETag", res.ETag)
 
     return new NextResponse(bytes, { status: 200, headers })

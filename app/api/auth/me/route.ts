@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/auth/current-user"
+import { noStore } from "@/lib/http/no-store"
 
 export const runtime = "nodejs"
 
-export async function GET(): Promise<NextResponse> {
+async function getHandler(): Promise<NextResponse> {
   const user = await getCurrentUser()
   if (!user) {
     return NextResponse.json({ ok: false }, { status: 401 })
@@ -20,3 +21,6 @@ export async function GET(): Promise<NextResponse> {
     },
   })
 }
+
+// Personal: depends on the session cookie.
+export const GET = noStore(getHandler)

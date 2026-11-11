@@ -10,7 +10,7 @@ export async function GET(
   context: { params: Promise<{ chain: string; index: string }> },
 ) {
   const { chain, index } = await context.params
-  if (!(chain in CHAINS)) {
+  if (!Object.hasOwn(CHAINS, chain)) {
     return NextResponse.json({ error: "Unknown chain" }, { status: 400 })
   }
   const idx = Number(index)

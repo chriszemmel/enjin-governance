@@ -7,6 +7,7 @@ import {
   getReferendumCount,
   listReferenda,
   type ReferendumFilter,
+  type ReferendaPallet,
 } from "@/lib/governance/referenda"
 import type { Referendum } from "@/lib/governance/types"
 import { queryKeys } from "@/lib/query/keys"
@@ -38,15 +39,21 @@ export function useReferenda(filter: ReferendumFilter = {}, chain?: ChainConfig)
  * imperatively right before signing so the setMetadata call in the batch
  * targets the index referenda.submit is about to mint.
  */
-export function useReferendumCount(chain?: ChainConfig) {
+export function useReferendumCount(
+  chain?: ChainConfig,
+  pallet: ReferendaPallet = "referenda",
+) {
   const active = useActiveChain()
   const target = chain ?? active
   const apiQuery = useApi(target)
   return useQuery<number>({
-    queryKey: queryKeys.referenda.count(target.id),
+    queryKey:
+      pallet === "referenda"
+        ? queryKeys.referenda.count(target.id)
+        : ["fellowship", target.id, "count"],
     queryFn: () => {
       if (!apiQuery.data) throw new Error("API not ready")
-      return getReferendumCount(apiQuery.data)
+      return getReferendumCount(apiQuery.data, pallet)
     },
     enabled: apiQuery.isSuccess,
     staleTime: 10_000,

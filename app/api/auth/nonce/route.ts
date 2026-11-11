@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { buildSiweMessage, freshNonce } from "@/lib/auth/siwe"
+import { signInFormatError, signInNetworkOf } from "@/lib/auth/sign-in-network"
 import { isDbConfigured } from "@/lib/db/client"
 import { gcExpiredNonces, insertNonce } from "@/lib/db/auth-nonces"
 import { initializeWasm, isValidSs58 } from "@/lib/chain/ss58"
@@ -50,6 +51,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 400 },
     )
   }
+  // Only the formats of the networks this site runs on, so every user row
+  // has a network and its handle is unique there. The browser converts a
+  // generic or Polkadot address before it gets here.
+  if (!signInNetworkOf(parsed.address)) {
+    return NextResponse.json(
+      { ok: false, error: signInFormatError() },
+      { status: 400 },
+    )
+  }
 
   const { nonce, expiresAt } = freshNonce()
   const message = buildSiweMessage(parsed.address, nonce)
@@ -67,9 +77,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       expiresAt,
     })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
+    console.error("[auth/nonce] insert failed", e instanceof Error ? e.message : String(e))
     return NextResponse.json(
-      { ok: false, error: `Could not mint nonce: ${msg}` },
+      { ok: false, error: "Could not start sign-in - try again." },
       { status: 500 },
     )
   }

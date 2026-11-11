@@ -107,7 +107,7 @@ export default function UserPage({
                       </p>
                     </div>
                     <Link
-                      href={`/proposals/${d.referendum_index}`}
+                      href={`/proposals/${d.referendum_index}?network=${chain.id}`}
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <ArrowRight className="w-4 h-4" />

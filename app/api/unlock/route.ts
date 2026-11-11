@@ -3,8 +3,8 @@ import {
   SITE_ACCESS_COOKIE,
   SITE_ACCESS_MAX_AGE_SECONDS,
   expectedCookieValue,
+  passwordMatches,
   sanitizeNext,
-  timingSafeEqual,
 } from "@/lib/auth/site-password"
 import { enforceRateLimit, ipFromHeaders, RATE_LIMITS } from "@/lib/rate-limit"
 
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const provided = typeof body.password === "string" ? body.password : ""
   const next = sanitizeNext(typeof body.next === "string" ? body.next : null)
 
-  if (!provided || !timingSafeEqual(provided, expectedPassword)) {
+  if (!provided || !(await passwordMatches(provided, expectedPassword))) {
     return NextResponse.json(
       { ok: false, error: "Incorrect password" },
       { status: 401 },

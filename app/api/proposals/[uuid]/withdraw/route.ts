@@ -20,6 +20,8 @@ import { getCurrentUser } from "@/lib/auth/current-user"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
 import { getProposalById, setProposalWithdrawn } from "@/lib/db/proposals"
+import { postingSuspendedResponse } from "@/lib/moderation/suspension"
+import { enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -58,6 +60,16 @@ export async function POST(
       { status: 401 },
     )
   }
+  const suspended = await postingSuspendedResponse(me)
+  if (suspended) return suspended
+
+  const rl = await enforceRateLimit({ ...RATE_LIMITS.proposalWithdraw, identity: me.id })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests - please slow down." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    )
+  }
 
   const existing = await getProposalById(idParse.data)
   if (!existing) {
@@ -75,15 +87,25 @@ export async function POST(
     )
   }
 
+  // An empty body withdraws. A body that doesn't parse is refused: read
+  // as empty, a failed undo would withdraw again instead of clearing.
   let body: { reason?: string; undo?: boolean } = {}
   try {
     const text = await request.text()
-    if (text) {
-      const json = JSON.parse(text)
-      body = bodySchema.parse(json) ?? {}
-    }
+    if (text) body = bodySchema.parse(JSON.parse(text)) ?? {}
   } catch {
-    // empty / invalid body → defaults
+    return NextResponse.json(
+      { ok: false, error: "Invalid request - the reason can be up to 280 characters." },
+      { status: 400 },
+    )
+  }
+
+  // Only a published proposal can be marked withdrawn (clearing always works).
+  if (!body.undo && existing.status !== "on_chain") {
+    return NextResponse.json(
+      { ok: false, error: "Only proposals that reached the chain can be withdrawn." },
+      { status: 409 },
+    )
   }
 
   const row = await setProposalWithdrawn(

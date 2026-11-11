@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useNetworkParam } from "@/lib/chain/use-network-param"
 import { Loader2, Lock } from "lucide-react"
 import { EnjinLogo } from "@/components/layout/enjin-logo"
 import { sanitizeNext } from "@/lib/auth/site-password"
@@ -17,6 +18,7 @@ export default function UnlockPage() {
 function UnlockInner() {
   const router = useRouter()
   const params = useSearchParams()
+  useNetworkParam()
   const next = sanitizeNext(params.get("next"))
 
   const [password, setPassword] = useState("")

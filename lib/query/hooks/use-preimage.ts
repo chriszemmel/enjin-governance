@@ -1,14 +1,23 @@
 "use client"
 
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import type { Registry } from "@polkadot/types/types"
-import { u8aToHex } from "@polkadot/util"
+import { stringToU8a, u8aToHex } from "@polkadot/util"
+import { blake2AsHex } from "@polkadot/util-crypto"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
-import { getPreimage, getPreimageStatus, hashCall } from "@/lib/governance/preimage"
+import {
+  getPreimage,
+  getPreimageStatus,
+  hashCall,
+  noteWouldAbort,
+} from "@/lib/governance/preimage"
+import { runtimeCodeOf, type RuntimeCode } from "@/lib/governance/runtime-code"
 import type { PreimageRef, PreimageStatus } from "@/lib/governance/types"
 import { useApi } from "./use-api"
 import { useArchiveApi } from "./use-archive-api"
+import { useSpecVersion } from "./use-spec-version"
 
 type DecodedPreimage = {
   hash: `0x${string}`
@@ -19,24 +28,56 @@ type DecodedPreimage = {
   args: Record<string, unknown>
   /** Stored bytes - null if the preimage is no longer noted on chain. */
   bytes: Uint8Array | null
+  /** The runtime a setCode / authorizeUpgrade call installs, else null. */
+  runtimeCode: RuntimeCode | null
 }
 
 /**
- * Fetch + decode a preimage by (hash, len). Returns null if the preimage
- * has been unnoted from chain state.
+ * Fetch + decode a preimage by (hash, len). When it's no longer noted (the
+ * runtime drops a referendum's preimage once its call has run) and
+ * `atBlock` is given, it's read from the archive node at that block instead
+ * and decoded with that block's runtime: a decided referendum passes the
+ * block its history was read at, where the preimage was still requested.
+ * Comes back without bytes only when neither has it.
  */
-export function usePreimage(ref: PreimageRef | null | undefined, chain?: ChainConfig) {
+export function usePreimage(
+  ref: PreimageRef | null | undefined,
+  chain?: ChainConfig,
+  atBlock?: number | null,
+) {
   const active = useActiveChain()
   const target = chain ?? active
   const apiQuery = useApi(target)
+  const archiveApi = useArchiveApi(target)
   return useQuery<DecodedPreimage | null>({
-    queryKey: ["preimage", target.id, ref?.hash, ref?.len],
+    queryKey: ["preimage", target.id, ref?.hash, ref?.len, atBlock ?? null],
     queryFn: async () => {
       if (!apiQuery.data || !ref) return null
       const api = apiQuery.data
       const preimage = await getPreimage(api, ref)
+      if (!preimage?.bytes && atBlock != null && archiveApi.data) {
+        const archive = archiveApi.data
+        const past = await archive.at(await archive.rpc.chain.getBlockHash(atBlock))
+        const earlier = await getPreimage(past as unknown as typeof api, ref)
+        if (earlier?.bytes) {
+          return {
+            hash: ref.hash,
+            len: ref.len,
+            ...decodeCall(past.registry, earlier.bytes),
+            bytes: earlier.bytes,
+          }
+        }
+      }
       if (!preimage?.bytes) {
-        return { hash: ref.hash, len: ref.len, section: "", method: "", args: {}, bytes: null }
+        return {
+          hash: ref.hash,
+          len: ref.len,
+          section: "",
+          method: "",
+          args: {},
+          bytes: null,
+          runtimeCode: null,
+        }
       }
       return {
         hash: ref.hash,
@@ -45,7 +86,7 @@ export function usePreimage(ref: PreimageRef | null | undefined, chain?: ChainCo
         bytes: preimage.bytes,
       }
     },
-    enabled: apiQuery.isSuccess && !!ref,
+    enabled: apiQuery.isSuccess && !!ref && (atBlock == null || !archiveApi.isPending),
     staleTime: 5 * 60_000,
     gcTime: 60 * 60_000,
   })
@@ -60,7 +101,8 @@ export function usePreimage(ref: PreimageRef | null | undefined, chain?: ChainCo
  * `atBlock` is the block the bytes were read at when they come from a decided
  * referendum's history. They're decoded with that block's runtime: a later
  * upgrade can re-index or reshape calls, so today's metadata could misread
- * them as a different call. Omit it for a live referendum.
+ * them as a different call. Omit it for a live referendum: its decode is
+ * keyed on the connected spec version, so an upgrade decodes it again.
  */
 export function useInlineCall(
   bytes: Uint8Array | null | undefined,
@@ -73,8 +115,16 @@ export function useInlineCall(
   // History comes from the archive endpoint, so its old runtimes do too.
   const archiveApi = useArchiveApi(target)
   const apiQuery = atBlock != null ? archiveApi : liveApi
+  const liveSpec = useSpecVersion(target)
+  const specVersion = atBlock != null ? null : liveSpec
   return useQuery<DecodedPreimage | null>({
-    queryKey: ["inline-call", target.id, atBlock ?? null, bytes ? u8aToHex(bytes) : null],
+    queryKey: [
+      "inline-call",
+      target.id,
+      atBlock ?? null,
+      specVersion,
+      bytes ? u8aToHex(bytes) : null,
+    ],
     queryFn: async () => {
       const api = apiQuery.data
       if (!api || !bytes) return null
@@ -89,7 +139,7 @@ export function useInlineCall(
         bytes,
       }
     },
-    enabled: apiQuery.isSuccess && !!bytes,
+    enabled: apiQuery.isSuccess && !!bytes && (atBlock != null || specVersion != null),
     staleTime: Infinity,
   })
 }
@@ -97,13 +147,16 @@ export function useInlineCall(
 function decodeCall(
   registry: Registry,
   bytes: Uint8Array,
-): Pick<DecodedPreimage, "section" | "method" | "args"> {
+): Pick<DecodedPreimage, "section" | "method" | "args" | "runtimeCode"> {
   const call = registry.createType("Call", bytes)
   const json = call.toHuman() as { section?: string; method?: string; args?: unknown }
+  const section = (call as unknown as { section: string }).section ?? json.section ?? ""
+  const method = (call as unknown as { method: string }).method ?? json.method ?? ""
   return {
-    section: (call as unknown as { section: string }).section ?? json.section ?? "",
-    method: (call as unknown as { method: string }).method ?? json.method ?? "",
+    section,
+    method,
     args: (json.args as Record<string, unknown>) ?? {},
+    runtimeCode: runtimeCodeOf({ section, method, args: call.args }),
   }
 }
 
@@ -130,4 +183,40 @@ export function usePreimageStatus(
     enabled: apiQuery.isSuccess && !!hash,
     staleTime: 30_000,
   })
+}
+
+/**
+ * Whether a draft's EGOV1 envelope is already noted as a preimage by an
+ * account - an earlier attempt, or someone else who copied it. The batch
+ * must then leave its notePreimage out (noting it again aborts the whole
+ * batch with AlreadyNoted); setMetadata binds the same hash either way. A
+ * `Requested` envelope still takes the note (see noteWouldAbort).
+ * `skipRef` feeds the synchronous build closure; `refresh` re-reads the
+ * chain right before signing and after a failed attempt, and returns the
+ * status (the last known one if the read failed, undefined if none). `hash`
+ * is the envelope's blake2-256, the hash setMetadata binds.
+ */
+export function useEnvelopeNoted(remarkPayload: string | null | undefined) {
+  const hash = useMemo(
+    () => (remarkPayload ? blake2AsHex(stringToU8a(remarkPayload), 256) : null),
+    [remarkPayload],
+  )
+  const query = usePreimageStatus(hash)
+  const skipRef = useRef(false)
+  useEffect(() => {
+    skipRef.current = noteWouldAbort(query.data)
+  }, [query.data])
+  const { refetch } = query
+  const refresh = useCallback(async (): Promise<PreimageStatus | undefined> => {
+    try {
+      // A failed read still carries the last known status.
+      const status = (await refetch()).data
+      skipRef.current = noteWouldAbort(status)
+      return status
+    } catch {
+      // keep the last known answer
+      return undefined
+    }
+  }, [refetch])
+  return { hash, skipRef, refresh }
 }

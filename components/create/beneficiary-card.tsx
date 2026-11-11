@@ -83,7 +83,7 @@ export function BeneficiaryCard({
             value={requiredPlanck}
             chainTicker={chainTicker}
             chainDecimals={chainDecimals}
-            hint="Refunded when decided"
+            hint="Deposits and fees, itemised below"
           />
         </div>
         {!balanceSufficient && requiredPlanck != null && balanceFree != null && (
@@ -92,9 +92,9 @@ export function BeneficiaryCard({
             <span className="font-mono text-foreground">
               {formatPlanckShort(requiredPlanck, chainDecimals, chainTicker)}
             </span>{" "}
-            to file this proposal. (Anyone can pay the decision deposit later,
-            but we require the proposer to be able to cover it - keeps spam
-            referenda out of the queue.)
+            free to file this proposal: the submission deposit, the preimage
+            deposits, fees and the minimum balance. The track&apos;s decision
+            deposit isn&apos;t included - anyone can place it later.
           </p>
         )}
       </div>

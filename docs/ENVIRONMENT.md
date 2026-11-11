@@ -1,122 +1,253 @@
 # Environment
 
-Every env var the app reads is declared in `lib/env.ts` with a zod
-schema. That file is the single source of truth - `.env.example`
-mirrors it.
+Every environment variable the app reads is declared in `lib/env.ts`, with a
+Zod schema for each. That file is the source of truth. `.env.example` lists
+every variable with a short comment, and this page explains what each one
+does.
 
-## How env loading works
+Two names are read outside `lib/env.ts`: `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN`, accepted by `lib/rate-limit.ts` as alternatives
+to the `KV_REST_API_*` pair.
 
-- **Server-side** vars (no `NEXT_PUBLIC_` prefix) are read on the server
-  only. Trying to import them from the client throws.
-- **Client-side** vars (`NEXT_PUBLIC_*`) are inlined into the browser
-  bundle at build time. Never put secrets here.
-- `lib/env.ts` parses both at startup. Missing or invalid values throw
-  at first use with a clear error.
+The app also reads `VERCEL_ENV`, which Vercel sets on its own and which you
+don't set. It decides what counts as production for the public-URL check
+(see [App](#app)) and for the admins' Status tab.
 
-## Required for development
+## How loading works
 
-| Variable | Where used | Notes |
+- **Server variables** (no `NEXT_PUBLIC_` prefix) are available on the
+  server only. Reading one in browser code throws.
+- **Browser variables** (`NEXT_PUBLIC_*`) are built into the browser bundle.
+  Never put a secret in one.
+- **Validation.** `lib/env.ts` checks every value when it is first imported.
+  An invalid value throws an error that names the variable, for example an
+  `R2_ENDPOINT` that does not start with `https://`, a
+  `NEXT_PUBLIC_APP_URL` that does not start with `http://` or `https://`,
+  or a `SITE_PASSWORD_STATUS` other than `ON` or `OFF`.
+- **Nothing is required.** Every variable is optional or has a default. A
+  missing value never stops the app; the feature that needs it is off, and
+  its API routes answer `503`.
+- **Empty values count as unset**, so `NAME=` in `.env.local` means the
+  default applies.
+- `SKIP_ENV_VALIDATION=true` skips the checks. `pnpm lint` does this on its
+  own. Never set it in production.
+
+## Build time and runtime
+
+- `NEXT_PUBLIC_*` values are fixed when the app is built. Changing them
+  after `pnpm build` has no effect until the next build.
+- Server variables are read at runtime. On Vercel, a change only applies to
+  new deployments, so redeploy after changing one.
+- Pages that are prerendered at build time, such as the legal pages, keep
+  the values they were built with.
+
+## What each feature needs
+
+| Feature | Variables |
+|---|---|
+| Browsing and voting with browser-extension wallets | None |
+| Enjin Wallet and WalletConnect | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` |
+| Sign-in, profiles, comments, drafts, security reports | `DATABASE_URL`, plus migrations |
+| Proposal JSON, attachments, avatars | All five `R2_*` credentials and URLs, plus the database |
+| Moderation | `GOVERNANCE_ADMIN_PUBLIC_KEYS`, plus migrations `011` to `013` |
+| Automatic content checks | `ANTHROPIC_API_KEY`, migration `012`, switched on by an admin |
+| Rate limits shared across instances | `KV_REST_API_URL` and `KV_REST_API_TOKEN` |
+| Telegram notices | `TELEGRAM_BOT_TOKEN` and a chat ID |
+| A public deployment | `NEXT_PUBLIC_APP_URL`, `LEGAL_*`, `NEXT_PUBLIC_SITE_MAINTAINER`, `NEXT_PUBLIC_SOURCE_URL` |
+
+**Moderation → Status** shows admins whether the database, storage, public
+URL, rate-limit store, Telegram, content checks, legal details and
+WalletConnect are set up. It shows whether a value is present, never a
+secret.
+
+## App
+
+| Variable | Default | Notes |
 |---|---|---|
-| `NEXT_PUBLIC_APP_URL` | OpenGraph + deep-link callbacks | Defaults to `http://localhost:3000`. |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | The canonical origin of the deployment. Used for OpenGraph and WalletConnect metadata, canonical URLs, `robots.txt` and the sitemap, links in Telegram notices, the cross-site check, and as the base of every file URL (`<origin>/r/...`), including the EGOV1 pointer pinned on chain. Set it to the production domain before any real proposal is filed: a wrong value is pinned on chain for good. |
+| `NEXT_PUBLIC_DEFAULT_NETWORK` | `canary-relay` | The network the app opens on: `canary-relay` or `enjin-relay` (mainnet). Users can switch in the app. The sitemap lists this network's referenda, and only its referendum pages are indexed. |
 
-## Required for the WalletConnect / Enjin Wallet flow
+**The public-URL guard.** On Vercel's production deployment
+(`VERCEL_ENV=production`), the app refuses to build file URLs while
+`NEXT_PUBLIC_APP_URL` points at this machine: `localhost`, a `.localhost`
+name, `127.x.x.x`, `0.0.0.0` or `::1`. This usually means the variable was
+never set and fell back to its default. Staging a draft, editing a
+proposal, uploading a file and uploading an avatar then answer `503` with
+"The site's public URL isn't configured.", so a localhost URL is never
+pinned on chain (`isPublicUrlMisconfigured` in `lib/r2/client.ts`). The
+Status tab marks it as a problem. Preview deployments, local development,
+tests and hosts other than Vercel are never refused. Set the variable and
+redeploy to fix it: it is built into the app.
 
-| Variable | Where used | Notes |
+## Wallet
+
+| Variable | Default | Notes |
 |---|---|---|
-| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | `lib/wallet/connectors/walletconnect.ts` | 32-char hex from <https://cloud.reown.com>. Optional at build time - when unset, the WalletConnect and Enjin Wallet entries show as "not configured" in the connect modal but the four browser-extension wallets (Polkadot.js / Talisman / SubWallet / PolkaGate) keep working. |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | unset | Project ID from <https://cloud.reown.com>. Enables Enjin Wallet and generic WalletConnect (`lib/wallet/connectors/walletconnect.ts`). Unset, those two show as not configured and the browser-extension wallets (Polkadot.js, Talisman, SubWallet, PolkaGate) keep working. |
+| `NEXT_PUBLIC_WALLETCONNECT_RELAY_URL` | `wss://relay.walletconnect.com` | WalletConnect relay. |
 
-## Required for sign-in, profiles, comments, proposal drafts
-
-| Variable | Where used | Notes |
-|---|---|---|
-| `DATABASE_URL` | `lib/db/client.ts` | Neon pooled connection string (ends `-pooler.neon.tech`). Without it, sign-in returns 503 and the auth/profile/comments/drafts surfaces degrade gracefully. |
-| `DATABASE_URL_UNPOOLED` | migrations only | Unpooled connection string. Used by `pnpm db:migrate` because Neon's pgbouncer drops sessions mid-transaction. |
-
-## Required for proposal JSON + avatars (R2)
-
-The bucket layout (set in `lib/r2/paths.ts`) is:
-
-```
-proposals/{network}/{uuid}/proposal.json
-proposals/{network}/{uuid}/media/{filename}
-proposals/{network}/index/{referendum_index}.json
-user-avatars/{user_uuid}.png
-```
-
-| Variable | Where used | Notes |
-|---|---|---|
-| `R2_ACCOUNT_ID` | `lib/r2/client.ts` | Your Cloudflare account id. |
-| `R2_ACCESS_KEY_ID` | `lib/r2/client.ts` | R2 API token (read + write on the bucket). |
-| `R2_SECRET_ACCESS_KEY` | `lib/r2/client.ts` | Pair to the access key. |
-| `R2_BUCKET` | `lib/r2/client.ts` | Defaults to `enjin-governance`. |
-| `R2_ENDPOINT` | `lib/r2/client.ts` | `https://<account-id>.r2.cloudflarestorage.com`. |
-| `R2_PUBLIC_URL` | `lib/r2/client.ts` | Public URL serving the bucket (r2.dev domain or your custom domain). |
-
-## Optional
-
-| Variable | Where used | Notes |
-|---|---|---|
-| `SUBSCAN_API_KEY` | `lib/subscan/client.ts` | Enables call-data enrichment for very old finalised referenda. Optional: without a key, calls fall back to Subscan's public rate limits (fine for enriching one referendum at a time); an over-limit call returns null and the UI degrades gracefully. |
-| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | `lib/rate-limit.ts` | Set both (Upstash KV REST credentials) and rate limiting uses a shared store, so ceilings hold across serverless instances. The native Upstash names `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` are also accepted, so either integration works. Unset, or on a transient KV error, it falls back to a per-instance in-process store - rate limiting is never fully disabled. Any other vars the integration injects (e.g. `KV_URL`, `REDIS_URL`, `KV_REST_API_READ_ONLY_TOKEN`) are ignored. Recommended for production. |
-| `CRON_SECRET` | future cron handlers | Not currently used; reserved for any post-v1 background job. |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `lib/security/notify.ts` | Set both to also push each `/security` disclosure to a Telegram chat (e.g. a shared Enjin team group). Token from @BotFather; chat id is the group id (add the bot first). Unset = disclosures persist to the DB only. |
-
-## Site password gate
-
-Pre-launch / staging access control. The Next.js proxy (`proxy.ts`)
-redirects every unauthenticated, non-static request to `/unlock`. The
-page POSTs to `/api/unlock`, which validates the password and sets a
-signed, HTTP-only access cookie (SHA-256 of `SITE_PASSWORD`, so
-rotating the password invalidates every existing session).
+## Database (Neon Postgres)
 
 | Variable | Notes |
 |---|---|
-| `SITE_PASSWORD_STATUS` | `ON` to require the password, `OFF` (default) to disable the gate entirely. |
-| `SITE_PASSWORD` | The shared password. Required when `SITE_PASSWORD_STATUS=ON`; the gate fails closed (every unlock returns 503) when unset. |
+| `DATABASE_URL` | Pooled connection string (the host contains `-pooler`). Used for every request (`lib/db/client.ts`). Unset, sign-in answers `503`, and profiles, comments, drafts, moderation and security reports are unavailable. The rest of the app keeps working from the chain. |
+| `DATABASE_URL_UNPOOLED` | Unpooled connection string. Used only by `pnpm db:migrate` (`scripts/run-migrations.mjs`), which falls back to `DATABASE_URL`. Prefer the unpooled URL: the pooler can drop sessions during long schema changes. |
 
-## Network defaults (override if needed)
+## Storage (Cloudflare R2)
+
+Storage counts as configured only when `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT` and `R2_PUBLIC_URL` are all set
+(`lib/r2/client.ts`). Otherwise uploads and the `/r` file route answer
+`503`.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `R2_ACCOUNT_ID` | unset | Cloudflare account ID. |
+| `R2_ACCESS_KEY_ID` | unset | R2 API token with object read and write access to the bucket. |
+| `R2_SECRET_ACCESS_KEY` | unset | Secret for that token. |
+| `R2_BUCKET` | `enjin-governance` | Bucket name. |
+| `R2_ENDPOINT` | unset | `https://<account-id>.r2.cloudflarestorage.com`. Must start with `https://`. |
+| `R2_PUBLIC_URL` | unset | The bucket's own public URL (`r2.dev` or a custom domain). The app serves files through its own `/r` route, so beyond the check above this is only used to recognise older draft versions staged under the bucket's URL. If public access is off, any `https://` placeholder works. |
+
+The bucket layout (`lib/r2/paths.ts`):
+
+```
+proposals/{network}/{uuid}/proposal-{sha256 prefix}.json   one per staged version
+proposals/{network}/{uuid}/proposal.json                   drafts staged before v1.1
+proposals/{network}/{uuid}/media/{random}-{name}           attachments
+proposals/{network}/{uuid}/media/{random}-{name}.thumb.webp  image thumbnails
+proposals/{network}/index/{referendum_index}.json          referendum index to proposal
+user-avatars/{user_uuid}.png
+```
+
+## Rate limits (Upstash Redis)
+
+| Variable | Notes |
+|---|---|
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | REST URL and token of an Upstash Redis database. With both set, rate limits are counted in one shared store and hold across serverless instances (`lib/rate-limit.ts`). The names `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` also work, so either Vercel integration is fine. Other variables an integration adds (`KV_URL`, `REDIS_URL`, `KV_REST_API_READ_ONLY_TOKEN`) are ignored. Unset, or when the store fails, each instance counts on its own; limiting is never switched off. Recommended in production. |
+
+## Moderation and content checks
+
+| Variable | Notes |
+|---|---|
+| `GOVERNANCE_ADMIN_PUBLIC_KEYS` | Wallets that are always admins: SS58 addresses on any network, or `0x` public keys, separated by commas or spaces. Entries that are not valid are skipped. These admins cannot be removed in the app; they grant further moderator and admin roles in **Moderation → Roles**, which are stored in the database. Moderation needs migrations `011` to `013` (`lib/auth/roles.ts`). |
+| `ANTHROPIC_API_KEY` | Enables the automatic content checks (`lib/moderation/scan.ts`). The key alone checks nothing: an admin switches the checks on in **Moderation → Settings** and chooses the model, what is checked, how clear violations are handled and a daily limit. The settings need migration `012`. The key is used only on the server. A refused key shows as a setup problem in **Moderation → Status** (see [`DEPLOYMENT.md`](DEPLOYMENT.md#content-check-health)). |
+
+## Telegram notices
+
+All notices are best-effort: a missing configuration or a Telegram error
+never fails a request.
+
+| Variable | Notes |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather. Add the bot to each chat it should post in. |
+| `TELEGRAM_CHAT_ID` | Chat for new `/security` reports (`lib/security/notify.ts`). The report text and the reporter's contact are posted. Reports are always stored in the database as well. |
+| `TELEGRAM_MODERATION_CHAT_ID` | Chat for a short notice about each new moderation report: the kind of item, the category and a link to `/moderation`, never the reporter, their note or the content (`lib/moderation/notify.ts`). Content-check alerts (at most one a day) and the admins' test message go here too. Unset: `TELEGRAM_CHAT_ID` is used. `OFF`: no moderation notices or alerts. |
+
+Admins can check the setup with **Send test message** in **Moderation →
+Status**, which posts to the moderators' chat.
+
+## Legal pages and footer
+
+The imprint (`/imprint`), privacy policy (`/privacy`) and terms (`/terms`)
+read the operator's details from these variables (`lib/legal/operator.ts`).
+The pages are prerendered at build time, so **redeploy after changing
+any of them**.
+
+The defaults name the original maintainer. Anyone running their own
+instance must set their own details.
+
+| Variable | Notes |
+|---|---|
+| `LEGAL_OPERATOR_NAME` | Full name or company of the person responsible. Default: `NEXT_PUBLIC_SITE_MAINTAINER`. |
+| `LEGAL_OPERATOR_ADDRESS` | Optional postal address for service, for example a c/o address. Separate lines with `\|` or newlines: `Street 1 \| 12345 City \| Country`. Unset, the pages say the address is available on request by email. |
+| `LEGAL_CONTACT_EMAIL` | Contact address, also used for content reports and complaints. Default: the original maintainer's address (see `lib/env.ts`). |
+| `LEGAL_CONTACT_PHONE` | Optional. |
+| `LEGAL_VAT_ID` | Optional; only if you have one. |
+| `NEXT_PUBLIC_SITE_MAINTAINER` | Your name: the publisher in search results, and the default for `LEGAL_OPERATOR_NAME`. Default: the original maintainer's name. |
+| `NEXT_PUBLIC_SOURCE_URL` | Public repository for the AGPL source offer in the footer and the terms. Default `https://github.com/chriszemmel/enjin-governance`. Point it at your own fork if you change the code. |
+
+## Site password gate
+
+Access control for a staging or pre-launch site. `proxy.ts` sends every
+request without the access cookie to `/unlock`. The page posts to
+`/api/unlock`, which checks the password (rate-limited per IP) and sets an
+`httpOnly` cookie holding a SHA-256 hash of `SITE_PASSWORD`, valid for 7
+days. Changing the password invalidates every cookie.
+
+While the gate is on, the API and the `/r` file route are locked too, so
+EGOV1 links do not resolve for outsiders. `/unlock`, the legal pages,
+`/brand/*`, OpenGraph images, `robots.txt`, the sitemap and the manifest
+stay open, and link-preview crawlers (recognised by user agent) can read
+pages outside `/api/`. Search engines are kept out: `robots.txt` disallows
+everything and names no sitemap, the sitemap is empty, and every response
+the gate lets through carries `X-Robots-Tag: noindex`.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `SITE_PASSWORD_STATUS` | `OFF` | `ON` enables the gate. |
+| `SITE_PASSWORD` | unset | The shared password. Needed when the gate is on. If it is unset, the gate stays closed and every unlock answers `503`. |
+
+## Subscan
+
+| Variable | Notes |
+|---|---|
+| `SUBSCAN_API_KEY` | Optional key from <https://pro.subscan.io>, sent only from the server (`lib/subscan/client.ts`). Subscan is used only to decode call data for very old finalised referenda on Enjin mainnet. Without a key, Subscan's public limits apply, which is enough for one referendum at a time; a call over the limit returns nothing and the page shows less detail. |
+
+## Network endpoints and explorer links
+
+All have defaults. Override them to use a dedicated RPC provider.
 
 | Variable | Default |
 |---|---|
-| `NEXT_PUBLIC_DEFAULT_NETWORK` | `canary-relay` (set to `enjin-relay` for mainnet) |
 | `NEXT_PUBLIC_ENJIN_RELAY_WSS` | `wss://rpc.relay.blockchain.enjin.io` |
 | `NEXT_PUBLIC_ENJIN_RELAY_FALLBACK_WSS` | `wss://enjin-relay-rpc.n.dwellir.com` |
 | `NEXT_PUBLIC_ENJIN_MATRIX_WSS` | `wss://rpc.matrix.blockchain.enjin.io` |
 | `NEXT_PUBLIC_ENJIN_MATRIX_FALLBACK_WSS` | `wss://enjin-matrix-rpc.n.dwellir.com` |
 | `NEXT_PUBLIC_CANARY_RELAY_WSS` | `wss://rpc.relay.canary.enjin.io` |
 | `NEXT_PUBLIC_CANARY_MATRIX_WSS` | `wss://rpc.matrix.canary.enjin.io` |
-| `NEXT_PUBLIC_WALLETCONNECT_RELAY_URL` | `wss://relay.walletconnect.com` |
-| `NEXT_PUBLIC_ENJIN_SUBSCAN_URL` | `https://enjin.subscan.io` (deep links) |
+| `NEXT_PUBLIC_ENJIN_SUBSCAN_URL` | `https://enjin.subscan.io` |
 | `NEXT_PUBLIC_MATRIX_SUBSCAN_URL` | `https://matrix.subscan.io` |
 | `NEXT_PUBLIC_CANARY_SUBSCAN_URL` | `https://canary.subscan.io` |
 | `NEXT_PUBLIC_CANARY_MATRIX_SUBSCAN_URL` | `https://canary-matrix.subscan.io` |
 
-Archive RPCs (`wss://archive.relay.{blockchain,canary}.enjin.io`) are
-hard-wired in `lib/chain/chains.ts`. They're public and stable enough
-that pulling them into env vars buys us nothing.
+RPC URLs must start with `wss://`, explorer URLs with `https://`. The
+explorer URLs are only used for links. Archive RPCs are fixed in
+`lib/chain/chains.ts`; they are public and stable, so they are not
+configurable.
 
-## Adding a new env var
+## Adding a new variable
 
-1. Add it to `lib/env.ts` with a zod schema.
-2. Add it to `.env.example` with a comment describing what it does.
-3. Add an entry in this file.
-4. If it's client-side, prefix with `NEXT_PUBLIC_` AND declare it on
-   the `client: { … }` half of the schema in `lib/env.ts`. Both halves
-   are required for `@t3-oss/env-nextjs` to expose it to the browser.
+1. Add it to `lib/env.ts` with a Zod schema, in the `server` or `client`
+   block, and to `runtimeEnv`.
+2. A browser variable needs the `NEXT_PUBLIC_` prefix and must be declared
+   in the `client` block; `@t3-oss/env-nextjs` needs both.
+3. Add it to `.env.example` with a one-line comment.
+4. Add it to this page, and to the inventory in
+   [`HANDOVER.md`](HANDOVER.md) if it holds a secret or an account.
 
-## Build-time vs runtime
+## CI and tests
 
-- `NEXT_PUBLIC_*` vars are **inlined at build time**. Changing them in
-  `.env.local` after `pnpm build` has no effect on the built artifacts.
-- Server-side vars are **read at runtime** from the process environment.
-  On Vercel, set them in the project settings; they apply on next deploy.
+CI (`.github/workflows/ci.yml`) builds with only `NEXT_PUBLIC_APP_URL` set.
+Every other variable is optional or has a default, so the build needs
+nothing else. The **Verify** job builds with `http://localhost:3000`. The
+**Browser tests** job builds with `http://localhost:3100`, the origin the
+Playwright tests run the production server on.
 
-## CI
+`pnpm test` needs no variables: the database tests use an in-process
+PGlite database, and the route tests replace the other services with
+in-memory fakes. The browser tests read a few variables of their own, in
+`playwright.config.ts` and `e2e/support/`, never in the app:
 
-CI runs the build with placeholder values for the variables that must
-be present for `next build` to succeed. See `.github/workflows/ci.yml`.
+| Variable | Effect |
+|---|---|
+| `E2E_SKIP_BUILD` | Any non-empty value: start the last build instead of building first. CI sets it, because it builds in its own step. That build must have been made with `NEXT_PUBLIC_APP_URL=http://localhost:3100`. |
+| `E2E_WS_RELAY` | `0`: the browser connects to the Canary RPC directly instead of through Node. |
+| `PW_CHROMIUM_PATH` | Path to a Chromium binary, for when Playwright's own download isn't available. |
+| `CI` | Set by GitHub Actions: retries each failed test twice, runs two workers and never reuses a running server. |
 
 ## See also
 
-- [`DEPLOYMENT.md`](DEPLOYMENT.md) - Vercel env vars + R2 + Neon setup
-- [`WALLET_INTEGRATION.md`](WALLET_INTEGRATION.md) - WC project ID setup
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) - setting up Vercel, Neon, R2, Reown and the optional services
+- [`HANDOVER.md`](HANDOVER.md) - secrets inventory and accounts
+- [`WALLET_INTEGRATION.md`](WALLET_INTEGRATION.md) - WalletConnect project setup

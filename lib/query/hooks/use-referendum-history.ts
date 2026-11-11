@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
-import { getReferendumHistory } from "@/lib/governance/referenda"
+import { getReferendumHistory, type ReferendaPallet } from "@/lib/governance/referenda"
 import type { Referendum } from "@/lib/governance/types"
 import { useArchiveApi } from "./use-archive-api"
 
@@ -22,15 +22,16 @@ export function useReferendumHistory(
   index: number,
   atBlock: number | null | undefined,
   chain?: ChainConfig,
+  pallet: ReferendaPallet = "referenda",
 ) {
   const active = useActiveChain()
   const target = chain ?? active
   const apiQuery = useArchiveApi(target)
   return useQuery<Referendum | null>({
-    queryKey: ["referendum-history", target.id, index, atBlock],
+    queryKey: ["referendum-history", target.id, pallet, index, atBlock],
     queryFn: () => {
       if (!apiQuery.data || atBlock == null) return null
-      return getReferendumHistory(apiQuery.data, index, atBlock)
+      return getReferendumHistory(apiQuery.data, index, atBlock, pallet)
     },
     enabled: apiQuery.isSuccess && atBlock != null && atBlock > 1,
     staleTime: Infinity,

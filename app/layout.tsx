@@ -7,6 +7,8 @@ import { QueryProvider } from "@/lib/query/provider"
 import { WalletRestoreMounter } from "@/lib/wallet/restore-mounter"
 import { env } from "@/lib/env"
 import { APP_DESCRIPTION, APP_NAME, APP_TITLE } from "@/lib/config"
+import { JsonLd, siteJsonLd } from "@/lib/seo/json-ld"
+import { OPEN_GRAPH_BASE, TITLE_TEMPLATE } from "@/lib/seo/metadata"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -23,7 +25,7 @@ export const metadata: Metadata = {
   // template renders as "Proposals | Enjin Governance".
   title: {
     default: APP_TITLE,
-    template: `%s | ${APP_NAME}`,
+    template: TITLE_TEMPLATE,
   },
   description: APP_DESCRIPTION,
   applicationName: APP_NAME,
@@ -43,18 +45,14 @@ export const metadata: Metadata = {
   icons: {
     icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
   },
-  openGraph: {
-    type: "website",
-    locale: "en_US",
-    siteName: APP_NAME,
-    title: APP_TITLE,
-    description: APP_DESCRIPTION,
-    url: env.NEXT_PUBLIC_APP_URL,
-  },
+  // No title, description or url here: Next fills og:title/description and
+  // the Twitter ones from each page's own title and description, and the
+  // image from the nearest opengraph-image. Setting them here would give
+  // every page the home page's preview (and og:url would point shares of
+  // any page at the home page).
+  openGraph: OPEN_GRAPH_BASE,
   twitter: {
     card: "summary_large_image",
-    title: APP_TITLE,
-    description: APP_DESCRIPTION,
   },
   robots: {
     index: true,
@@ -87,6 +85,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Toaster />
           </QueryProvider>
         </ThemeProvider>
+        {/* Names the site and its publisher for search engines. */}
+        <JsonLd data={siteJsonLd()} />
       </body>
     </html>
   )

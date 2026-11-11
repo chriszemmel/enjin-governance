@@ -29,6 +29,7 @@ import { shortenAddress } from "@/lib/chain/ss58"
 import { TREASURY_SPEND_ORIGINS } from "@/lib/governance/treasury"
 import { canonicalTrackName } from "@/lib/governance/tracks"
 import { useBalance } from "@/lib/query/hooks/use-balance"
+import { useDecidedTracks } from "@/lib/query/hooks/use-decided-tracks"
 import { useMyDrafts } from "@/lib/query/hooks/use-my-drafts"
 import { useReferenda } from "@/lib/query/hooks/use-referenda"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
@@ -72,12 +73,21 @@ export default function TreasuryPage() {
   )
   const trackById = new Map(tracksByName.map((t) => [t.id, t]))
   const allReferenda = referendaQuery.data ?? []
+  // A decided referendum no longer carries its track on chain; read it
+  // from the archive, or every approved and rejected spend drops out here.
+  const decidedTracks = useDecidedTracks(allReferenda)
+  const trackOf = (r: (typeof allReferenda)[number]) =>
+    r.trackId ?? decidedTracks.tracks.get(r.index) ?? null
   const tracksReady = !tracksQuery.isPending && tracksByName.length > 0
   const treasuryReferenda = tracksReady
-    ? allReferenda.filter(
-        (r) => r.trackId != null && treasuryTrackIds.has(r.trackId),
-      )
+    ? allReferenda.filter((r) => {
+        const id = trackOf(r)
+        return id != null && treasuryTrackIds.has(id)
+      })
     : allReferenda
+  const decidedCounting = referendaQuery.isPending || decidedTracks.pending
+  // Without the archive the decided ones can't be sorted by track: say "-"
+  // rather than a count that leaves them out.
 
   const active = treasuryReferenda.filter((r) => r.status.type === "Ongoing")
   const approved = treasuryReferenda.filter((r) => r.status.type === "Approved")
@@ -133,7 +143,7 @@ export default function TreasuryPage() {
                 <Wallet className="w-4 h-4 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">Treasury balance</p>
                 {chain.isTestnet && (
-                  <span className="text-[10px] uppercase tracking-wider text-amber-400 border border-amber-500/40 rounded-full px-1.5 py-0.5">
+                  <span className="text-[10px] uppercase tracking-wider text-amber-800 dark:text-amber-400 border border-amber-500/40 rounded-full px-1.5 py-0.5">
                     Testnet
                   </span>
                 )}
@@ -197,17 +207,17 @@ export default function TreasuryPage() {
             <StatCard
               label="Approved"
               icon={CheckCircle2}
-              value={referendaQuery.isPending ? null : String(approved.length)}
+              value={decidedCounting ? null : decidedTracks.failed ? "-" : String(approved.length)}
             />
             <StatCard
               label="Rejected"
               icon={XCircle}
-              value={referendaQuery.isPending ? null : String(rejected.length)}
+              value={decidedCounting ? null : decidedTracks.failed ? "-" : String(rejected.length)}
             />
             <StatCard
               label="Total tracked"
               icon={TrendingUp}
-              value={referendaQuery.isPending ? null : String(treasuryReferenda.length)}
+              value={decidedCounting ? null : decidedTracks.failed ? "-" : String(treasuryReferenda.length)}
             />
           </div>
 
@@ -232,7 +242,7 @@ export default function TreasuryPage() {
                   <ProposalCard
                     key={r.index}
                     referendum={r}
-                    track={r.trackId != null ? trackById.get(r.trackId) : null}
+                    track={trackById.get(trackOf(r) ?? -1) ?? null}
                     metadata={metadataQuery.data?.get(r.index) ?? null}
                     metadataPending={metadataQuery.isLoading}
                   />
@@ -274,7 +284,7 @@ export default function TreasuryPage() {
                   <ProposalCard
                     key={r.index}
                     referendum={r}
-                    track={r.trackId != null ? trackById.get(r.trackId) : null}
+                    track={trackById.get(trackOf(r) ?? -1) ?? null}
                     metadata={metadataQuery.data?.get(r.index) ?? null}
                     metadataPending={metadataQuery.isLoading}
                   />
@@ -299,9 +309,11 @@ export default function TreasuryPage() {
                   <code className="font-mono text-foreground">referenda.submit</code>.
                 </li>
                 <li>
-                  Submission reserves a small refundable deposit; the per-track
-                  decision deposit is larger and also refundable on outcome.
-                  Both amounts are read live from the chain on each proposal.
+                  Submission reserves a deposit that comes back only if the
+                  referendum is approved or cancelled. The per-track decision
+                  deposit, needed before deciding starts, can be placed by
+                  anyone and is refundable once the referendum concludes. Both
+                  amounts are read live from the chain.
                 </li>
                 <li>
                   Approved spends are paid to the beneficiary automatically

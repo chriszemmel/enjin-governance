@@ -11,6 +11,8 @@ type FooterProps = {
   missingReasons: string[]
   staging: boolean
   tx: ReturnType<typeof useExtrinsic>
+  /** A retry found the earlier attempt's referendum on chain: done, nothing signed. */
+  landed?: boolean
   isConnected: boolean
   isWalletConnect: boolean
   peerRedirect: string | null
@@ -24,6 +26,7 @@ type FooterProps = {
 export function WizardFooter(p: FooterProps) {
   const onSign = p.step === "submit"
   const txKind = p.tx.status.kind
+  const done = txKind === "finalized" || !!p.landed
   const signError = onSign && txKind === "error"
   const signWaiting = onSign && (txKind === "signing" || txKind === "broadcast")
   // Allow going back to Stage from Sign when the user can't / won't sign
@@ -60,7 +63,7 @@ export function WizardFooter(p: FooterProps) {
       <button
         type="button"
         onClick={p.onBack}
-        disabled={!canBack || p.step === "create" || p.tx.status.kind === "finalized"}
+        disabled={!canBack || p.step === "create" || done}
         className="px-5 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-purple-border transition-all disabled:opacity-30 disabled:cursor-not-allowed"
       >
         Back
@@ -126,7 +129,7 @@ export function WizardFooter(p: FooterProps) {
           </button>
         )}
 
-        {p.tx.status.kind === "finalized" && (
+        {done && (
           <button
             type="button"
             onClick={p.onView}

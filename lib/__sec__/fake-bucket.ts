@@ -5,14 +5,38 @@
  */
 import { createHash } from "node:crypto"
 
-export type BucketEntry = { body: string; contentType: string }
+/**
+ * `sha256` is the hash recorded at upload (object metadata): computed from
+ * the body when absent, and null for a file stored before hashes were
+ * recorded. `bytes` holds the exact bytes of a binary upload (putObject),
+ * which a utf8 `body` string can't; `cacheControl` is what the upload set.
+ */
+export type BucketEntry = {
+  body: string
+  contentType: string
+  sha256?: string | null
+  bytes?: Buffer
+  cacheControl?: string
+}
 
 export const bucket = new Map<string, BucketEntry>()
 export const deleteCalls: string[][] = []
+/** Every key putObject wrote, in order. */
+export const putCalls: string[] = []
+/** Make HEAD requests (stat) or uploads (put) fail, as when storage can't be reached. */
+export const faults = { stat: false, put: false }
 
 export function resetBucket(): void {
   bucket.clear()
   deleteCalls.length = 0
+  putCalls.length = 0
+  faults.stat = false
+  faults.put = false
+}
+
+/** The stored bytes of an entry, binary uploads included. */
+export function bytesOf(entry: BucketEntry): Buffer {
+  return entry.bytes ?? Buffer.from(entry.body, "utf8")
 }
 
 function sha256Hex(s: string): string {
@@ -56,9 +80,17 @@ export async function putObject(args: {
   key: string
   body: Uint8Array | Buffer
   contentType: string
+  cacheControl?: string
 }): Promise<PutObjectResult> {
+  if (faults.put) throw new Error("storage unreachable")
   const body = Buffer.from(args.body)
-  bucket.set(args.key, { body: body.toString("utf8"), contentType: args.contentType })
+  putCalls.push(args.key)
+  bucket.set(args.key, {
+    body: body.toString("utf8"),
+    contentType: args.contentType,
+    bytes: body,
+    ...(args.cacheControl ? { cacheControl: args.cacheControl } : {}),
+  })
   return {
     key: args.key,
     url: `https://fake.local/r/${args.key}`,
@@ -72,3 +104,37 @@ export async function deleteObjects(keys: string[]): Promise<void> {
   deleteCalls.push(unique)
   for (const k of unique) bucket.delete(k)
 }
+
+export async function readObjectText(key: string): Promise<string | null> {
+  return bucket.get(key)?.body ?? null
+}
+
+export async function listObjectKeys(prefix: string): Promise<string[]> {
+  return [...bucket.keys()].filter((k) => k.startsWith(prefix))
+}
+
+export async function objectExists(key: string): Promise<boolean> {
+  return bucket.has(key)
+}
+
+export async function statObject(
+  key: string,
+): Promise<{ sizeBytes: number; contentType: string | null; sha256: string | null } | null> {
+  if (faults.stat) throw new Error("storage unreachable")
+  const entry = bucket.get(key)
+  if (!entry) return null
+  const bytes = bytesOf(entry)
+  return {
+    sizeBytes: bytes.byteLength,
+    contentType: entry.contentType,
+    sha256:
+      entry.sha256 === undefined ? createHash("sha256").update(bytes).digest("hex") : entry.sha256,
+  }
+}
+
+export async function readObjectBytes(key: string): Promise<Buffer | null> {
+  const entry = bucket.get(key)
+  return entry ? bytesOf(entry) : null
+}
+
+export { sha256Hex }

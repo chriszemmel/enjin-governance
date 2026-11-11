@@ -6,7 +6,13 @@
 
 import "server-only"
 import { createHash } from "node:crypto"
-import { DeleteObjectsCommand, PutObjectCommand } from "@aws-sdk/client-s3"
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3"
 import { getR2Client, r2Bucket, publicAssetBase } from "./client"
 import { stringifyStable } from "./json"
 import { publicUrlFor } from "./paths"
@@ -36,6 +42,9 @@ export function sha256Hex(bytes: Uint8Array | Buffer): string {
 
 export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
   const client = getR2Client()
+  // Built first: if the site's public URL isn't configured this throws
+  // before anything is written, rather than leaving an orphan object.
+  const url = publicUrlFor(publicAssetBase(), args.key)
   const body = args.body
   const sha256 = sha256Hex(body)
   await client.send(
@@ -46,11 +55,14 @@ export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
       ContentType: args.contentType,
       CacheControl: args.cacheControl ?? "public, max-age=31536000, immutable",
       ChecksumSHA256: Buffer.from(sha256, "hex").toString("base64"),
+      // Kept with the object so a later save can check the hash a
+      // proposal claims for it without downloading it (statObject).
+      Metadata: { sha256 },
     }),
   )
   return {
     key: args.key,
-    url: publicUrlFor(publicAssetBase(), args.key),
+    url,
     sha256,
     sizeBytes: body.byteLength,
   }
@@ -61,18 +73,34 @@ export async function putObject(args: PutObjectArgs): Promise<PutObjectResult> {
  * R2 objects (proposal.json + attachments) don't linger. Only deletable rows
  * (drafts / cancelled / failed) reach this - never an on-chain proposal whose
  * URL a finalised remark pins - so removing the objects is safe. De-dupes,
- * ignores empties, and tolerates up to 1000 keys per call (the S3 limit).
+ * ignores empties, and sends at most 1000 keys per request (the S3 limit).
  */
 export async function deleteObjects(keys: string[]): Promise<void> {
   const unique = [...new Set(keys.filter(Boolean))]
-  if (unique.length === 0) return
   const client = getR2Client()
-  await client.send(
-    new DeleteObjectsCommand({
-      Bucket: r2Bucket(),
-      Delete: { Objects: unique.map((Key) => ({ Key })), Quiet: true },
-    }),
-  )
+  // DeleteObjects takes at most 1000 keys per request.
+  for (let i = 0; i < unique.length; i += 1000) {
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: r2Bucket(),
+        Delete: { Objects: unique.slice(i, i + 1000).map((Key) => ({ Key })), Quiet: true },
+      }),
+    )
+  }
+}
+
+/** Every key under a prefix (a proposal's folder holds a handful). */
+export async function listObjectKeys(prefix: string): Promise<string[]> {
+  const keys: string[] = []
+  let token: string | undefined
+  do {
+    const res = await getR2Client().send(
+      new ListObjectsV2Command({ Bucket: r2Bucket(), Prefix: prefix, ContinuationToken: token }),
+    )
+    for (const o of res.Contents ?? []) if (o.Key) keys.push(o.Key)
+    token = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (token && keys.length < 5_000)
+  return keys
 }
 
 /**
@@ -95,4 +123,64 @@ export async function putJson(
     // making readers wait an hour to pick up a proposer edit.
     cacheControl: "public, max-age=30, must-revalidate",
   })
+}
+
+/** Read a stored object as text, or null when it doesn't exist. */
+export async function readObjectText(key: string): Promise<string | null> {
+  try {
+    const res = await getR2Client().send(new GetObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    return res.Body ? await res.Body.transformToString("utf-8") : null
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    if (name === "NoSuchKey" || name === "NotFound") return null
+    throw err
+  }
+}
+
+export type StoredObjectInfo = {
+  sizeBytes: number
+  contentType: string | null
+  /** Recorded at upload; null for files stored before that was done. */
+  sha256: string | null
+}
+
+/** Size, type and recorded hash of an object (HEAD), or null if it doesn't exist. */
+export async function statObject(key: string): Promise<StoredObjectInfo | null> {
+  try {
+    const res = await getR2Client().send(new HeadObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    const sha256 = res.Metadata?.sha256
+    return {
+      sizeBytes: res.ContentLength ?? 0,
+      contentType: res.ContentType ?? null,
+      sha256: sha256 && /^[0-9a-f]{64}$/.test(sha256) ? sha256 : null,
+    }
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    if (name === "NotFound" || name === "NoSuchKey") return null
+    throw err
+  }
+}
+
+/** Read a stored object's bytes, or null when it doesn't exist. */
+export async function readObjectBytes(key: string): Promise<Buffer | null> {
+  try {
+    const res = await getR2Client().send(new GetObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    return res.Body ? Buffer.from(await res.Body.transformToByteArray()) : null
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    if (name === "NoSuchKey" || name === "NotFound") return null
+    throw err
+  }
+}
+
+/** Whether an object exists (HEAD request). */
+export async function objectExists(key: string): Promise<boolean> {
+  try {
+    await getR2Client().send(new HeadObjectCommand({ Bucket: r2Bucket(), Key: key }))
+    return true
+  } catch (err) {
+    const name = (err as { name?: string } | null)?.name
+    if (name === "NotFound" || name === "NoSuchKey") return false
+    throw err
+  }
 }

@@ -31,6 +31,8 @@ export type DetectionState = "installed" | "not-installed" | "n/a"
 export type ConnectOptions = {
   /** Called as soon as the connector knows how to display itself in the modal. */
   onUri?: (uri: string) => void
+  /** WalletConnect: the relay has the connection request, so the wallet will find it. */
+  onReady?: () => void
 }
 
 export interface Connector {
@@ -45,13 +47,4 @@ export interface Connector {
   getSigner(session: ConnectedSession, address: string): Promise<Signer>
   /** Re-hydrate a previously-persisted session. Returns null when unavailable. */
   restore(): Promise<ConnectedSession | null>
-  /**
-   * Synchronously open the wallet app on mobile so the upcoming sign
-   * request appears in the foreground. Must be invoked from inside a
-   * user-gesture event handler (a click), BEFORE any await - iOS
-   * Safari only honours `<a>.click()` deep links while the gesture
-   * token is still alive. Connectors that don't need it (browser
-   * extensions on desktop) implement it as a no-op.
-   */
-  wakeWallet?(session: ConnectedSession): void
 }

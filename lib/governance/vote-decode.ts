@@ -1,13 +1,15 @@
 /**
  * Decode Enjin / Substrate vote primitives.
  *
- * `vote` byte (in `voteManager.vote` extrinsics, standard variant):
+ * `vote` byte (in `convictionVoting.vote` extrinsics - Enjin's multi-token
+ * fork; `voteManager` on runtimes that have it - standard variant):
  *   bit 7 (0x80) → aye flag (1 = Aye, 0 = Nay)
  *   bits 0-2     → conviction enum (0=None … 6=Locked6x)
  *
  * `currency` arg (Enjin-specific extension to AccountVote):
  *   { Enj: null }                - liquid ENJ
- *   { SEnj: <poolId> }           - staked ENJ from pool #poolId
+ *   { SEnj: { tokenId } }        - staked ENJ from pool #tokenId
+ *                                  (Subscan flattens it to { SEnj: <id> })
  *
  * Subscan tends to return `vote` either as a raw u8 ("130"), a string
  * label ("Aye" / "Nay"), or an object like { aye: true, conviction: 2 }.
@@ -19,6 +21,7 @@ import {
   CONVICTION_LOCK_PERIODS,
   CONVICTION_MULTIPLIER,
   type Conviction,
+  type VoteRecord,
 } from "@/lib/governance/types"
 
 type DecodedVote = {
@@ -34,6 +37,17 @@ type VoteCurrencyDecoded =
   | { kind: "Enj" }
   | { kind: "SEnj"; poolId: number }
   | { kind: "Unknown" }
+
+/**
+ * A SplitAbstain vote with nothing on aye or nay - what the panel's
+ * Abstain button casts. It counts toward support only and carries no
+ * conviction.
+ */
+export function isPureAbstain(
+  vote: VoteRecord,
+): vote is Extract<VoteRecord, { type: "SplitAbstain" }> {
+  return vote.type === "SplitAbstain" && vote.aye === 0n && vote.nay === 0n
+}
 
 export function convictionFromByte(byte: number): Conviction {
   // Conviction lives in bits 0-2 (the aye flag is bit 7).
