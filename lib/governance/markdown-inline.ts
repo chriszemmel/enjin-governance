@@ -3,8 +3,9 @@
  * into a small tree the renderer maps onto React elements.
  *
  * Supported: `code`, [label](url), <url>, ![alt](target), **bold**,
- * *italic*, and bare SS58 addresses (checksum-validated) which the
- * renderer shows as compact chips. Pure and dependency-light so it can be
+ * *italic*, and SS58 addresses (checksum-validated), bare or alone in a
+ * code span, which the renderer shows as compact chips. Pure and
+ * dependency-light so it can be
  * unit tested; nothing here produces HTML strings.
  */
 
@@ -30,6 +31,7 @@ export function isSafeUrl(url: string): boolean {
 const BASE58 = "1-9A-HJ-NP-Za-km-z"
 // A 32-byte account with a 1- or 2-byte SS58 prefix encodes to 46-50 chars.
 const ADDRESS_RE = new RegExp(`(?<![${BASE58}])[${BASE58}]{46,50}(?![${BASE58}])`, "g")
+const ADDRESS_ONLY_RE = new RegExp(`^[${BASE58}]{46,50}$`)
 
 /** Split plain text into text and address nodes. */
 function splitAddresses(text: string, out: InlineNode[]) {
@@ -84,7 +86,15 @@ export function parseInline(text: string, opts: Options = {}): InlineNode[] {
       const end = text.indexOf("`", i + 1)
       if (end > i) {
         flush()
-        out.push({ kind: "code", text: text.slice(i + 1, end) })
+        const code = text.slice(i + 1, end)
+        // People wrap an address in backticks so it stays in one piece. A
+        // span that is exactly one valid address is still an address.
+        const only = code.trim()
+        if (!opts.inLink && ADDRESS_ONLY_RE.test(only) && isValidSs58(only)) {
+          out.push({ kind: "address", address: only })
+        } else {
+          out.push({ kind: "code", text: code })
+        }
         i = end + 1
         continue
       }

@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1217%20passing-22c55e?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-1218%20passing-22c55e?style=flat-square" />
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
@@ -392,8 +392,8 @@
 |---|---|
 | TypeScript source files (excl. vendored shadcn and tests) | **~340** |
 | Docs files | **7** |
-| Unit tests | **1217** (104 files), including route tests and database tests against PGlite |
-| Browser tests | **28** (Playwright, against the production build) |
+| Unit tests | **1218** (104 files), including route tests and database tests against PGlite |
+| Browser tests | **29** (Playwright, against the production build) |
 | Test coverage (lines) | **88%** of API routes, **81%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and components are covered by the browser tests, not by unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov, spec 1080) plus the 2 **Matrix** chains, registered but not enabled yet (planned for 2.1). Dedicated archive RPCs per chain. |
@@ -464,7 +464,7 @@ pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm format:check # Prettier --check
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (1217 tests)
+pnpm test         # Vitest (1218 tests)
 pnpm test:watch   # Vitest watch
 pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
 

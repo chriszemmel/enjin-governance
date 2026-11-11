@@ -44,8 +44,22 @@ describe("parseInline", () => {
     expect(parseInline(`${EN}abc`)).toEqual([{ kind: "text", text: `${EN}abc` }])
   })
 
-  it("keeps addresses complete inside code spans and link labels", () => {
-    expect(parseInline(`\`${EN}\``)).toEqual([{ kind: "code", text: EN }])
+  it("shows a code span that is exactly one address as an address", () => {
+    expect(parseInline(`\`${EN}\``)).toEqual([{ kind: "address", address: EN }])
+    expect(parseInline(`to \` ${CN} \` now`)).toEqual([
+      { kind: "text", text: "to " },
+      { kind: "address", address: CN },
+      { kind: "text", text: " now" },
+    ])
+  })
+
+  it("keeps other code spans and link labels as written", () => {
+    // More than the address, a broken checksum, or an EVM address: still code.
+    expect(parseInline(`\`send ${EN}\``)).toEqual([{ kind: "code", text: `send ${EN}` }])
+    const broken = EN.slice(0, -1) + (EN.endsWith("X") ? "Y" : "X")
+    expect(parseInline(`\`${broken}\``)).toEqual([{ kind: "code", text: broken }])
+    const evm = "0x3e1f952c0167305996105df78c4d84afbca0e000"
+    expect(parseInline(`\`${evm}\``)).toEqual([{ kind: "code", text: evm }])
     expect(parseInline(`[${EN}](/user/${EN})`)).toEqual([
       { kind: "link", href: `/user/${EN}`, children: [{ kind: "text", text: EN }] },
     ])
