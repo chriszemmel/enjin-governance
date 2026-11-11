@@ -72,31 +72,39 @@ async function importAndInit() {
     if (isRelayRefusal(lastRelayError)) for (const l of [...refusalListeners]) l(lastRelayError)
   })
 
-  // Kick the relay socket awake the moment the dapp tab regains
-  // visibility. iOS Safari aggressively suspends background JS - when
-  // the user goes over to the wallet to sign, our WC WebSocket
-  // disconnects. The SDK reconnects on its own, but the post-suspend
-  // resync often takes 5-10 s before any pending response from the
-  // relay (i.e. the wallet's signature) is actually delivered to the
-  // dapp side. That's the long "nothing happens after I sign" gap.
-  // Pinging every active session topic on visibilitychange forces the
-  // transport to come up immediately so buffered responses land
-  // straight away.
+  // Back from the wallet app. iOS suspends a page in the background and
+  // its relay socket dies without a close event, so after more than a
+  // moment away the socket is replaced outright (see refreshRelay); the
+  // relay then hands over what arrived meanwhile, the wallet's signature
+  // included. After a short absence a ping is enough to wake it.
   if (typeof document !== "undefined") {
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible") return
-      try {
-        for (const session of client.session.getAll()) {
-          client.ping({ topic: session.topic }).catch(() => {
-            /* relay down - SDK will reconnect on its own */
-          })
+    const resume = () => {
+      const refreshed = onPageVisible(client)
+      if (!refreshed) {
+        try {
+          for (const session of client.session.getAll()) {
+            client.ping({ topic: session.topic }).catch(() => {
+              /* relay down - SDK will reconnect on its own */
+            })
+          }
+        } catch {
+          /* defensive - session store may not be ready yet */
         }
-      } catch {
-        /* defensive - session store may not be ready yet */
       }
-      // Back from the wallet: a deletion sent meanwhile arrives once the
-      // socket is up again, so look again a moment later.
-      setTimeout(() => sweepGone(client), SETTLE_MS)
+      // A deletion sent meanwhile arrives once the socket is up again, so
+      // look again a moment later.
+      void relayRefresh().then(() => setTimeout(() => sweepGone(client), SETTLE_MS))
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") onPageHidden()
+      else resume()
+    })
+    // Restored from the back/forward cache: the page was frozen, however
+    // long ago that was.
+    window.addEventListener("pageshow", (e) => {
+      if (!e.persisted) return
+      onPageHidden(0)
+      resume()
     })
   }
 
@@ -146,6 +154,68 @@ export function sweepGone(client: SessionListLike, now = Date.now()): void {
     if (!s) announceGone(topic, "deleted")
     else if (s.expiry * 1000 <= now) announceGone(topic, "expired")
   }
+}
+
+/** Hidden for at least this long, the relay socket is not trusted on return. */
+const STALE_AFTER_HIDDEN_MS = 2_000
+/** When the page went to the background (ms), or null while it is in front. */
+let hiddenSince: number | null = null
+/** The relay restart in progress, if any. */
+let refreshing: Promise<void> | null = null
+
+type RelayRestartLike = { core: { relayer: { restartTransport(): Promise<void> } } }
+type RelayWorkLike = RelayRestartLike & {
+  session: { getAll(): unknown[] }
+  proposal: { getAll(): unknown[] }
+}
+
+/**
+ * Replace the relay socket with a new one. A socket that died while the
+ * page was suspended still looks connected, and in a browser the SDK only
+ * finds out when a publish goes unanswered for 15 s (its ping timeout runs
+ * in Node only): until then nothing is sent and nothing arrives. A new
+ * socket takes about a second, and the relay delivers what was waiting.
+ * One restart at a time; never throws.
+ */
+export function refreshRelay(client: RelayRestartLike, timeoutMs = 6_000): Promise<void> {
+  refreshing ??= withTimeout(
+    Promise.resolve().then(() => client.core.relayer.restartTransport()),
+    timeoutMs,
+    "relay restart timed out",
+  )
+    .catch(() => undefined)
+    .finally(() => {
+      refreshing = null
+    })
+  return refreshing
+}
+
+/** Resolves once no relay restart is in progress. */
+export function relayRefresh(): Promise<void> {
+  return refreshing ?? Promise.resolve()
+}
+
+/** The page went to the background. */
+export function onPageHidden(now = Date.now()): void {
+  hiddenSince = now
+}
+
+/**
+ * The page is in front again. Restarts the relay socket when it was away
+ * long enough for the socket to have died and there is something to wait
+ * for (a session, or a connection being approved). Returns whether it did.
+ */
+export function onPageVisible(client: RelayWorkLike, now = Date.now()): boolean {
+  const away = hiddenSince == null ? 0 : now - hiddenSince
+  hiddenSince = null
+  if (away < STALE_AFTER_HIDDEN_MS) return false
+  try {
+    if (client.session.getAll().length === 0 && client.proposal.getAll().length === 0) return false
+  } catch {
+    return false
+  }
+  void refreshRelay(client)
+  return true
 }
 
 /** Watch `topic`: listeners hear when the wallet ends it. */
@@ -568,6 +638,24 @@ export async function redeliverRequest(
   return true
 }
 
+/** When an unacknowledged sign request is sent again over a new socket. */
+const RESEND_UNACKNOWLEDGED_AFTER_MS = [4_000, 11_000] as const
+
+/**
+ * A sign request the relay has not acknowledged: replace the socket, then
+ * publish the same request again, unless the acknowledgement came in the
+ * meantime. Never throws.
+ */
+export async function resendOverNewSocket(
+  client: RelayRestartLike,
+  acknowledged: () => boolean,
+  redeliver: () => Promise<boolean>,
+): Promise<boolean> {
+  await refreshRelay(client)
+  if (acknowledged()) return false
+  return redeliver().catch(() => false)
+}
+
 function buildSigner(
   signClient: SignClientType,
   topic: string,
@@ -604,23 +692,48 @@ function buildSigner(
   // `relayer_publish` event naming the topic it went to.
   const send = async (request: { method: string; params: unknown }) => {
     suppressInternalRedirect()
-    const relayer = signClient.core.relayer
-    // The JSON-RPC id the request went out under (session_request_sent),
-    // so a later tap can send that same request again.
+    // A socket restart begun when the page came back finishes first: a
+    // request put on the old socket would sit there for 15 s.
+    await relayRefresh()
+    const core = signClient.core
+    const relayer = core.relayer
+    const known = new Set(core.history.pending.map((p) => String(p.request.id)))
+    // The JSON-RPC id the request went out under, so it can be sent again
+    // as the same request: from session_request_sent, or, while the first
+    // publish is still unanswered, from the client's request history.
     let requestId: string | null = null
-    const redeliver = () =>
-      requestId ? redeliverRequest(signClient, topic, requestId) : Promise.resolve(false)
+    const ownId = (): string | null => {
+      if (requestId) return requestId
+      const record = core.history.pending.find(
+        (p) => p.topic === topic && !known.has(String(p.request.id)),
+      )
+      return record ? String(record.request.id) : null
+    }
+    const redeliver = () => {
+      const id = ownId()
+      return id ? redeliverRequest(signClient, topic, id) : Promise.resolve(false)
+    }
     const onSent = (e: { topic?: string; id?: number | string } | undefined) => {
       if (!requestId && e?.topic === topic && e.id !== undefined) requestId = String(e.id)
     }
+    let acknowledged = false
     const onPublish = (e: { params?: { topic?: string } } | undefined) => {
-      if (e?.params?.topic === topic) markRequestDelivered(topic, redeliver)
+      if (e?.params?.topic !== topic) return
+      acknowledged = true
+      markRequestDelivered(topic, redeliver)
     }
     signClient.on("session_request_sent", onSent)
     relayer.on("relayer_publish", onPublish)
-    // Should the SDK ever publish without that event, the link must not
-    // stay held back: by then the request has gone out anyway.
-    const fallback = setTimeout(() => markRequestDelivered(topic, redeliver), 4_000)
+    // The wallet link stays held back until the relay acknowledged the
+    // request. Without an acknowledgement after a few seconds the socket
+    // is most likely dead: take a new one and send the same request over
+    // it. Its acknowledgement releases the link.
+    const retries = RESEND_UNACKNOWLEDGED_AFTER_MS.map((ms) =>
+      setTimeout(() => {
+        if (acknowledged) return
+        void resendOverNewSocket(signClient, () => acknowledged, redeliver)
+      }, ms),
+    )
     try {
       return await signClient.request<{ signature: `0x${string}` }>({
         topic,
@@ -628,7 +741,7 @@ function buildSigner(
         request,
       })
     } finally {
-      clearTimeout(fallback)
+      retries.forEach(clearTimeout)
       signClient.off("session_request_sent", onSent)
       relayer.off("relayer_publish", onPublish)
       clearRequestDelivered(topic)

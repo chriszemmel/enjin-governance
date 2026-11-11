@@ -161,6 +161,14 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   without naming the session, which made Enjin Wallet fetch a request
   twice. Tapping again after coming back without an answer re-sends the
   same request (same id, never a second one).
+- **Back from the wallet on iOS:** the page's connection to the
+  WalletConnect relay can die while the page is in the background, without
+  anyone noticing for 15 seconds or more. A signature given in the wallet
+  then showed up late, and the next request did not reach the wallet at
+  all, although the button had released itself after four seconds. Coming
+  back to the page now replaces the connection, an unacknowledged request
+  is sent again over a new one, and the button waits for the relay's
+  acknowledgement.
 - **Sessions the wallet ended:** when the site is removed from the
   wallet's connected apps, or the session expires, the page shows the
   wallet as disconnected and says so, instead of sending requests nobody

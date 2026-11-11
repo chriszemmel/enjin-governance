@@ -149,10 +149,14 @@ Details that matter:
   cached client, so the retry starts clean. This recovers from a stale
   store, which has been seen to stop iOS Safari from ever producing a URI.
   `approval()` has no limit: the user takes as long as they need.
-- When the tab becomes visible again, the client pings every session. iOS
-  Safari suspends the relay socket while the user is in the wallet, and the
-  ping brings it back at once, so a finished signature arrives without a
-  delay.
+- When the tab becomes visible again after more than two seconds away,
+  the relay socket is replaced (`refreshRelay`, the SDK's
+  `restartTransport`). iOS Safari suspends the page while the user is in
+  the wallet and the socket dies without a close event; it still looks
+  connected, and in a browser the SDK only notices when a publish goes
+  unanswered for 15 s. A new socket takes about a second, and the relay
+  then delivers what was waiting, the signature included. After a shorter
+  absence the client pings every session instead.
 - If the relay refuses the site (origin not in Reown's allowed domains, or
   a wrong project id) while the modal waits for approval, the attempt ends
   with that reason instead of waiting forever.
@@ -268,9 +272,14 @@ signPayload: async (payload) => {
   That redirect runs too late for iOS Safari and was silently ignored. The
   sign-request modal's button is the only deep link.
 - **Delivery** - the request is marked delivered when the relay
-  acknowledges its publish on the session topic (`relayer_publish`, with a
-  4 s fallback), and the JSON-RPC id it went out under is kept
-  (`session_request_sent`). Both live in `lib/wallet/request-delivery.ts`.
+  acknowledges its publish on the session topic (`relayer_publish`), and
+  the JSON-RPC id it went out under is kept (`session_request_sent`, or
+  the client's request history while the first publish is unanswered).
+  Both live in `lib/wallet/request-delivery.ts`. A request waits for a
+  socket restart that is in progress. Without an acknowledgement after 4 s
+  (and again after 11 s) the socket is taken for dead: it is replaced and
+  the same request is published over the new one (`resendOverNewSocket`).
+  The wallet link is released by an acknowledgement only, never by time.
 - **Re-delivery** - a tap on "Open in <wallet>" after the person was in the
   wallet and came back without an answer publishes the same pending
   request again from the client's history (`redeliverRequest`): same id,
