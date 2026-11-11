@@ -19,7 +19,8 @@ import { parseAdminKeys } from "@/lib/moderation/policy"
 
 export const runtime = "nodejs"
 
-const addressSchema = z.string().min(40).max(64)
+// An SS58 address in any network's format, or the 0x public key (66 characters).
+const addressSchema = z.string().min(40).max(66)
 
 export async function GET(): Promise<NextResponse> {
   const admin = await requireRole("admin")
@@ -61,7 +62,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (admin instanceof NextResponse) return admin
   const body = await readAddress(request, true)
   if (!body?.role)
-    return NextResponse.json({ ok: false, error: "Enter a valid address." }, { status: 400 })
+    return NextResponse.json(
+      { ok: false, error: "Enter a valid address or 0x public key." },
+      { status: 400 },
+    )
   const key = publicKeyHex(body.address)
   await grantRole(key, body.role, admin.publicKey)
   await insertAction({
@@ -84,7 +88,10 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   if (admin instanceof NextResponse) return admin
   const body = await readAddress(request, false)
   if (!body)
-    return NextResponse.json({ ok: false, error: "Enter a valid address." }, { status: 400 })
+    return NextResponse.json(
+      { ok: false, error: "Enter a valid address or 0x public key." },
+      { status: 400 },
+    )
   const key = publicKeyHex(body.address)
   if (parseAdminKeys(env.GOVERNANCE_ADMIN_PUBLIC_KEYS, publicKeyHex).has(key)) {
     return NextResponse.json(

@@ -66,6 +66,10 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   for its decision deposit showed the requested amount right after
   "Awaiting deposit", where it read as the deposit. The amount now stands
   apart as "requests 50,000 ENJ".
+- **Moderation area:** on a phone the tabs stay on one row; the public
+  log opens in a new tab; a role can be granted with the wallet's address
+  in any network's format or its 0x public key, and the wallet is shown
+  in the current network's format before granting.
 - **Databases migrated by hand:** `pnpm db:migrate` stops, before running
   anything, on a database that has the tables but no migrations ledger
   (the first files would fail on tables that exist).

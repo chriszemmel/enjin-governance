@@ -11,7 +11,12 @@ import { ScanSettingsPanel } from "@/components/moderation/scan-settings-panel"
 import { ScanHealthBanner, StatusPanel } from "@/components/moderation/status-panel"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { referendumName, referendumPath } from "@/lib/governance/display"
-import { encodePublicKeyForChain, shortenAddress } from "@/lib/chain/ss58"
+import {
+  encodeForChain,
+  encodePublicKeyForChain,
+  isValidSs58,
+  shortenAddress,
+} from "@/lib/chain/ss58"
 import {
   allowedActions,
   REPORT_CATEGORY_LABELS,
@@ -98,16 +103,20 @@ export default function ModerationPage() {
               )}
             </div>
             {role && (
-              <div className="inline-flex max-w-full flex-wrap rounded-lg border border-border bg-surface-1 p-0.5 text-sm">
+              <div className="flex w-full rounded-lg border border-border bg-surface-1 p-0.5 text-[13px] sm:inline-flex sm:w-auto sm:text-sm">
                 <TabButton active={tab === "queue"} onClick={() => setTab("queue")}>
                   Queue · {queue.data?.stats.open ?? 0}
                 </TabButton>
-                <Link
+                {/* The public page, so it opens beside the moderation area. */}
+                <a
                   href="/moderation-log"
-                  className="px-3 py-1 rounded-md text-muted-foreground hover:text-foreground"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(TAB_CLASS, "text-muted-foreground hover:text-foreground")}
                 >
                   Public log
-                </Link>
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
                 {role === "admin" && (
                   <>
                     <TabButton active={tab === "roles"} onClick={() => setTab("roles")}>
@@ -163,7 +172,7 @@ export default function ModerationPage() {
                 ) : queue.isError ? (
                   <p className="p-5 text-sm text-destructive">{formatError(queue.error)}</p>
                 ) : items.length === 0 ? (
-                  <p className="p-5 text-sm text-muted-foreground">Nothing to review. 🎉</p>
+                  <p className="p-5 text-sm text-muted-foreground">Nothing to review.</p>
                 ) : (
                   <ul className="divide-y divide-border">
                     {items.map((i) => {
@@ -480,12 +489,22 @@ function RolesPanel() {
       return key
     }
   }
+  // What was pasted, as this network writes it: shown before granting, so
+  // an address of another network or a bare public key can be checked.
+  const pasted = useMemo(() => {
+    if (!address || !isValidSs58(address)) return null
+    try {
+      return encodeForChain(address, chain.id)
+    } catch {
+      return null
+    }
+  }, [address, chain.id])
 
   return (
     <div className="rounded-2xl bg-card border border-border p-5 space-y-4 max-w-2xl">
       <p className="text-sm text-muted-foreground">
-        Moderators blur, hide and restore content. Admins can also delete files, pause posting and
-        manage roles. Roles follow the wallet on every network.
+        Moderators blur, hide and restore content. Admins can also delete files, pause posting,
+        change the settings and manage roles.
       </p>
       <ul className="divide-y divide-border rounded-xl border border-border">
         {(roles.data ?? []).map((r) => (
@@ -517,8 +536,8 @@ function RolesPanel() {
         <input
           value={address}
           onChange={(e) => setAddress(e.target.value.trim())}
-          placeholder="Wallet address"
-          aria-label="Wallet address"
+          placeholder="Address (en…, cn…) or 0x public key"
+          aria-label="Wallet address or public key"
           className="flex-1 min-w-[16rem] rounded-xl border border-border bg-surface-1 px-3 py-2 font-mono text-xs focus:outline-none focus:border-primary/50"
         />
         <select
@@ -532,7 +551,7 @@ function RolesPanel() {
         </select>
         <button
           type="button"
-          disabled={!address || setRole.isPending}
+          disabled={!pasted || setRole.isPending}
           onClick={() =>
             setRole.mutate(
               { address, role },
@@ -551,9 +570,33 @@ function RolesPanel() {
           Grant
         </button>
       </div>
+      {address && (
+        <p className="text-xs leading-relaxed" role="status">
+          {pasted ? (
+            <span className="text-muted-foreground">
+              This wallet on {chain.name}:{" "}
+              <span className="font-mono text-foreground break-all">{pasted}</span>
+            </span>
+          ) : (
+            <span className="text-amber-700 dark:text-amber-400">
+              Not a valid address or public key.
+            </span>
+          )}
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Paste the wallet&apos;s address in any format: Enjin Relaychain (en…), Canary (cn…),
+        Matrixchain, or its 0x public key. A role is stored for the wallet itself, not for one
+        address, so it applies on every network. The list shows each wallet in the format of the
+        network you are on.
+      </p>
     </div>
   )
 }
+
+/** One row on a phone too: the tabs share the width and never wrap. */
+const TAB_CLASS =
+  "flex-1 whitespace-nowrap rounded-md px-1.5 py-1.5 text-center sm:flex-none sm:px-3 sm:py-1"
 
 function TabButton({
   active,
@@ -569,7 +612,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "px-3 py-1 rounded-md",
+        TAB_CLASS,
         active
           ? "bg-card text-foreground shadow-sm border border-border"
           : "text-muted-foreground hover:text-foreground",

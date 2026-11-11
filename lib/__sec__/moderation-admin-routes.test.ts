@@ -161,6 +161,20 @@ describe("roles", () => {
     expect((await ROLES()).status).toBe(200)
   })
 
+  it("accepts the wallet's 0x public key as well as an address", async () => {
+    signIn(ADMIN)
+    expect((await grant({ address: pk(USER), role: "moderator" })).status).toBe(200)
+    expect(mod.roles.get(pk(USER))).toMatchObject({ role: "moderator", granted_by: pk(ADMIN) })
+    signIn(asRelay(USER))
+    expect(await roleOf()).toBe("moderator")
+    signIn(ADMIN)
+    // Hex that is not a 32-byte key is refused.
+    expect((await grant({ address: `0x${"ab".repeat(20)}`, role: "moderator" })).status).toBe(400)
+    expect((await grant({ address: `${pk(USER)}00`, role: "moderator" })).status).toBe(400)
+    expect((await revoke({ address: pk(USER) })).status).toBe(200)
+    expect(mod.roles.has(pk(USER))).toBe(false)
+  })
+
   it("can't take away an admin set in the server configuration, in any address format", async () => {
     mod.roles.set(pk(USER), { role: "admin", granted_by: pk(ADMIN), created_at: new Date(1) })
     for (const actor of [ADMIN, USER]) {
@@ -196,13 +210,12 @@ describe("roles", () => {
     expect((await QUEUE()).status).toBe(403)
   })
 
-  it("accept only a real address and a known role", async () => {
+  it("accept only a real address or public key and a known role", async () => {
     signIn(ADMIN)
     const before = new Map(mod.roles)
     for (const bad of [
       { address: "x", role: "moderator" },
       { address: "e".repeat(48), role: "moderator" },
-      { address: pk(USER), role: "moderator" },
       { address: USER, role: "owner" },
       { address: USER },
       { address: USER, role: "admin", granted_by: pk(MOD) },
