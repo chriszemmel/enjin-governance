@@ -3,7 +3,7 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
-## 2.0.0 - unreleased
+## 2.0.0 - 2026-11-11
 
 Everything since 1.0.0 in one release: the patches 1.1 to 1.9 below.
 Highlights:
