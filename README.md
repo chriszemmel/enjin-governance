@@ -141,8 +141,11 @@
   voter is one segment proportional to their conviction-weighted power,
   plus a conviction histogram showing how the vote was spread across
   the 0.1x-6x tiers. "One whale or many holders" at a glance.
-- **Lifecycle progress** - visual prepare/decide/confirm timeline,
-  decision-deposit awaiting state, time-elapsed badges.
+- **Lifecycle from prepare to payout** - Prepare, Decide, Confirm, Enact
+  and, for treasury spends, Payout, each with its date and the chain
+  events behind it. Enact follows the scheduler, so an approved referendum
+  stays "scheduled" until its call has run. A referendum that waits for
+  its decision deposit says so and shows the amount it needs.
 - **Conviction voting** - Aye, Nay or Abstain (a `SplitAbstain` vote that
   counts toward support, not approval, with no lock). Lock durations come
   from the runtime's vote-locking period (the same on every track), never
@@ -151,7 +154,7 @@
   support denominator and enactment are read from the runtime and keyed
   on its spec version, so an upgrade (1070 → 1080) changes them in an
   open tab. Every rule was tried on Chopsticks forks of Enjin Relaychain
-  and Canary.
+  and Canary, and again on a fork of mainnet once it ran spec 1080.
 
 ### The Fellowship
 
@@ -189,9 +192,15 @@
   always targets the right peer.
 - **Enjin Wallet on one tap** - "Open in Enjin Wallet" waits until the
   relay has the request, so the wallet never opens to nothing; a second
-  tap after coming back re-sends the same request. A session the wallet
+  tap after coming back re-sends the same request. Coming back from the
+  wallet replaces the relay connection, which iOS lets die in the
+  background, so a signature shows up without a wait. A session the wallet
   ends shows as disconnected instead of taking requests nobody answers.
   See [`docs/WALLET_INTEGRATION.md`](docs/WALLET_INTEGRATION.md).
+- **Costs before signing** - the composers list what filing reserves: the
+  submission deposit, the preimage deposits, fees, and the track's
+  decision deposit, all read from the chain, with a warning when the free
+  balance is short.
 - **Treasury proposals end to end** - create wizard batches `preimage.notePreimage`
   + `referenda.submit` + `preimage.notePreimage(envelope)` +
   `referenda.setMetadata` via `utility.batchAll`. The referendum's
@@ -249,7 +258,8 @@
   Every decision needs a reason and is listed in the public
   `/moderation-log`. On-chain data and proposal JSON are never changed.
 - **Roles by wallet** - admins come from `GOVERNANCE_ADMIN_PUBLIC_KEYS`;
-  they grant moderator or admin roles in `/moderation`. Roles are keyed
+  they grant moderator or admin roles in `/moderation`, with the wallet's
+  address in any network's format or its 0x public key. Roles are keyed
   by public key, so they hold on every network prefix.
 - **Optional automatic checks** - with an Anthropic API key, uploads and
   text can be checked by an AI model before moderators see them. Admins
@@ -333,9 +343,10 @@
 - **`/user/[address]`** - public profile + voting history.
 - **`/unlock`** - the site password page, used only while the password
   gate is on (staging).
-- **`/moderation`** - review queue for moderators; **Roles** and
-  **Settings** (automatic checks) for admins. The nav link only appears
-  for moderators and admins.
+- **`/moderation`** - review queue for moderators; **Roles**,
+  **Settings** (automatic checks) and **Status** (setup check and
+  backups) for admins. The nav link only appears for moderators and
+  admins.
 - **`/moderation-log`** - every moderation decision with its reason,
   public.
 - **`/docs`** - user guide, including the content policy.
@@ -346,7 +357,8 @@
 ### Infra
 
 - **In-app network switcher** - flip Canary ↔ Mainnet at runtime, no
-  redeploy. Choice persists to localStorage.
+  redeploy. Choice persists to localStorage, and a link with `?network=`
+  opens on the network it names, on every page.
 - **Subscan-aware caching** - every server route honours Subscan's 5
   req/s rate ceiling: terminal-status responses cached at the CDN for
   24h (immutable), ongoing for 5 min. React Query staleTime matches.
@@ -384,7 +396,7 @@
 | Browser tests | **28** (Playwright, against the production build) |
 | Test coverage (lines) | **88%** of API routes, **80%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and components are covered by the browser tests, not by unit tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
-| Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov) plus 2 rails-only (Enjin + Canary **Matrix**, legacy `democracy` pallet, not yet integrated). Dedicated archive RPCs per chain. |
+| Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov, spec 1080) plus the 2 **Matrix** chains, registered but not enabled yet (planned for 2.1). Dedicated archive RPCs per chain. |
 | External indexer dependencies | **0 required** (Subscan optional, only for very old finalised refs) |
 | Off-chain stores | **Neon Postgres** (users, sessions, profiles, comments, proposals, attachments, security disclosures, moderation) · **Cloudflare R2** (avatars, proposal JSON, proposal media) |
 
@@ -435,7 +447,7 @@ See **[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)** and
 | Validation | Zod + `@t3-oss/env-nextjs` | `lib/env.ts` is the single source of truth |
 | Content checks | Anthropic API (optional) | Model chosen by admins; structured output, one request per item |
 | Tests | Vitest, PGlite, Playwright | Unit and route tests; SQL against real Postgres with the real migrations; browser tests against the production build |
-| CI | GitHub Actions | typecheck + lint + knip + test + build on every pull request and push to `main` |
+| CI | GitHub Actions | typecheck + lint + knip + dependency audit + test + build, and the browser tests, on every pull request and push to `main`; the audit also runs every Monday |
 
 ---
 
@@ -450,10 +462,13 @@ pnpm typecheck    # tsc --noEmit
 pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
+pnpm format:check # Prettier --check
 pnpm knip         # Find dead code / unused deps
 pnpm test         # Vitest (1217 tests)
 pnpm test:watch   # Vitest watch
 pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
+
+pnpm db:migrate   # Apply pending SQL migrations (--until NNN, --baseline NNN)
 ```
 
 ---
@@ -467,11 +482,15 @@ pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
 app/                   Next.js routes (live RPC reads via React Query)
   account/             Profile editor + drafts list with filters + actions
   create/              3-step proposer wizard (Create → Review → Submit)
-                       and /create/advanced (general + admin proposals)
-  moderation/          Review queue, roles and content-check settings
+                       and /create/advanced (general + admin proposals,
+                       and the Fellowship chamber)
+  fellowship/          Members, F# referenda, the whitelist; one F# per page
+  moderation/          Review queue, roles, content-check settings, status
+                       and backups
   moderation-log/      Public log of moderation decisions
   imprint/ privacy/ terms/   Legal pages (filled from LEGAL_* env vars)
   robots.ts sitemap.ts manifest.ts   Search and install metadata
+  og/                  Share image per referendum
   docs/                User guide + content policy
   proposals/           List + detail page
   treasury/            Live balance + treasury-tier referenda
@@ -483,7 +502,9 @@ app/                   Next.js routes (live RPC reads via React Query)
   api/users/           me, by-address/[address], by-addresses, me/avatar
   api/security-disclosures/  Public report intake (rate-limited + honeypot)
   api/moderation/      me, reports, queue, actions, state, media, roles,
-                       settings, log
+                       settings, log, status, backup
+  api/chain/           Server-side chain reads that are cached for everyone
+                       (the track each past referendum was decided on)
   r/[...key]/          Serves proposal media (respects moderation state)
   api/unlock/          Site-access password gate (rate-limited)
   api/subscan/         Server proxies (referendum / preimage / votes).
@@ -496,11 +517,16 @@ components/
                        LifecycleProgress, ParticipationGraph, VotesList,
                        VoteDetailModal, TallyVotesSwiper, AddressLink,
                        BlockTime, skeletons
-  create/              CallCard, AttachmentDropzone, MyDraftsPanel, editor
-  moderation/          ReportDialog, moderation notes, ScanSettingsPanel
+  create/              CallCard, AttachmentDropzone, MyDraftsPanel, editor,
+                       FilingCosts (deposits and fees before signing)
+  fellowship/          Referendum card, rank badge, vote panel, fast-track
+                       card, deposit button
+  moderation/          ReportDialog, moderation notes, ScanSettingsPanel,
+                       StatusPanel, BackupPanel
   legal/               LegalPage layout
   wallet/              WalletModal (with account picker on connect),
                        SignRequestModal (unified for every signature),
+                       WalletOpenButton (waits for the relay),
                        BrandedQr (module-snapped logo cutout)
   account/             Avatar
   ui/                  shadcn primitives (vendored)
@@ -515,10 +541,14 @@ lib/
                        call-extract (treasury-spend intent normaliser) +
                        vote-decode (vote byte + currency) + lifecycle +
                        proposal-metadata (EGOV1 schema) +
-                       submit-treasury-proposal (batch builder)
+                       submit-treasury-proposal (batch builder) +
+                       fellowship + whitelist (ranks, F# referenda, fast
+                       track) + deposits + filing-deposits + support
+                       (issuance per spec) + scheduler + payout
   wallet/              Connectors (WC with sessionProperties / peerMetadata
                        name extraction + extension), registry, store,
-                       signer adapter, deep-link builder
+                       signer adapter, deep-link builder, request delivery
+                       (the wallet link waits for the relay)
   auth/                SIWE-style nonce/verify, current-user cookie reader,
                        site-password gate
   security/            Disclosure schema + honeypot check + Telegram notify
@@ -528,6 +558,8 @@ lib/
   seo/                 Page metadata, structured data, sitemap sources
   uploads/             Upload limit shared by browser and server, and
                        in-browser shrinking of large photos
+  backup/              Backup ZIP: database dump, restore script, files
+  telegram/            Notices for security reports and moderation
   rate-limit.ts        Fixed-window limiter (pure core + in-process store)
   db/                  Neon client + users, sessions, profiles, comments,
                        proposals, attachments, security-disclosures
@@ -550,6 +582,7 @@ docs/                  ARCHITECTURE · CHAIN_FLOW · GOVERNANCE_FLOW ·
                        WALLET_INTEGRATION · ENVIRONMENT · DEPLOYMENT ·
                        HANDOVER · screenshots/ (README images)
 scripts/               SQL migrations (004-015) + run-migrations.mjs
+                       (the ledger, --until and --baseline)
 e2e/                   Playwright browser tests, fixtures and API mocks
 test/                  PGlite database helper and the server-only stub
 .github/workflows/     CI (verify + browser tests)
@@ -640,6 +673,7 @@ Recommended for the full feature set:
 
 ```
 DATABASE_URL=<Neon pooled connection>        # sign-in, profiles, comments, drafts
+DATABASE_URL_UNPOOLED=<Neon direct connection>   # only for pnpm db:migrate
 R2_ACCOUNT_ID=<cloudflare account id>        # avatars, proposal JSON, media
 R2_ACCESS_KEY_ID=<r2 token>
 R2_SECRET_ACCESS_KEY=<r2 secret>
@@ -663,6 +697,8 @@ NEXT_PUBLIC_SOURCE_URL=<public repository URL>   # AGPL source offer in the foot
 Optional:
 
 ```
+KV_REST_API_URL=<Upstash Redis REST URL>     # rate limits shared by all server instances
+KV_REST_API_TOKEN=<Upstash Redis REST token>
 SUBSCAN_API_KEY=<from pro.subscan.io>        # decodes call data for very old finalised refs
 ANTHROPIC_API_KEY=<from console.anthropic.com>   # automatic content checks (switched on in /moderation → Settings)
 TELEGRAM_BOT_TOKEN=<from @BotFather>         # security reports + new moderation reports to Telegram
@@ -670,6 +706,8 @@ TELEGRAM_CHAT_ID=<chat id>
 TELEGRAM_MODERATION_CHAT_ID=<chat id | OFF>  # optional separate chat for moderation (default: TELEGRAM_CHAT_ID)
 LEGAL_CONTACT_PHONE=<phone>                  # imprint, if you want one
 LEGAL_VAT_ID=<VAT ID>                        # imprint, only if you have one
+SITE_PASSWORD_STATUS=<ON | OFF>              # password gate for a staging deployment
+SITE_PASSWORD=<shared password>
 ```
 
 The legal pages are rendered at build time: after changing a `LEGAL_*`
@@ -689,10 +727,11 @@ Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 **Becoming admin.** Put your wallet address (SS58 on any Enjin network, or
 the 0x public key) into `GOVERNANCE_ADMIN_PUBLIC_KEYS`, apply the
-migrations (`pnpm db:migrate`, needs `011`, `012` and `013`), redeploy and sign
+migrations (`pnpm db:migrate`, needs `011` to `014`), redeploy and sign
 in with that wallet. The **Moderation** link then appears in the nav.
 Admins from the environment can't be removed in the app; admins grant
-further moderators and admins under **Moderation → Roles**.
+further moderators and admins under **Moderation → Roles**, with an
+address in any network's format or the 0x public key.
 
 **Who sees what.**
 
@@ -704,6 +743,7 @@ further moderators and admins under **Moderation → Roles**.
 | Keep / blur / hide / restore | | ✓ | ✓ |
 | Delete a file, pause posting for a wallet | | | ✓ |
 | Roles, content-check settings | | | ✓ |
+| Status page and backups | | | ✓ |
 
 <p align="center">
   <picture>
@@ -756,6 +796,11 @@ its cost.
 | Enjin Matrixchain | `wss://rpc.matrix.blockchain.enjin.io` | 1110 (`ef…`) | ENJ | Rails only - legacy `democracy` pallet, not OpenGov |
 | Canary Matrixchain | `wss://rpc.matrix.canary.enjin.io` | 9030 (`cx…`) | cENJ | Rails only - OpenGov since spec 1042 (no treasury), planned for 2.1 |
 
+Both Relaychains run spec 1080 (Fort Canning). The app reads tracks,
+deposits and support thresholds from the runtime, and keeps the treasury
+spend limits per spec version in `lib/governance/treasury.ts`, the one
+table to extend when a runtime upgrade changes them.
+
 Treasury (Relay): `enD9wdMEaQa3MEDUc7dtsCC86JYGMN5JBE2NBRoMyC37dX4iA`
 Community wallet (Matrix multisig): `efRd63tR845wJ4FxoUfFgrDpxfAQ2t1iydU7LyzJCf577hgTH`
 
@@ -763,8 +808,8 @@ The two Matrixchains are in the chain registry (RPC, SS58, archive RPC,
 treasury address) but ship `enabled: false`. Enjin Matrixchain (spec 1031)
 still runs Substrate's legacy `democracy` pallet plus `council` /
 `technicalCommittee` collectives. Canary Matrixchain moved to OpenGov in
-spec 1042: nine tracks, `convictionVoting.vote` without the Relay's
-`currency` argument, and no treasury. Matrix support is planned for 2.1,
+spec 1042 (1043 today): nine tracks, `convictionVoting.vote` without the
+Relay's `currency` argument, and no treasury. Matrix support is planned for 2.1,
 starting from the OpenGov side the Relay already uses.
 
 ---
@@ -784,12 +829,14 @@ open an issue first to align on approach.
 
 ## Changelog
 
-**2.0.0** brings together everything since 1.0: better and advanced
-proposals, moderation with optional automatic checks and a status page,
-legal pages, search metadata, safer uploads, several rounds of security
-review, and tests at three levels. Upgrading from 1.0 needs migrations
-`011` to `014` before the deploy, `015` after it, and a few environment
-variables.
+**2.0.0** (2026-11-11) brings together everything since 1.0: better and
+advanced proposals, Abstain votes, the Fellowship with its fast track,
+Enjin Wallet on one tap, the rules of the 1080 runtime, moderation with
+optional automatic checks and a status page, backups, legal pages, search
+metadata, safer uploads, several rounds of security review, and tests at
+three levels. Upgrading from 1.0 needs migration `014` before the deploy
+(`011` to `013` too, where they are missing), `015` after it, and a few
+environment variables.
 
 Every version, and the upgrade steps, are in
 **[`CHANGELOG.md`](CHANGELOG.md)**.
