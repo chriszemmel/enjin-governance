@@ -19,8 +19,6 @@ const config = [
       "playwright-report/**",
       "test-results/**",
       "blob-report/**",
-      // Local tool state, e.g. git worktrees of this repo.
-      ".claude/**",
     ],
   },
   ...nextBaseConfig,
