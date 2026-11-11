@@ -9,9 +9,15 @@ All notable changes to Enjin Governance. Versions follow
   exactly one valid address now shows as the same chip as a bare address,
   with its identicon, copy and profile link. Anything else in backticks,
   such as an EVM address or a call name, stays code.
-- **The place-deposit button stays on one line:** on a phone the decision
-  deposit takes its own row in a referendum's details, so "Connect to
-  place" and the amount no longer wrap.
+- **A clearer place-deposit button:** the button now says "Connect to
+  place" or "Place deposit", with "Reserves 12,500 ENJ · refundable when
+  it ends" under it instead of the amount squeezed in beside the label, so
+  nothing wraps on a phone. On a phone the decision deposit takes its own
+  row in a referendum's details.
+- **Accurate deposit note:** the "Decision deposit not yet placed" box no
+  longer says voting only opens once the deposit is placed. It now says
+  whoever places the deposit can reclaim it once the referendum ends,
+  unless it is killed.
 
 ## 2.0.0 - 2026-11-11
 

@@ -660,10 +660,10 @@ export default function ProposalDetailPage() {
                 <p className="text-sm font-semibold text-foreground">
                   Decision deposit not yet placed
                 </p>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  This referendum can&apos;t enter the deciding phase until
-                  the per-track decision deposit is reserved. Voting opens as
-                  soon as it is. Anyone can place it.
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed text-pretty">
+                  This referendum can&apos;t enter the deciding phase until the per-track decision
+                  deposit is reserved. Anyone can place it, and whoever does can reclaim it once the
+                  referendum ends, unless it is killed.
                 </p>
               </div>
               <PlaceDepositButton
