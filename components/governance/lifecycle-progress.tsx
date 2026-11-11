@@ -459,6 +459,9 @@ export function LifecycleMini({
     confirm: "Confirming",
     enact: "Enactment",
   }
+  // Next to "Awaiting deposit" the spend's amount would read as the deposit,
+  // so it moves to the right and says what it is.
+  const awaitingDeposit = activeStage.id === "prepare" && lifecycle.awaitingDecisionDeposit
   const left =
     lifecycle.awaitingDecisionDeposit ||
     lifecycle.queued ||
@@ -472,10 +475,16 @@ export function LifecycleMini({
       <div className="flex items-center justify-between gap-3 text-[11px]">
         <span className="text-foreground/80 font-medium">
           {label[activeStage.id]}
-          {amount && <span> · {amount}</span>}
+          {amount && !awaitingDeposit && <span> · {amount}</span>}
         </span>
         <span className="text-muted-foreground tabular-nums">
-          {left == null ? "" : left > 0 ? `${formatBlockDuration(left)} left` : "Ending"}
+          {awaitingDeposit && amount
+            ? `requests ${amount}`
+            : left == null
+              ? ""
+              : left > 0
+                ? `${formatBlockDuration(left)} left`
+                : "Ending"}
         </span>
       </div>
       <SegmentedBar lifecycle={lifecycle} />

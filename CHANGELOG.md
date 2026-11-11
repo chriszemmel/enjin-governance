@@ -62,6 +62,10 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the details.
   treasury tier limits, support against total issuance, deposit refunds,
   Abstain and the Fellowship flow were run again on a Chopsticks fork
   of mainnet.
+- **Awaiting deposit:** a card for a treasury request that still waits
+  for its decision deposit showed the requested amount right after
+  "Awaiting deposit", where it read as the deposit. The amount now stands
+  apart as "requests 50,000 ENJ".
 - **Databases migrated by hand:** `pnpm db:migrate` stops, before running
   anything, on a database that has the tables but no migrations ledger
   (the first files would fail on tables that exist).
