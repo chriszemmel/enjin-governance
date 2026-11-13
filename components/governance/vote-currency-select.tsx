@@ -226,7 +226,7 @@ function BalanceLabel({
       )
     }
     return (
-      <span className="text-[10px] text-muted-foreground font-mono">
+      <span className="text-[10px] text-muted-foreground font-mono text-left whitespace-nowrap">
         {formatTokenAmount(selection.freeBalance, chain, {
           maxFractionDigits: 2,
         })}{" "}
@@ -234,16 +234,23 @@ function BalanceLabel({
       </span>
     )
   }
+  // Two lines on purpose: with seven-digit balances one line wraps in the
+  // middle of a number on a phone.
   return (
-    <span className="text-[10px] text-muted-foreground font-mono">
-      {formatTokenAmount(selection.senjBalance, chain, {
-        maxFractionDigits: 2,
-        withTicker: false,
-      })}{" "}
-      sENJ · ≈{" "}
-      {formatTokenAmount(selection.realEnjBalance, chain, {
-        maxFractionDigits: 2,
-      })}
+    <span className="flex flex-col items-start text-left text-[10px] text-muted-foreground font-mono leading-snug">
+      <span className="whitespace-nowrap">
+        {formatTokenAmount(selection.senjBalance, chain, {
+          maxFractionDigits: 2,
+          withTicker: false,
+        })}{" "}
+        sENJ
+      </span>
+      <span className="whitespace-nowrap">
+        worth ≈{" "}
+        {formatTokenAmount(selection.realEnjBalance, chain, {
+          maxFractionDigits: 2,
+        })}
+      </span>
     </span>
   )
 }

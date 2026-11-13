@@ -488,9 +488,10 @@ export default function DocsPage() {
               </Code>
               , and the ENJ-equivalent is{" "}
               <Code>senjBalance * stakeFactor</Code>. The vote panel shows
-              both numbers next to each source so voters know what they&apos;re
-              contributing in real terms. The on-chain extrinsic still takes
-              the sENJ amount - the stake factor is display-only.
+              both numbers next to each source. The chain counts the sENJ
+              amount 1:1 like ENJ, for approval and for support: the stake
+              factor only shows what the sENJ is worth and adds no voting
+              weight.
             </p>
             <p>
               The vote panel automatically detects every pool you hold sENJ
@@ -499,7 +500,9 @@ export default function DocsPage() {
               From runtime 1080, a pool that is being destroyed is listed but
               can&apos;t be picked: its sENJ can no longer vote or delegate.
               Conviction multipliers and lock periods apply the same way to
-              either source.
+              either source. A vote locks the sENJ where it is: it stays in its
+              pool and keeps collecting staking rewards, but the locked part
+              can&apos;t be unbonded or transferred until the lock ends.
             </p>
 
             <h3 className="text-base font-semibold text-foreground pt-2">

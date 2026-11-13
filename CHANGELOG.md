@@ -3,6 +3,22 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.3 - 2026-11-13
+
+- **sENJ votes, said plainly:** the chain counts sENJ 1:1 like ENJ, for
+  approval and for support, not by what it is worth. The vote panel now
+  says so when sENJ is the source, and that locked sENJ keeps collecting
+  staking rewards but can't be unbonded or transferred until the lock
+  ends. The docs say the same.
+- **Voting power in ENJ, with its sum:** the vote panel shows voting power
+  in ENJ with the amount times conviction under it, such as "1,234,567.89
+  sENJ × 6", so a 6x vote no longer reads as six times the balance.
+- **sENJ balance on two lines:** the source picker puts the sENJ amount
+  and what it is worth on separate lines, so seven-digit balances don't
+  wrap on a phone.
+- **sENJ votes keep their unit:** a vote's detail dialog showed sENJ votes
+  as ENJ. It now shows the sENJ amount.
+
 ## 2.0.2 - 2026-11-13
 
 - **The decision chip only warns when it should:** "Short on support"

@@ -105,9 +105,9 @@ export function VoteDetailModal({
                       : "text-foreground",
                 )}
               >
-                {formatTokenAmount(balance, chain, {
-                  maxFractionDigits: 4,
-                })}
+                {currency.kind === "SEnj"
+                  ? `${formatTokenAmount(balance, chain, { maxFractionDigits: 4, withTicker: false })} sENJ`
+                  : formatTokenAmount(balance, chain, { maxFractionDigits: 4 })}
               </DialogTitle>
               <p className="inline-flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 {verdictIcon}
