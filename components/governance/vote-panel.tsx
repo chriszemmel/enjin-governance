@@ -690,14 +690,33 @@ export function VotingPanel({
                   <Zap className="w-3.5 h-3.5 text-primary" />
                   {abstain ? "Support" : "Voting power"}
                 </span>
-                <span className="font-semibold text-primary font-mono">
-                  ≈{" "}
-                  {votingPower.toLocaleString("en-US", {
-                    maximumFractionDigits: 2,
-                  })}{" "}
-                  {currency.kind === "Enj" ? chain.ticker : "sENJ"}
+                {/* Weight in ENJ terms (sENJ counts 1:1), with the sum it comes from
+                    under it, so a 6x vote doesn't read as six times the balance. */}
+                <span className="flex flex-col items-end gap-0.5 text-right">
+                  <span className="font-semibold text-primary font-mono whitespace-nowrap">
+                    ≈{" "}
+                    {votingPower.toLocaleString("en-US", {
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    {chain.ticker}
+                  </span>
+                  {!abstain && parsedAmount != null && parsedAmount > 0n && (
+                    <span className="text-[10px] text-muted-foreground font-mono whitespace-nowrap">
+                      {formatTokenAmount(parsedAmount, chain, {
+                        maxFractionDigits: 2,
+                        withTicker: false,
+                      })}{" "}
+                      {currency.kind === "Enj" ? chain.ticker : "sENJ"} × {effectiveMultiplier}
+                    </span>
+                  )}
                 </span>
               </div>
+              {currency.kind !== "Enj" && (
+                <p className="text-[11px] text-muted-foreground leading-relaxed -mt-1 px-1">
+                  Counts 1:1 like ENJ, not by what it&apos;s worth. Locked sENJ keeps collecting
+                  staking rewards, but you can&apos;t unbond or transfer it until the lock ends.
+                </p>
+              )}
 
               <button
                 onClick={handleSubmit}
