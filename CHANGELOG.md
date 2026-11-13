@@ -3,6 +3,27 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.2 - 2026-11-13
+
+- **The decision chip only warns when it should:** "Short on support"
+  used to show whenever a referendum sat below today's requirement, which
+  is most of the time even for one that will pass. The chip now works out,
+  with the runtime's own rounding, whether and when today's votes meet
+  both curves before the decision period ends. "On course" says when it
+  would pass if the votes hold. The yellow warning stays for referenda
+  that can't make it, with the support or approval still missing and the
+  deadline. A referendum without a decision deposit, still preparing,
+  queued or without votes gets a grey chip.
+- **Tap the chip for the details:** a card under it explains the state in
+  plain words: when the votes meet the curves, how long the track
+  confirms, and what is missing by when.
+- **Clearer charts:** while a referendum is on course, each chart shows a
+  clock instead of a warning and marks where the falling requirement
+  meets today's value. The captions name the minimum at the end in ENJ.
+- **Docs: how much support a referendum needs:** a new section lists every
+  track's minimum support at the end of its decision period and how much
+  faster more support passes, read live from Enjin Relay.
+
 ## 2.0.1 - 2026-11-11
 
 - **Addresses in backticks are address chips too:** a code span that holds

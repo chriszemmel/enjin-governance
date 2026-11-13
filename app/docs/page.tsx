@@ -7,6 +7,7 @@ import {
   FileJson,
   Hash,
   Hourglass,
+  Scale,
   Pencil,
   Send,
   ShieldCheck,
@@ -16,6 +17,7 @@ import {
   XOctagon,
 } from "lucide-react"
 import { Nav } from "@/components/layout/nav"
+import { SupportRequirements } from "@/components/docs/support-requirements"
 import { Footer } from "@/components/layout/footer"
 import { FoundABugModal } from "@/components/layout/found-a-bug-modal"
 import { CHAINS } from "@/lib/chain/chains"
@@ -965,6 +967,29 @@ export default function DocsPage() {
             </p>
           </Section>
 
+          <Section id="support" title="How much support a referendum needs" icon={<Scale />}>
+            <p>Every referendum has to meet two requirements while it is being decided:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                <strong>Approval</strong> - the share of aye votes, weighted by conviction. On
+                every Enjin track it ends at 50%.
+              </li>
+              <li>
+                <strong>Support</strong> - how much ENJ backs the referendum, as a share of
+                issuance. Aye and abstain votes count with their plain amount, without conviction.
+                Nay votes don&apos;t count toward support.
+              </li>
+            </ul>
+            <p>
+              Both requirements start high and fall over the decision period. A referendum starts
+              confirming as soon as it meets both, and passes if it still meets them at the end of
+              the confirm period. If it never meets them before the decision period ends, it is
+              rejected. On a proposal&apos;s Decision slide the chip shows where it stands and when
+              it would pass if the votes stay as they are; tap it for the details.
+            </p>
+            <SupportRequirements />
+          </Section>
+
           <Section
             id="cancellation"
             title="Cancellation paths"
@@ -1114,6 +1139,7 @@ function TableOfContents() {
     ["identity", "Identity & comments"],
     ["chain-coordinates", "Chain coordinates"],
     ["timing", "Timing primitives"],
+    ["support", "How much support a referendum needs"],
     ["cancellation", "Cancellation paths"],
     ["links", "Links"],
   ]
