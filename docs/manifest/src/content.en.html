@@ -1,0 +1,450 @@
+<!-- COVER -->
+<section class="cover">
+  <div class="cover-strata"><span></span><span></span><span></span><span></span></div>
+  <div class="cover-in">
+    <div class="cover-brand">{{LOGO:34}}<span>Enjin Governance</span></div>
+    <div class="cover-mid">
+      <div class="kicker">Manifesto · November 2026</div>
+      <h1>Read from the chain. Prove every text. Show it honestly.</h1>
+      <p class="thesis">Enjin Governance is a web client for Enjin’s on-chain governance: read referenda, vote, file proposals, follow the Fellowship. This manifesto says what the project believes, how it is built and what it does today. Where something is missing, it says so.</p>
+    </div>
+    <div class="cover-big">{{LOGO:210}}</div>
+    <div class="toc">
+      <div class="toc-h">Contents</div>
+      <ol>
+        <li><span>What we believe</span><b>2</b></li>
+        <li><span>The problem</span><b>5</b></li>
+        <li><span>The idea</span><b>6</b></li>
+        <li><span>Reading the chain</span><b>7</b></li>
+        <li><span>The EGOV1 record</span><b>9</b></li>
+        <li><span>Voting and filing</span><b>11</b></li>
+        <li><span>The Fellowship</span><b>13</b></li>
+        <li><span>How it is built</span><b>14</b></li>
+        <li><span>What it does today</span><b>15</b></li>
+        <li><span>In production</span><b>16</b></li>
+        <li><span>Moderation</span><b>18</b></li>
+        <li><span>Security and privacy</span><b>19</b></li>
+        <li><span>How it is made</span><b>20</b></li>
+        <li><span>Limits today</span><b>22</b></li>
+      </ol>
+    </div>
+    <div class="cover-foot"><span>Chris Zemmel (Zyric)</span><span>gov.enjin.cloud</span></div>
+  </div>
+</section>
+
+<!-- 01 -->
+<section class="sec pb" id="believe">
+  <div class="num">01</div>
+  <h2>What we believe</h2>
+  <p class="lead">Public money and changes to a blockchain are decided by people who read a text and then sign. A client for that is only as good as the rules it is built by. Enjin Governance follows eight principles. Each one is in the code, and each one has a real case behind it.</p>
+
+  <div class="kpis">
+    <div class="kpi"><b>June&nbsp;19, 2026</b><span>first commit in the repository, version 1.0 on June&nbsp;28</span></div>
+    <div class="kpi"><b>187</b><span>commits on the main line</span></div>
+    <div class="kpi"><b>15</b><span>merged pull requests</span></div>
+    <div class="kpi"><b>1,248</b><span>automated tests, all green on November&nbsp;16, plus 29 browser tests</span></div>
+    <div class="kpi"><b>2.0.3</b><span>live at gov.enjin.cloud</span></div>
+    <div class="kpi"><b>8</b><span>referenda on Enjin Relaychain with an EGOV1 record from this app</span></div>
+  </div>
+  <p class="asof">All numbers as of November&nbsp;16, 2026, counted in the repository and on chain.</p>
+
+  <div class="pr">
+    <div class="pr-n">1</div>
+    <div>
+      <h3>The chain is the source of truth</h3>
+      <p class="stmt">What is on chain, the browser reads straight from the chain. The database, file storage and block explorer are caches or extras, never the source.</p>
+      <div class="pr-cols">
+        <div><div class="label">Why</div><p>An indexer can lag, go down or be wrong. Reading straight from a node shows what holds, with no service standing between voters and the chain. No indexer is needed.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>A decided referendum no longer carries its track on chain, so the treasury page counted 0 approved and 0 rejected proposals. Today the server reads the tracks of decided referenda from the archive node and keeps them. If the browser can’t get them either, the page shows “-”, not a zero.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pr">
+    <div class="pr-n">2</div>
+    <div>
+      <h3>The rules come from the runtime</h3>
+      <p class="stmt">Tracks, deposits, spend limits, lock periods and the way support is measured are read from the chain and tied to the runtime’s version.</p>
+      <div class="pr-cols">
+        <div><div class="label">Why</div><p>The rules change with every runtime upgrade. Hardcoded values are wrong the day after, and nobody notices. So even a tab left open across an upgrade picks up the new values on its own.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>The smallest treasury tier was offered up to 250&nbsp;ENJ while mainnet allowed 100&nbsp;ENJ at the time. Such a proposal could only fail at enactment, after the whole vote. Today the limits sit in a table per runtime version, and an unknown version gets a warning.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pr">
+    <div class="pr-n">3</div>
+    <div>
+      <h3>Every text can be checked</h3>
+      <p class="stmt">Every proposal filed here pins its text to the chain with a hash. Anyone can check whether it was swapped since, even without this app.</p>
+      <div class="pr-cols">
+        <div><div class="label">Why</div><p>Voters decide on a call, but they read a text. If the text lives only on a server, it can change later and nobody would know. A change should be allowed, but visible.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>Referendum #19 on Enjin Relaychain was edited by its proposer on November&nbsp;4, four minutes after filing. Since then the hash on chain no longer matches the text, and that is exactly what the page shows: “EGOV1 · Edited”. Checked again on November&nbsp;16.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pr">
+    <div class="pr-n">4</div>
+    <div>
+      <h3>Honest status</h3>
+      <p class="stmt">The page shows what the chain proves. Estimates carry “≈”. What could not be read says so, instead of showing a zero or an empty list.</p>
+      <div class="pr-cols">
+        <div><div class="label">Why</div><p>Approved is not enacted, and close is not lost. Whoever votes or expects a payout needs the real state. A false warning does as much harm as a missing one.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>Mainnet referendum #12 was enacted a day after it was approved. Today the Enact step stays open until the scheduler has really run the call, with its block and result. And “short on support” now appears only when today’s votes can no longer meet both curves in time.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="triad">
+    <div class="t-ok"><h4>{{I:circle-check}} Proven</h4><p>Read from the chain, with its block. What is shown is the state.</p></div>
+    <div class="t-na"><h4>{{I:clock}} Estimated</h4><p>A future moment, computed from the runtime’s rules and marked “≈”.</p></div>
+    <div class="t-bad"><h4>{{I:triangle-alert}} Unreadable</h4><p>The source did not answer. The page shows “-” or the reason, never “0”.</p></div>
+  </div>
+
+  <div class="pr">
+    <div class="pr-n">5</div>
+    <div>
+      <h3>No signature without notice</h3>
+      <p class="stmt">Before every signature, the page says what it reserves and costs. Nothing is filed twice, and a button only appears if the runtime will accept the action.</p>
+      <div class="pr-cols">
+        <div><div class="label">Why</div><p>A signature binds real money: the submission deposit, preimage deposits, fees. Learning that afterward costs trust and sometimes money. Runtime errors are turned into plain sentences for the same reason.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>When a proposal landed but its status updates were lost, Retry now finds the referendum it already filed instead of filing a second one with a second deposit. And Refund for a submission deposit appears only after approval or cancellation, since the runtime refuses it otherwise with <code>BadStatus</code>.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pr">
+    <div class="pr-n">6</div>
+    <div>
+      <h3>Moderation keeps the space clean, never the chain</h3>
+      <p class="stmt">Moderators decide what the app shows. They never touch data on chain or the pinned JSON, and every decision appears with its reason in the public log.</p>
+      <div class="pr-cols">
+        <div><div class="label">Why</div><p>A client that quietly removes content becomes a player in governance itself. So moderation has to be justified, public and limited to what the app displays.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>A hidden proposal could still be read, title and text, through two API routes. Today both leave it out and say why. The JSON whose hash is on chain stays public on purpose: otherwise nobody could check the text anymore.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pr">
+    <div class="pr-n">7</div>
+    <div>
+      <h3>Proof against reality</h3>
+      <p class="stmt">Browser tests run against the production build with real data from the Canary chain. According to the changelog, the runtime’s rules were tried on copies of the real chains.</p>
+      <div class="pr-cols">
+        <div><div class="label">Why</div><p>Mocks only know the bugs you taught them. The bugs that matter happen at the edge of the real chain: rounding, versions, data that disappears.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>On mainnet, the app showed about 28 percent too little support. It divided by the total ENJ issuance, while the runtime at the time divided by the active issuance. Today the app picks the denominator by runtime version (chapter&nbsp;4).</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pr">
+    <div class="pr-n">8</div>
+    <div>
+      <h3>Open and easy to hand over</h3>
+      <p class="stmt">The code is licensed under the AGPL-3.0. Anyone can run their own instance, with their own accounts and none of the operator’s credentials.</p>
+      <div class="pr-cols">
+        <div><div class="label">Why</div><p>A client for public decisions must not depend on one person. The binding record, meaning referenda, votes, locks and every EGOV1 envelope, lives on chain anyway.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>The handover document in the repository covers the maintainer stepping back: a new instance from the source, starting from an empty database. With a copy of the file storage, old EGOV1 links keep resolving. Without it, the hash on chain remains as proof.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 02 -->
+<section class="sec pb" id="problem">
+  <div class="num">02</div>
+  <h2>The problem</h2>
+  <p class="lead">Enjin Relaychain decides on its treasury and on changes to itself with OpenGov: referenda on tracks, votes with conviction, deposits and preimages. It is powerful, and hard to read.</p>
+  <p>On chain, a referendum is an entry with a hash and a call in encoded bytes. To know what is being voted on, you need the call decoded, the text that goes with it and the rules of its track. Once the referendum is decided, parts of that vanish from the current state again: the tally, the call, the block it was submitted in. What remains is found only by asking an archive node.</p>
+  <p>The text of a proposal, on the other hand, lives somewhere off chain. Whether it is still the text people voted on can usually not be checked. And the rules themselves move: spend limits, deposits and the way support is measured change with runtime upgrades.</p>
+
+  <div class="three">
+    <div><h4>{{I:file-code}} Bytes, not sentences</h4><p>An encoded call tells voters nothing. Without decoding it, they vote on a label.</p></div>
+    <div><h4>{{I:file-lock}} Text without proof</h4><p>If the text lives only on a server, it can change. Nobody sees whether it is still the one that was voted on.</p></div>
+    <div><h4>{{I:refresh-cw}} Rules that move</h4><p>Limits, deposits and measures depend on the runtime. A client with fixed values is wrong after an upgrade.</p></div>
+  </div>
+  <div class="three">
+    <div><h4>{{I:wallet}} Signing on the go</h4><p>Many voters sign on a phone. A request that never reaches the wallet looks like a wallet that doesn’t respond.</p></div>
+    <div><h4>{{I:landmark}} Money with deadlines</h4><p>Deposits, locks and payouts follow their own deadlines. Not knowing them costs money or means waiting in vain.</p></div>
+    <div><h4>{{I:users}} An open space</h4><p>Where anyone can post, scams show up too. Moderating must never mean quietly stepping into governance.</p></div>
+  </div>
+</section>
+
+<!-- 03 -->
+<section class="sec pb" id="idea">
+  <div class="num">03</div>
+  <h2>The idea</h2>
+  <p class="lead">Enjin Governance rests on two ideas. First: what is on chain, the browser reads from the chain. Second: what doesn’t fit on chain, the text of a proposal, gets pinned to the chain with a hash.</p>
+  {{FIG:sources|Fig. 1|Where the data comes from. The browser reads referenda, votes and rules straight from the live node and the archive node. The app server holds only what doesn’t belong on chain and is never the source for the chain’s state. A block explorer is an optional last resort.}}
+  <p>The browser connects over WebSocket to an Enjin Relaychain node and, for past state, to an archive node. The list, the detail page, voting and the treasury are built from that. The app server reads the chain only before it acts itself, for example to check whether a draft really belongs to a referendum.</p>
+  <p>Then there is what the chain doesn’t know: sign-in by signature, profiles, comments, drafts, uploaded images and PDFs, moderation. For those the app has a Postgres database and S3-compatible file storage. If both go down, reading and voting still work. With no settings at all, the app starts with public nodes and browser-extension wallets.</p>
+  <p>The network can be switched inside the app, with no redeploy: Enjin Relaychain or Canary Relaychain, the test network. A link with <code>?network=</code> opens on the network it names. A wallet session only ever covers one network.</p>
+</section>
+
+<!-- 04 -->
+<section class="sec pb" id="reading">
+  <div class="num">04</div>
+  <h2>Reading the chain</h2>
+  <p class="lead">An ongoing referendum is easy to read. The hard part comes after: the runtime drops the tally, the call and the submission block from the current state. Enjin Governance brings them back from the archive.</p>
+  {{PHONE:proposal}}
+  <p>For a decided referendum, the app reads the state at the block before the decision. That keeps voters visible even if they removed their vote later. It decodes the call from the preimage store, live or, once the runtime has dropped the preimage after enactment, from the archive. Small calls sit inside the referendum itself and are decoded with the runtime of the block they were read at, since a later upgrade can renumber calls.</p>
+  <p>Every vote comes from the chain’s voting storage, with its currency: ENJ, or sENJ from a staking pool. A chart shows each vote as a segment in proportion to its weight, along with the spread across conviction levels: one large holder or many small ones, at a glance.</p>
+  {{FIG:fallback|Fig. 2|The order of sources for a referendum’s call. An explorer is used only when the chain and the archive return nothing. On Canary, the app works without one entirely.}}
+  <h3>The lifecycle</h3>
+  <p>Every referendum goes through Prepare, Decide, Confirm and Enact, and treasury spends add a Payout. The card on the detail page gives a date for each step, leading with the time left while anything is still to come. Once everything has happened, it folds to one line such as “Paid out” or “Enacted on”, with every event and block behind it.</p>
+  {{FIG:lifecycle|Fig. 3|Five steps, each from its own source on chain. What is still to come is marked as an estimate. What has happened shows with its block and result, and a failed call shows as failed.}}
+  <h3>How much support is enough</h3>
+  <p>A referendum needs approval and support, both measured against curves that fall over time. The runtime measures support against the ENJ issuance, and which issuance counts changed between two versions: up to version 1070 the active issuance (total minus inactive), from 1080 the total. The app picks the denominator by the version it is connected to, and the chart caption says which one applies.</p>
+  {{FIG:support|Fig. 4|Why the denominator matters. On mainnet, about a quarter of the issuance was inactive. Referendum #15 started confirming with 33.9&nbsp;percent of the active issuance against a required 32.3&nbsp;percent. Measured against the total, the app showed 24.3&nbsp;percent, a referendum on course looking too weak. Values from the project documentation.}}
+  <p>The outlook on the detail page builds on this. Using the runtime’s own rounding, it works out whether and when today’s votes meet both curves before the decision period ends. “On course” says when the referendum would pass if the votes hold. The yellow warning is kept for referenda that can’t make it, with what is missing and by when.</p>
+</section>
+
+<!-- 05 -->
+<section class="sec pb" id="egov1">
+  <div class="num">05</div>
+  <h2>The EGOV1 record</h2>
+  <p class="lead">EGOV1 is a small, open format. It binds a proposal’s text to its referendum, so anyone can find and check it without this app.</p>
+  <p>The text of a proposal is a JSON file in the app’s file storage, served from the app’s own address. Only a short envelope goes on chain: <code>EGOV1:{"u":"…","h":"…"}</code>, with the JSON’s URL <code>u</code> and its SHA-256 <code>h</code>. The hash is taken over a fixed form, with keys sorted at every level, so every program computes the same value.</p>
+  {{FIG:batch|Fig. 5|One proposal, one signature. The call, the referendum, the envelope and its binding go on chain in one batch. If the precomputed index is stale, the runtime refuses the binding and the whole batch is rolled back. A stale index can never label someone else’s referendum.}}
+  <p>The runtime accepts the <code>setMetadata</code> binding only from whoever filed the referendum, and only while it is ongoing. If another proposal gets in first, the batch fails as a whole. The app then rebuilds it and tries again. Older proposals from before this binding carry the same envelope in a <code>system.remark</code> inside their batch.</p>
+  <h3>How anyone can check</h3>
+  <p>To check a text, read the referendum’s binding, resolve the hash through the preimage store to the envelope, fetch the JSON at <code>u</code> and compare its SHA-256 with <code>h</code>. That works with any node, in any browser, from any script. An indexer, an explorer or another client can build the whole corpus of proposal texts this way.</p>
+  <p>The app shows the result as a badge on the text. If a proposer edits the text of an ongoing referendum, the JSON is rewritten at the same address. Its hash then no longer matches the envelope on chain. That mismatch is the public sign of an edit. The call, the amount and the beneficiary can’t change.</p>
+  {{FIG:verify|Fig. 6|Five steps from a referendum to a checked text. The first three are read from the chain; the last two anyone can run.}}
+  <div class="triad">
+    <div class="t-ok"><h4>{{I:circle-check}} Verified</h4><p>The fetched text has the hash the app checked against the chain when it linked the proposal.</p></div>
+    <div class="t-na"><h4>{{I:pen}} Edited</h4><p>The proposer changed it after filing. The mismatch with the chain is visible on purpose.</p></div>
+    <div class="t-bad"><h4>{{I:triangle-alert}} Unverified</h4><p>The text doesn’t match and no edit is recorded. It is shown, but marked as unproven.</p></div>
+  </div>
+  <div class="code-fig">
+<pre><code>{
+  <span class="p">"schema"</span>: <span class="s">"enjin-governance-proposal"</span>, <span class="p">"version"</span>: <span class="s">"1.2.0"</span>,
+  <span class="p">"network"</span>: <span class="s">"enjin-relay"</span>, <span class="p">"proposer"</span>: <span class="s">"en…"</span>, <span class="p">"track"</span>: <span class="s">"Root"</span>,
+  <span class="p">"title"</span>: <span class="s">"…"</span>, <span class="p">"summary"</span>: <span class="s">"…"</span>, <span class="p">"body_markdown"</span>: <span class="s">"…"</span>,
+  <span class="p">"attachments"</span>: [ { <span class="p">"name"</span>, <span class="p">"size"</span>, <span class="p">"content_type"</span>, <span class="p">"sha256"</span> } ],
+  <span class="p">"call"</span>: { <span class="p">"section"</span>: <span class="s">"system"</span>, <span class="p">"method"</span>: <span class="s">"authorizeUpgrade"</span>, <span class="p">"code_hash"</span>: <span class="s">"0x…"</span> },
+  <span class="p">"enactment"</span>: { <span class="c">… when the call runs …</span> }, <span class="p">"preimage_hash"</span>: <span class="s">"0x…"</span>
+}</code></pre>
+    <figcaption><b>Fig. 7</b> An EGOV1 JSON, shortened. Version 1.1.0 describes treasury proposals. 1.2.0 adds the <code>call</code> and <code>enactment</code> sections, so upgrades, cancellations and other calls are documented next to their text. Readers of 1.1.0 keep working. The size, type and hash of each attachment are compared with the stored file when the draft is staged.</figcaption>
+  </div>
+</section>
+
+<!-- 06 -->
+<section class="sec pb" id="voting">
+  <div class="num">06</div>
+  <h2>Voting and filing</h2>
+  <p class="lead">Reading needs no wallet. To vote or file, you connect a wallet and sign. Every signature goes through the same dialog, and each one says up front what it costs and locks.</p>
+  <h3>Voting</h3>
+  {{PHONE:vote}}
+  <p>Votes are Aye, Nay or Abstain. Conviction multiplies a vote’s weight in exchange for a lock: with no lock it counts one tenth, and with longer locks from one to six times. The app reads the lock length from the runtime. Abstain counts toward support, not approval, and locks nothing beyond the referendum.</p>
+  <p>Votes can be cast with ENJ or with sENJ from a staking pool. The chain counts sENJ one to one like ENJ, and the vote panel says so, along with the fact that locked sENJ keeps earning rewards but can’t be unbonded until the lock ends. Voting power is shown in ENJ with the math below it, so a 6x vote doesn’t read as six times the balance.</p>
+  <p>Votes can be delegated per track or across all tracks at once, in one signature. On the account page the app frees expired locks and refunds deposits, but only the ones the runtime will refund.</p>
+  <h3>Six wallets, one signing flow</h3>
+  <p>Supported are Enjin Wallet over WalletConnect, generic WalletConnect and four browser extensions for Polkadot wallets. If a wallet holds several accounts, the app asks which one to use instead of quietly taking the first.</p>
+  <p>On a phone, getting into the wallet was the hardest part. iOS pauses a page in the background, even in the middle of sending. So “Open in Enjin Wallet” opens the wallet only once the relay has confirmed the request, and a second tap re-sends the same request, never a new one. Coming back to the page replaces the relay connection, which iOS lets die in the background.</p>
+  <h3>Filing</h3>
+  <p>Treasury proposals are made in a three-step wizard. It picks the smallest tier whose limit covers the amount, warns when the treasury holds less than requested and checks that a beneficiary address belongs to the right network. An address from another network is caught and converted only after asking. A second composer files any other call: cancel a referendum, whitelist a call, authorize a runtime upgrade by its code hash, or any encoded call. The code hash of an upgrade is computed in the browser from the file.</p>
+  {{FIG:filing|Fig. 8|The path of a proposal. Drafts are stored before anyone signs and can be resumed. Every staged version stays under its own hash, so a batch signed from an older version points at exactly the bytes it pins. Only the check on chain links draft and referendum.}}
+  <p>Before signing, the app lists what the proposal reserves: the submission deposit, the preimage deposits for the call and the EGOV1 record, the fees and the minimum balance, all read from the chain. It only goes on if the free balance covers them. The track’s decision deposit is shown but not required: anyone can place it later.</p>
+  {{PHONES:list,create,treasury|On a phone: reading referenda without a wallet, starting a treasury proposal, the treasury with its open requests. Screenshots of the real app. Left, sample data from the repository; middle and right, captured with a test wallet against the Canary network, with other people’s addresses blurred.}}
+</section>
+
+<!-- 07 -->
+<section class="sec pb" id="fellowship">
+  <div class="num">07</div>
+  <h2>The Fellowship</h2>
+  <p class="lead">The Fellowship is the Relaychain’s ranked collective. Its members vote weighted by rank and can whitelist calls, which then run through a faster public track.</p>
+  {{PHONE:fellowship}}
+  <p>The <code>/fellowship</code> page shows members and ranks, every Fellowship referendum and the calls on the whitelist. It appears only where the runtime has the pallets. Fellowship referenda are numbered separately as F#N, so #7 and F#7 are never confused. In the database, too, an index is unique only per network and pallet.</p>
+  <p>A member of rank <i>r</i> on a track with minimum rank <i>m</i> counts with weight (e+1)(e+2)/2, where e = r - m. Approval is measured by weight, support by the number of members voting Aye. A member below the minimum rank is told which rank it would take.</p>
+  <table class="tbl" style="width:58%">
+    <tr><th>Rank above the minimum (e)</th><th>Weight</th></tr>
+    <tr><td>0</td><td>1</td></tr><tr><td>1</td><td>3</td></tr><tr><td>2</td><td>6</td></tr><tr><td>3</td><td>10</td></tr>
+  </table>
+  {{FIG:fasttrack|Fig. 9|The fast track. A Fellowship referendum whitelists a call, and a public referendum on the WhitelistedCaller track dispatches it. Both pages show the same four steps, link each other by the call hash and compare both tracks’ terms with Root’s.}}
+  <p>Members of rank I and up file Fellowship referenda in the same composer as every other proposal, with a title, summary, text and EGOV1 record: whitelist a call or remove it, add, promote, demote or remove a member. The origin a change needs is named below the dropdown and turns amber when another one is picked.</p>
+</section>
+
+<!-- 08 -->
+<section class="sec pb" id="built">
+  <div class="num">08</div>
+  <h2>How it is built</h2>
+  <p class="lead">A Next.js application in TypeScript, with a few flat layers and clear ownership. A new layer gets added only when there is no other way.</p>
+  {{FIG:layers|Fig. 10|The browser on the left, the server on the right. The chain layer at the bottom knows nothing about governance or storage. Pages read only through hooks. Signing happens in exactly one place. The server talks to the chain only to check before it acts.}}
+  <div class="two">
+    <div>
+      <h3>Rules in the design</h3>
+      <ul class="tight">
+        <li><b>One place signs.</b> Components hand over a built call. Signing, sending and tracking to finality live in a single hook.</li>
+        <li><b>Server code stays on the server.</b> Modules that touch the database, storage or a secret are marked. Importing one into the browser breaks the build.</li>
+        <li><b>One source per truth.</b> The networks live in one file, the environment variables in one typed schema, the upload limit in one place for browser and server.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Parts</h3>
+      <ul class="tight">
+        <li>Next.js 16 with the App Router, React 19, TypeScript in strict mode</li>
+        <li>polkadot.js for the chain, behind a layer of its own</li>
+        <li>WalletConnect and the browser-extension interface</li>
+        <li>Postgres and S3-compatible file storage off chain</li>
+        <li>Vitest, PGlite and Playwright for tests at three levels</li>
+        <li>About 340 source files of its own, seven documents on architecture, flows and operations</li>
+      </ul>
+    </div>
+  </div>
+  <p>The server checks every write in a fixed order: same origin, input shape, a signed-in user, ownership by public key, a moderation posting pause and a rate limit. When a setting is missing, the affected routes answer with an error instead of doing half the job. A status page for admins shows after every deploy what is set up and what is missing.</p>
+</section>
+
+<!-- 09 -->
+<section class="sec pb" id="today">
+  <div class="num">09</div>
+  <h2>What it does today</h2>
+  <p class="lead">Every capability is listed with its status. <span class="st live">{{I:circle-check}} live</span> means shipped on the main line and part of version 2.0.3 at gov.enjin.cloud.</p>
+  <table class="tbl caps">
+    <tr><th>Area</th><th>What it does</th><th>Status</th></tr>
+    <tr><td>Reading referenda</td><td>List, search and filters; a detail page with call, tally, voters, lifecycle and outlook, all from the chain, decided referenda included.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Voting</td><td>Aye, Nay and Abstain with conviction, with ENJ or sENJ, voting power with its math.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Delegating and unlocking</td><td>Delegation per track or across all, freeing locks, refunding deposits where the runtime allows.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Treasury proposals</td><td>A three-step wizard, tier by amount, costs before signing, resumable drafts.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Any other call</td><td>Cancel, whitelist, upgrade by code hash, remark or encoded call, under every admin origin.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>EGOV1</td><td>Text, attachments and call pinned to the chain by hash, checked in the browser, edits visible.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Proposal text</td><td>Markdown with tables, images and PDFs, checksummed addresses, a preview as voters see it.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Fellowship</td><td>Members, ranks, F# referenda, weighted voting, filing, the fast track.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Wallets</td><td>Six wallets, one flow for every signature, Enjin Wallet in one tap.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Community</td><td>Sign-in by signature with no fee, profiles, comments per proposal.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Moderation</td><td>Reports, one queue, roles by wallet, a public log, optional automatic checks.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Operations</td><td>A status page for admins, backups as one archive with a restore script, a form for security reports.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Search</td><td>A sitemap with every referendum, a share image per referendum, per-page metadata, private areas not indexed.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+    <tr><td>Legal</td><td>Imprint, privacy policy and terms, a link to the source code in every footer.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
+  </table>
+  <p class="small">The two Matrixchains are in the network list but not enabled, so they are not in this table (chapter&nbsp;14).</p>
+</section>
+
+<!-- 10 -->
+<section class="sec pb" id="production">
+  <div class="num">10</div>
+  <h2>In production</h2>
+  <p class="lead">Enjin Governance is not a prototype. The public instance runs at gov.enjin.cloud, and its EGOV1 records sit on Enjin Relaychain, where anyone can check them.</p>
+  <p>On November&nbsp;16, 2026, gov.enjin.cloud answered with version 2.0.3, the newest on the main line. Its sitemap listed all 21 referenda of the default network. The first public version came out on June&nbsp;28, 2026, version 2.0 on November&nbsp;11. That same day in November, Enjin Relaychain ran runtime version 1080, whose rules the app implements.</p>
+  {{FIG:mainnet|Fig. 11|Every referendum on Enjin Relaychain, read straight from the chain on November&nbsp;16. From #10 on, every referendum carries a binding. Eight resolve to an EGOV1 envelope with a URL on gov.enjin.cloud. For seven, the SHA-256 of the fetched text matches the hash on chain; one was edited. For three, the preimage was no longer on chain.}}
+  <div class="case">
+    <div class="case-h"><div class="case-n">1</div><div><h3>The first record</h3><p>August&nbsp;17, 2026</p></div></div>
+    <p>On August&nbsp;17, binding through <code>setMetadata</code> replaced the older route of a remark in the batch. The same day, referendum #10 became the first proposal on mainnet to pin its text this way. Its text is still at the same address today, and its hash matches.</p>
+  </div>
+  <div class="case">
+    <div class="case-h"><div class="case-n">2</div><div><h3>The visible edit</h3><p>November&nbsp;4, 2026</p></div></div>
+    <p>Referendum #19 was edited by its proposer four minutes after filing. The app recorded the edit with its time and shows “Edited”. The hash on chain still points at the first version. Anyone comparing the two sees that something changed, without having to trust the app.</p>
+  </div>
+  <div class="case">
+    <div class="case-h"><div class="case-n">3</div><div><h3>The upgrade to 1080</h3><p>Version 2.0, November&nbsp;11, 2026</p></div></div>
+    <p>Version 1080 changed spend limits, deposits and the way support is measured. According to the changelog, treasury tiers, support, refunds, Abstain and the Fellowship were run again on a copy of mainnet on 1080.</p>
+  </div>
+  {{PHONES:proposal,text,moderation|A proposal with its treasury request, its checked text and the moderation queue. Captured on November&nbsp;16 against referendum #13 on the Canary chain with the repository’s test data, other people’s addresses blurred.}}
+</section>
+
+<!-- 11 -->
+<section class="sec pb" id="moderation">
+  <div class="num">11</div>
+  <h2>Moderation</h2>
+  <p class="lead">An open space for proposals and comments also draws scams, such as images showing a readable recovery phrase or links to fake wallets. Moderation keeps it clean without stepping into governance.</p>
+  {{FIG:moderation|Fig. 12|Reports and automatic checks land in one queue. Moderators decide with a reason, and the decision is public. The chain and the pinned JSON stay untouched.}}
+  <table class="tbl roles">
+    <tr><th></th><th>Everyone</th><th>Moderator</th><th>Admin</th></tr>
+    <tr><td>Report content, read the public log</td><td>yes</td><td>yes</td><td>yes</td></tr>
+    <tr><td>Queue: keep, blur, hide, restore</td><td></td><td>yes</td><td>yes</td></tr>
+    <tr><td>Delete a file, pause a wallet’s posting</td><td></td><td></td><td>yes</td></tr>
+    <tr><td>Roles, check settings, status page, backups</td><td></td><td></td><td>yes</td></tr>
+  </table>
+  <p>Roles are tied to a wallet’s public key, so they hold in every address format. The first admins are set in the configuration and can’t be removed in the app. Every role is checked on the server, never only in the interface.</p>
+  <h3>Automatic checks, with limits</h3>
+  <p>Admins can switch on checks by a language model. Images and PDFs are checked before they are stored: a clear violation is rejected or, if the admins choose, held; a borderline file is stored blurred and served only after a decision. Proposal text and comments are checked after posting. Text can only be put in the queue, never hidden automatically. Every check is counted before it is sent, so a daily limit is a hard cap on cost. If the checking service is down, nothing is blocked. A setup problem such as a refused key shows on the status page and is reported to the moderators once a day.</p>
+</section>
+
+<!-- 12 -->
+<section class="sec pb" id="security">
+  <div class="num">12</div>
+  <h2>Security and privacy</h2>
+  <p class="lead">The app holds no money and no keys. Signing happens in the wallet. What it has to protect are sessions, drafts, uploaded files and moderation decisions.</p>
+  <table class="tbl">
+    <tr><th>Area</th><th>How it works today</th></tr>
+    <tr><td>Sign-in</td><td>By signature, with no password and no transaction. The server issues a single-use nonce and stores the exact message to be signed. Verifying uses up the nonce in the same step.</td></tr>
+    <tr><td>Sessions</td><td>An httpOnly cookie. The database knows only the SHA-256 of the token, never the token. Signing out deletes the session.</td></tr>
+    <tr><td>Ownership</td><td>Routes compare public keys, so the same wallet stays the same in every address format and no other one matches.</td></tr>
+    <tr><td>Other sites</td><td>Any write to the API whose origin names another site is refused. Write routes and anonymous routes are rate-limited.</td></tr>
+    <tr><td>Uploads</td><td>The type is read from the bytes, not from the browser’s claim. Images are re-encoded and metadata such as GPS is removed. SVG and HTML are never accepted. Files leave only through an app route that respects moderation.</td></tr>
+    <tr><td>Rendering</td><td>Markdown becomes React elements, never injected HTML. Links must be http(s) or paths on the same site. A Content Security Policy and framing protection come on top.</td></tr>
+    <tr><td>Secrets</td><td>Server and browser variables are separate in the schema; no secret reaches the browser. The status page reports only whether something is set, never values or error text.</td></tr>
+    <tr><td>Deposits</td><td>The call of an ongoing referendum is never offered for reclaim. If the checks behind it fail, the list doesn’t load at all rather than offering anything unchecked.</td></tr>
+    <tr><td>Backups</td><td>Only admins create and download them, through a short-lived signed link. Sessions and nonces are never included.</td></tr>
+    <tr><td>Disclosures</td><td>A public form for security reports, no account needed. The IP address is stored only as a hash.</td></tr>
+  </table>
+  <p>According to the changelog, the project has been through several security reviews, the last one before version 2.0. Among other things it closed a crafted link that could have handed a proposer any call under a harmless title: links to the composer now choose only the network and the chamber. 18 test files run the real routes against attacks, replacing only the database, storage and outside services. There has been no external review (chapter&nbsp;14).</p>
+</section>
+
+<!-- 13 -->
+<section class="sec pb" id="made">
+  <div class="num">13</div>
+  <h2>How it is made</h2>
+  <p class="lead">The repository’s history starts on June&nbsp;19, 2026, with version 1.0 as its first commit. By November&nbsp;13, 187 commits and 15 merged pull requests had landed on the main line.</p>
+  {{FIG:chart|Fig. 13|Commits on the main line per month, to scale. November is hatched because the last commit is from the 13th. Whatever came before the first commit is not in the repository. The number counts steps, not value.}}
+  <div class="miles">
+    <div><b>June&nbsp;28, 2026</b><span>Version 1.0: reading, voting, delegation, treasury proposals with EGOV1</span></div>
+    <div><b>August&nbsp;17, 2026</b><span>EGOV1 through <code>setMetadata</code>, first record on mainnet</span></div>
+    <div><b>October&nbsp;8, 2026</b><span>Upgrades by code hash, treasury tiers from the runtime</span></div>
+    <div><b>November&nbsp;11, 2026</b><span>Version 2.0: Fellowship, moderation, the rules of 1080</span></div>
+    <div><b>November&nbsp;13, 2026</b><span>Version 2.0.3, live today</span></div>
+  </div>
+  <p>The project is built and maintained by Chris Zemmel. Other developers contribute now and then: 15 of the 187 commits come from one other person.</p>
+  <h3>The pipeline</h3>
+  <p>Every pull request and every push to the main line goes through the same steps: type check, lint, a search for unused code, a check of dependencies for known vulnerabilities, the tests and the build, then the browser tests against the production build. The dependency check also runs every Monday, because vulnerabilities get published without anyone changing anything. The last run on the main line, on November&nbsp;13, was green.</p>
+  <ul class="tight">
+    <li><b>Unit and route tests.</b> 1,248 tests in 106 files, all green when rerun on November&nbsp;16.</li>
+    <li><b>Database tests.</b> The SQL runs against a real in-process Postgres, with every migration production gets.</li>
+    <li><b>Browser tests.</b> 29 tests in Chromium against the production build. The chain data is real and comes from the Canary network. The test wallet never signs.</li>
+  </ul>
+  <h3>Bugs that became rules</h3>
+  <table class="tbl cases">
+    <tr><th>Case</th><th>What happened</th><th>The rule since</th></tr>
+    <tr><td>The double lock</td><td>On most tracks, the app showed twice a vote’s real lock period.</td><td>Lock periods come from the runtime, never from an assumption.</td></tr>
+    <tr><td>The tier too large</td><td>The smallest treasury tier was offered up to 250&nbsp;ENJ; 100 was allowed.</td><td>Limits per runtime version, a warning for an unknown version.</td></tr>
+    <tr><td>The wrong denominator</td><td>Support on mainnet looked about 28 percent too low.</td><td>Every value from runtime constants is tied to the runtime’s version.</td></tr>
+    <tr><td>The empty wallet</td><td>On iOS the wallet opened before the request reached the relay, and found nothing.</td><td>First the relay’s acknowledgment, then the wallet. A second tap re-sends the same request.</td></tr>
+    <tr><td>The second proposal</td><td>After lost status updates, Retry would have filed a second time.</td><td>Before any new attempt, look for the referendum already filed.</td></tr>
+    <tr><td>The hidden text</td><td>A hidden proposal could still be read through the API.</td><td>Hidden means hidden everywhere, except the JSON whose hash is on chain.</td></tr>
+  </table>
+</section>
+
+<!-- 14 -->
+<section class="sec pb" id="limits">
+  <div class="num">14</div>
+  <h2>Limits today</h2>
+  <p class="lead">A manifesto that hides its limits deserves no trust. These hold on November&nbsp;16, 2026.</p>
+  <div class="limits">
+    <div><h4>A one-person project</h4><p>One person builds and maintains the app, with occasional help from others. If that person drops out, development stops. The code stays open, and anyone can run an instance.</p></div>
+    <div><h4>Only the Relaychains</h4><p>The two Matrixchains are registered but not enabled. Enjin Matrixchain still uses an older governance module that the app doesn’t cover.</p></div>
+    <div><h4>Hosted services</h4><p>The public instance runs on providers for hosting, database and file storage. If they go down, texts, profiles and comments are missing. Reading and voting depend only on the chain.</p></div>
+    <div><h4>Public nodes</h4><p>Without a node of its own, the app reads through public endpoints. If they are slow or down, the app shows the error and tries again.</p></div>
+    <div><h4>The badge checks against the app</h4><p>“Verified” compares with the hash the server checked against the chain and stored when it linked the proposal. The browser doesn’t reread the envelope on chain for it. The independent check from chapter&nbsp;5 stays open to anyone.</p></div>
+    <div><h4>No external audit</h4><p>The security reviews are described in the changelog and backed by tests. A review by a third party is still to come. The automatic content check is an aid, not a guarantee.</p></div>
+  </div>
+  <div class="unver">
+    <div class="label">What is not verified</div>
+    <p class="small" style="margin-bottom:2mm">“Not verified” is a valid status. These points are in the repository but were not checked against reality for this manifesto:</p>
+    <ul>
+      <li>The runs on copies of mainnet and the Canary network are described in the changelog. No script that repeats them is in the repository.</li>
+      <li>The numbers in the denominator case (inactive issuance, referendum #15) come from the project documentation, not from a measurement of our own.</li>
+      <li>The full browser test suite was not run for this manifesto. The screenshots were taken with the same test harness against a fresh production build.</li>
+      <li>The public instance’s uptime is not measured. It is only proven that it answered on November&nbsp;16.</li>
+      <li>Three metadata bindings on mainnet could not be resolved because their preimage is no longer on chain. Whether they came from this app is open.</li>
+    </ul>
+  </div>
+  <div class="contact">
+    {{LOGO:44}}
+    <div class="contact-body">
+      <div class="label">Contact</div>
+      <p class="contact-line"><span class="contact-name">Chris Zemmel</span> Zyric · gov.enjin.cloud · github.com/chriszemmel/enjin-governance</p>
+    </div>
+    <p class="contact-note small">Enjin Governance is free software under the AGPL-3.0.</p>
+  </div>
+</section>
