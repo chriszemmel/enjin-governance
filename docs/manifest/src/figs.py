@@ -310,7 +310,7 @@ def fig_chart():
         fill = 'url(#hatch)' if part else IND
         b += f'<rect x="{cx - bw / 2}" y="{y1 - h}" width="{bw}" height="{h}" fill="{fill}" stroke="{IND}" stroke-width="1"/>'
         b += T(cx, y1 - h - 8, f'{v}', 12, 600, INK, 'middle')
-        b += T(cx, y1 + 18, m + (tr(' (bis 13.)', ' (to the 13th)') if part else ''), 11.5, 500, INK2, 'middle')
+        b += T(cx, y1 + 18, m, 11.5, 500, INK2, 'middle')
     return svg(640, 244, b, tr('Commits pro Monat', 'Commits per month'))
 
 
