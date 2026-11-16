@@ -270,7 +270,7 @@ def fig_mainnet():
     n = len(state)
     cw, g = 26, (640 - 21 * 26) / 20
     col = {'n': (PAPER, LINE), 'ok': (OK50, OK), 'ed': (IND100, IND), 'x': ('#FFFBEB', WARN)}
-    b = T(0, 13, tr('Enjin Relaychain, alle 21 Referenden, Stand 16. November 2026', 'Enjin Relaychain, all 21 referenda, as of November 16, 2026'), 12.5, 600, INK, fam=D)
+    b = T(0, 13, tr('Enjin Relaychain, die ersten 21 Referenden', 'Enjin Relaychain, the first 21 referenda'), 12.5, 600, INK, fam=D)
     for i, s in enumerate(state):
         x = i * (cw + g)
         f, st = col[s]

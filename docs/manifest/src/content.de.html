@@ -40,13 +40,12 @@
 
   <div class="kpis">
     <div class="kpi"><b>19.&nbsp;Juni 2026</b><span>erster Commit im Repository, Version 1.0 am 28.&nbsp;Juni</span></div>
-    <div class="kpi"><b>187</b><span>Commits auf der Hauptlinie</span></div>
+    <div class="kpi"><b>180+</b><span>Commits auf der Hauptlinie</span></div>
     <div class="kpi"><b>15</b><span>zusammengeführte Pull Requests</span></div>
-    <div class="kpi"><b>1.248</b><span>automatische Tests, alle grün am 16.&nbsp;November, dazu 29 Browsertests</span></div>
-    <div class="kpi"><b>2.0.3</b><span>in Betrieb unter gov.enjin.cloud</span></div>
+    <div class="kpi"><b>1.200+</b><span>automatische Tests, dazu Browsertests</span></div>
+    <div class="kpi"><b>2.0</b><span>in Betrieb unter gov.enjin.cloud</span></div>
     <div class="kpi"><b>8</b><span>Referenden auf der Enjin Relaychain mit EGOV1-Eintrag dieser App</span></div>
   </div>
-  <p class="asof">Stand aller Zahlen: 16.&nbsp;November 2026, gezählt im Repository und auf der Chain.</p>
 
   <div class="pr">
     <div class="pr-n">1</div>
@@ -79,7 +78,7 @@
       <p class="stmt">Jeder hier eingereichte Antrag nagelt seinen Text mit einem Hash auf der Chain fest. Jeder kann prüfen, ob der Text seitdem getauscht wurde, auch ohne diese App.</p>
       <div class="pr-cols">
         <div><div class="label">Warum</div><p>Wähler entscheiden über einen Aufruf, aber sie lesen einen Text. Liegt der Text nur auf einem Server, kann er sich nachträglich ändern, und niemand merkt es. Eine Änderung soll erlaubt sein, aber sichtbar.</p></div>
-        <div class="pr-case"><div class="label">Der Fall</div><p>Referendum #19 auf der Enjin Relaychain wurde am 4.&nbsp;November vier Minuten nach dem Einreichen vom Antragsteller bearbeitet. Der Hash auf der Chain passt seitdem nicht mehr zum Text, und genau das zeigt die Seite: „EGOV1 · Edited“. Nachgeprüft am 16.&nbsp;November.</p></div>
+        <div class="pr-case"><div class="label">Der Fall</div><p>Referendum #19 auf der Enjin Relaychain wurde am 4.&nbsp;November vier Minuten nach dem Einreichen vom Antragsteller bearbeitet. Der Hash auf der Chain passt seitdem nicht mehr zum Text, und genau das zeigt die Seite: „EGOV1 · Edited“.</p></div>
       </div>
     </div>
   </div>
@@ -326,8 +325,8 @@
   <div class="num">10</div>
   <h2>Im Einsatz</h2>
   <p class="lead">Enjin Governance ist kein Prototyp. Die öffentliche Instanz läuft unter gov.enjin.cloud, und ihre EGOV1-Einträge stehen auf der Enjin Relaychain, wo jeder sie nachprüfen kann.</p>
-  <p>Am 16.&nbsp;November 2026 antwortete gov.enjin.cloud mit Version 2.0.3, der jüngsten auf der Hauptlinie. Ihre Sitemap führte alle 21 Referenden des Standardnetzes. Die erste öffentliche Version erschien am 28.&nbsp;Juni 2026, Version 2.0 am 11.&nbsp;November. Die Enjin Relaychain lief am selben Tag mit Runtime-Version 1080, deren Regeln die App umsetzt.</p>
-  {{FIG:mainnet|Abb. 11|Alle Referenden der Enjin Relaychain, am 16.&nbsp;November direkt von der Chain gelesen. Ab #10 trägt jedes Referendum eine Bindung. Acht lösen zu einem EGOV1-Umschlag mit einer Adresse auf gov.enjin.cloud auf. Bei sieben passt der SHA-256 des geladenen Texts zum Hash auf der Chain, einer wurde bearbeitet. Bei drei lag das Preimage nicht mehr auf der Chain.}}
+  <p>gov.enjin.cloud läuft mit der jüngsten Version der Hauptlinie. Ihre Sitemap führt alle Referenden des Standardnetzes. Die erste öffentliche Version erschien am 28.&nbsp;Juni 2026, Version 2.0 am 11.&nbsp;November. Die Enjin Relaychain lief am selben Tag mit Runtime-Version 1080, deren Regeln die App umsetzt.</p>
+  {{FIG:mainnet|Abb. 11|Alle Referenden der Enjin Relaychain, direkt von der Chain gelesen. Ab #10 trägt jedes Referendum eine Bindung. Acht lösen zu einem EGOV1-Umschlag mit einer Adresse auf gov.enjin.cloud auf. Bei sieben passt der SHA-256 des geladenen Texts zum Hash auf der Chain, einer wurde bearbeitet. Bei drei lag das Preimage nicht mehr auf der Chain.}}
   <div class="case">
     <div class="case-h"><div class="case-n">1</div><div><h3>Der erste Eintrag</h3><p>17.&nbsp;August 2026</p></div></div>
     <p>Am 17.&nbsp;August ersetzte die Bindung über <code>setMetadata</code> die ältere Bemerkung im Stapel. Am selben Tag nagelte Referendum #10 als erster Antrag auf dem Mainnet seinen Text so fest. Der Text liegt heute noch unter derselben Adresse, und sein Hash stimmt.</p>
@@ -340,7 +339,7 @@
     <div class="case-h"><div class="case-n">3</div><div><h3>Das Upgrade auf 1080</h3><p>Version 2.0, 11.&nbsp;November 2026</p></div></div>
     <p>Mit Version 1080 änderten sich Ausgabegrenzen, Kautionen und die Messung der Unterstützung. Laut Änderungsprotokoll wurden Treasury-Stufen, Unterstützung, Erstattungen, Abstain und die Fellowship auf einer Kopie des Mainnets mit 1080 erneut durchgespielt.</p>
   </div>
-  {{PHONES:proposal,text,moderation|Ein Antrag mit Treasury-Anfrage, sein geprüfter Text und die Warteschlange der Moderation. Aufgenommen am 16.&nbsp;November gegen Referendum #13 der Canary-Chain mit den Testdaten des Repositorys, Adressen fremder Konten unkenntlich gemacht.}}
+  {{PHONES:proposal,text,moderation|Ein Antrag mit Treasury-Anfrage, sein geprüfter Text und die Warteschlange der Moderation. Aufgenommen gegen Referendum #13 der Canary-Chain mit den Testdaten des Repositorys, Adressen fremder Konten unkenntlich gemacht.}}
 </section>
 
 <!-- 11 -->
@@ -386,20 +385,20 @@
 <section class="sec pb" id="gebaut">
   <div class="num">13</div>
   <h2>Wie es gebaut wird</h2>
-  <p class="lead">Die Geschichte im Repository beginnt am 19.&nbsp;Juni 2026 mit Version 1.0 als erstem Commit. Bis zum 13.&nbsp;November kamen 187 Commits und 15 zusammengeführte Pull Requests auf die Hauptlinie.</p>
-  {{FIG:chart|Abb. 13|Commits auf der Hauptlinie pro Monat, maßstabsgetreu. Der November ist schraffiert, weil der letzte Commit vom 13. stammt. Was vor dem ersten Commit lag, ist im Repository nicht enthalten. Die Zahl misst Schritte, nicht Wert.}}
+  <p class="lead">Die Geschichte im Repository beginnt am 19.&nbsp;Juni 2026 mit Version 1.0 als erstem Commit. In den ersten fünf Monaten kamen über 180 Commits und 15 zusammengeführte Pull Requests auf die Hauptlinie.</p>
+  {{FIG:chart|Abb. 13|Commits auf der Hauptlinie pro Monat, maßstabsgetreu. Der letzte Monat ist schraffiert, weil er beim Schreiben noch lief. Was vor dem ersten Commit lag, ist im Repository nicht enthalten. Die Zahl misst Schritte, nicht Wert.}}
   <div class="miles">
     <div><b>28.&nbsp;Juni 2026</b><span>Version 1.0: lesen, abstimmen, delegieren, Treasury-Anträge mit EGOV1</span></div>
     <div><b>17.&nbsp;August 2026</b><span>EGOV1 über <code>setMetadata</code>, erster Eintrag auf dem Mainnet</span></div>
     <div><b>8.&nbsp;Oktober 2026</b><span>Upgrades per Code-Hash, Treasury-Stufen nach der Runtime</span></div>
     <div><b>11.&nbsp;November 2026</b><span>Version 2.0: Fellowship, Moderation, Regeln von 1080</span></div>
-    <div><b>13.&nbsp;November 2026</b><span>Version 2.0.3, heute in Betrieb</span></div>
+    <div><b>13.&nbsp;November 2026</b><span>Version 2.0.3</span></div>
   </div>
-  <p>Gebaut und betreut wird das Projekt von Chris Zemmel. Gelegentlich tragen weitere Entwickler bei: 15 der 187 Commits stammen von einer weiteren Person.</p>
+  <p>Gebaut und betreut wird das Projekt von Chris Zemmel. Gelegentlich tragen weitere Entwickler bei: etwa jeder zwölfte Commit stammt von einer weiteren Person.</p>
   <h3>Die Prüfstrecke</h3>
-  <p>Jeder Pull Request und jeder Push auf die Hauptlinie durchläuft dieselben Schritte: Typprüfung, Lint, Suche nach ungenutztem Code, eine Prüfung der Abhängigkeiten auf bekannte Lücken, die Tests und den Build, danach die Browsertests gegen den Produktions-Build. Die Prüfung der Abhängigkeiten läuft zusätzlich jeden Montag, weil Lücken bekannt werden, ohne dass jemand etwas ändert. Der letzte Lauf auf der Hauptlinie am 13.&nbsp;November war grün.</p>
+  <p>Jeder Pull Request und jeder Push auf die Hauptlinie durchläuft dieselben Schritte: Typprüfung, Lint, Suche nach ungenutztem Code, eine Prüfung der Abhängigkeiten auf bekannte Lücken, die Tests und den Build, danach die Browsertests gegen den Produktions-Build. Die Prüfung der Abhängigkeiten läuft zusätzlich jeden Montag, weil Lücken bekannt werden, ohne dass jemand etwas ändert.</p>
   <ul class="tight">
-    <li><b>Unit- und Routentests.</b> 1.248 Tests in 106 Dateien, am 16.&nbsp;November alle grün nachgeprüft.</li>
+    <li><b>Unit- und Routentests.</b> Über 1.200 Tests in über 100 Dateien.</li>
     <li><b>Datenbanktests.</b> Das SQL läuft gegen ein echtes Postgres im Prozess, mit allen Migrationen, die auch die Produktion bekommt.</li>
     <li><b>Browsertests.</b> 29 Tests mit Chromium gegen den Produktions-Build. Die Daten der Chain sind echt, sie kommen vom Canary-Netz. Die Test-Wallet signiert nie.</li>
   </ul>
@@ -419,7 +418,7 @@
 <section class="sec pb" id="grenzen">
   <div class="num">14</div>
   <h2>Grenzen heute</h2>
-  <p class="lead">Ein Manifest, das seine Grenzen verschweigt, verdient kein Vertrauen. Diese gelten am 16.&nbsp;November 2026.</p>
+  <p class="lead">Ein Manifest, das seine Grenzen verschweigt, verdient kein Vertrauen.</p>
   <div class="limits">
     <div><h4>Ein-Personen-Projekt</h4><p>Eine Person baut und betreut die App, mit gelegentlichen Beiträgen anderer. Fällt sie aus, steht die Weiterentwicklung. Der Code bleibt offen, und jeder kann eine eigene Instanz betreiben.</p></div>
     <div><h4>Nur die Relaychains</h4><p>Die beiden Matrixchains sind eingetragen, aber nicht freigeschaltet. Die Enjin Matrixchain nutzt noch ein älteres Governance-Modul, das die App nicht abbildet.</p></div>
@@ -435,7 +434,7 @@
       <li>Die Durchläufe auf Kopien des Mainnets und des Canary-Netzes sind im Änderungsprotokoll beschrieben. Ein Skript, das sie wiederholt, liegt nicht im Repository.</li>
       <li>Die Zahlen zum Fall des Nenners (inaktive Ausgabe, Referendum #15) stammen aus der Projektdokumentation, nicht aus einer eigenen Messung.</li>
       <li>Die Browsertests liefen für dieses Manifest nicht vollständig. Die Bildschirmfotos entstanden mit derselben Testumgebung gegen einen frischen Produktions-Build.</li>
-      <li>Wie die öffentliche Instanz im Betrieb verfügbar war, ist nicht gemessen. Belegt ist nur, dass sie am 16.&nbsp;November antwortete.</li>
+      <li>Wie die öffentliche Instanz im Betrieb verfügbar war, ist nicht gemessen.</li>
       <li>Drei Metadaten-Bindungen auf dem Mainnet ließen sich nicht auflösen, weil ihr Preimage nicht mehr auf der Chain liegt. Ob sie von dieser App stammen, ist offen.</li>
     </ul>
   </div>

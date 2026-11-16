@@ -40,13 +40,12 @@
 
   <div class="kpis">
     <div class="kpi"><b>June&nbsp;19, 2026</b><span>first commit in the repository, version 1.0 on June&nbsp;28</span></div>
-    <div class="kpi"><b>187</b><span>commits on the main line</span></div>
+    <div class="kpi"><b>180+</b><span>commits on the main line</span></div>
     <div class="kpi"><b>15</b><span>merged pull requests</span></div>
-    <div class="kpi"><b>1,248</b><span>automated tests, all green on November&nbsp;16, plus 29 browser tests</span></div>
-    <div class="kpi"><b>2.0.3</b><span>live at gov.enjin.cloud</span></div>
+    <div class="kpi"><b>1,200+</b><span>automated tests, plus browser tests</span></div>
+    <div class="kpi"><b>2.0</b><span>live at gov.enjin.cloud</span></div>
     <div class="kpi"><b>8</b><span>referenda on Enjin Relaychain with an EGOV1 record from this app</span></div>
   </div>
-  <p class="asof">All numbers as of November&nbsp;16, 2026, counted in the repository and on chain.</p>
 
   <div class="pr">
     <div class="pr-n">1</div>
@@ -79,7 +78,7 @@
       <p class="stmt">Every proposal filed here pins its text to the chain with a hash. Anyone can check whether it was swapped since, even without this app.</p>
       <div class="pr-cols">
         <div><div class="label">Why</div><p>Voters decide on a call, but they read a text. If the text lives only on a server, it can change later and nobody would know. A change should be allowed, but visible.</p></div>
-        <div class="pr-case"><div class="label">The case</div><p>Referendum #19 on Enjin Relaychain was edited by its proposer on November&nbsp;4, four minutes after filing. Since then the hash on chain no longer matches the text, and that is exactly what the page shows: “EGOV1 · Edited”. Checked again on November&nbsp;16.</p></div>
+        <div class="pr-case"><div class="label">The case</div><p>Referendum #19 on Enjin Relaychain was edited by its proposer on November&nbsp;4, four minutes after filing. Since then the hash on chain no longer matches the text, and that is exactly what the page shows: “EGOV1 · Edited”.</p></div>
       </div>
     </div>
   </div>
@@ -326,8 +325,8 @@
   <div class="num">10</div>
   <h2>In production</h2>
   <p class="lead">Enjin Governance is not a prototype. The public instance runs at gov.enjin.cloud, and its EGOV1 records sit on Enjin Relaychain, where anyone can check them.</p>
-  <p>On November&nbsp;16, 2026, gov.enjin.cloud answered with version 2.0.3, the newest on the main line. Its sitemap listed all 21 referenda of the default network. The first public version came out on June&nbsp;28, 2026, version 2.0 on November&nbsp;11. That same day in November, Enjin Relaychain ran runtime version 1080, whose rules the app implements.</p>
-  {{FIG:mainnet|Fig. 11|Every referendum on Enjin Relaychain, read straight from the chain on November&nbsp;16. From #10 on, every referendum carries a binding. Eight resolve to an EGOV1 envelope with a URL on gov.enjin.cloud. For seven, the SHA-256 of the fetched text matches the hash on chain; one was edited. For three, the preimage was no longer on chain.}}
+  <p>gov.enjin.cloud runs the newest version on the main line. Its sitemap lists all referenda of the default network. The first public version came out on June&nbsp;28, 2026, version 2.0 on November&nbsp;11. That same day in November, Enjin Relaychain ran runtime version 1080, whose rules the app implements.</p>
+  {{FIG:mainnet|Fig. 11|Every referendum on Enjin Relaychain, read straight from the chain. From #10 on, every referendum carries a binding. Eight resolve to an EGOV1 envelope with a URL on gov.enjin.cloud. For seven, the SHA-256 of the fetched text matches the hash on chain; one was edited. For three, the preimage was no longer on chain.}}
   <div class="case">
     <div class="case-h"><div class="case-n">1</div><div><h3>The first record</h3><p>August&nbsp;17, 2026</p></div></div>
     <p>On August&nbsp;17, binding through <code>setMetadata</code> replaced the older route of a remark in the batch. The same day, referendum #10 became the first proposal on mainnet to pin its text this way. Its text is still at the same address today, and its hash matches.</p>
@@ -340,7 +339,7 @@
     <div class="case-h"><div class="case-n">3</div><div><h3>The upgrade to 1080</h3><p>Version 2.0, November&nbsp;11, 2026</p></div></div>
     <p>Version 1080 changed spend limits, deposits and the way support is measured. According to the changelog, treasury tiers, support, refunds, Abstain and the Fellowship were run again on a copy of mainnet on 1080.</p>
   </div>
-  {{PHONES:proposal,text,moderation|A proposal with its treasury request, its checked text and the moderation queue. Captured on November&nbsp;16 against referendum #13 on the Canary chain with the repository’s test data, other people’s addresses blurred.}}
+  {{PHONES:proposal,text,moderation|A proposal with its treasury request, its checked text and the moderation queue. Captured against referendum #13 on the Canary chain with the repository’s test data, other people’s addresses blurred.}}
 </section>
 
 <!-- 11 -->
@@ -386,20 +385,20 @@
 <section class="sec pb" id="made">
   <div class="num">13</div>
   <h2>How it is made</h2>
-  <p class="lead">The repository’s history starts on June&nbsp;19, 2026, with version 1.0 as its first commit. By November&nbsp;13, 187 commits and 15 merged pull requests had landed on the main line.</p>
-  {{FIG:chart|Fig. 13|Commits on the main line per month, to scale. November is hatched because the last commit is from the 13th. Whatever came before the first commit is not in the repository. The number counts steps, not value.}}
+  <p class="lead">The repository’s history starts on June&nbsp;19, 2026, with version 1.0 as its first commit. In the first five months more than 180 commits and 15 merged pull requests had landed on the main line.</p>
+  {{FIG:chart|Fig. 13|Commits on the main line per month, to scale. The last month is hatched because it was still running when this was written. Whatever came before the first commit is not in the repository. The number counts steps, not value.}}
   <div class="miles">
     <div><b>June&nbsp;28, 2026</b><span>Version 1.0: reading, voting, delegation, treasury proposals with EGOV1</span></div>
     <div><b>August&nbsp;17, 2026</b><span>EGOV1 through <code>setMetadata</code>, first record on mainnet</span></div>
     <div><b>October&nbsp;8, 2026</b><span>Upgrades by code hash, treasury tiers from the runtime</span></div>
     <div><b>November&nbsp;11, 2026</b><span>Version 2.0: Fellowship, moderation, the rules of 1080</span></div>
-    <div><b>November&nbsp;13, 2026</b><span>Version 2.0.3, live today</span></div>
+    <div><b>November&nbsp;13, 2026</b><span>Version 2.0.3</span></div>
   </div>
-  <p>The project is built and maintained by Chris Zemmel. Other developers contribute now and then: 15 of the 187 commits come from one other person.</p>
+  <p>The project is built and maintained by Chris Zemmel. Other developers contribute now and then: about one commit in twelve comes from one other person.</p>
   <h3>The pipeline</h3>
-  <p>Every pull request and every push to the main line goes through the same steps: type check, lint, a search for unused code, a check of dependencies for known vulnerabilities, the tests and the build, then the browser tests against the production build. The dependency check also runs every Monday, because vulnerabilities get published without anyone changing anything. The last run on the main line, on November&nbsp;13, was green.</p>
+  <p>Every pull request and every push to the main line goes through the same steps: type check, lint, a search for unused code, a check of dependencies for known vulnerabilities, the tests and the build, then the browser tests against the production build. The dependency check also runs every Monday, because vulnerabilities get published without anyone changing anything.</p>
   <ul class="tight">
-    <li><b>Unit and route tests.</b> 1,248 tests in 106 files, all green when rerun on November&nbsp;16.</li>
+    <li><b>Unit and route tests.</b> More than 1,200 tests in more than 100 files.</li>
     <li><b>Database tests.</b> The SQL runs against a real in-process Postgres, with every migration production gets.</li>
     <li><b>Browser tests.</b> 29 tests in Chromium against the production build. The chain data is real and comes from the Canary network. The test wallet never signs.</li>
   </ul>
@@ -419,7 +418,7 @@
 <section class="sec pb" id="limits">
   <div class="num">14</div>
   <h2>Limits today</h2>
-  <p class="lead">A manifesto that hides its limits deserves no trust. These hold on November&nbsp;16, 2026.</p>
+  <p class="lead">A manifesto that hides its limits deserves no trust.</p>
   <div class="limits">
     <div><h4>A one-person project</h4><p>One person builds and maintains the app, with occasional help from others. If that person drops out, development stops. The code stays open, and anyone can run an instance.</p></div>
     <div><h4>Only the Relaychains</h4><p>The two Matrixchains are registered but not enabled. Enjin Matrixchain still uses an older governance module that the app doesn’t cover.</p></div>
@@ -435,7 +434,7 @@
       <li>The runs on copies of mainnet and the Canary network are described in the changelog. No script that repeats them is in the repository.</li>
       <li>The numbers in the denominator case (inactive issuance, referendum #15) come from the project documentation, not from a measurement of our own.</li>
       <li>The full browser test suite was not run for this manifesto. The screenshots were taken with the same test harness against a fresh production build.</li>
-      <li>The public instance’s uptime is not measured. It is only proven that it answered on November&nbsp;16.</li>
+      <li>The public instance’s uptime is not measured.</li>
       <li>Three metadata bindings on mainnet could not be resolved because their preimage is no longer on chain. Whether they came from this app is open.</li>
     </ul>
   </div>
