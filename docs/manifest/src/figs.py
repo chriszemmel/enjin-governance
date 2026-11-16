@@ -156,7 +156,7 @@ def fig_batch():
 # ---------------------------------------------------------------- verify
 def fig_verify():
     w, g = 112, 20
-    steps = [(tr('Bindung', 'Binding'), 'metadataOf(i)'), (tr('Auflösen', 'Resolve'), 'preimageFor'),
+    steps = [(tr('Verweis', 'Pointer'), 'metadataOf(i)'), (tr('Auflösen', 'Resolve'), 'preimageFor'),
              (tr('Umschlag', 'Envelope'), 'EGOV1:{u,h}'), (tr('Laden', 'Fetch'), tr('JSON von u', 'JSON at u')),
              (tr('Vergleich', 'Compare'), 'SHA-256 = h?')]
     b = ''
@@ -183,7 +183,7 @@ def fig_filing():
             ('archive', '3', tr('Entwurf ablegen', 'Stage the draft'), tr(['JSON unter seinem Hash.', 'Jede Fassung bleibt,', 'nichts wird überschrieben.'], ['JSON under its hash.', 'Every version is kept,', 'nothing is overwritten.']))]
     row2 = [('wallet', '4', tr('Signieren', 'Sign'), tr(['Ein Stapel. Kautionen und', 'Gebühren stehen vorher', 'da, von der Chain gelesen.'], ['One batch. Deposits and', 'fees are shown first,', 'read from the chain.'])),
             ('hourglass', '5', tr('Finalisiert', 'Finalized'), tr(['Erfolg erst bei Finalität,', 'dann der Link zum', 'Referendum.'], ['Success only at finality,', 'then the link to the', 'referendum.'])),
-            ('link', '6', tr('Verknüpfen', 'Link'), tr(['Der Server prüft Bindung,', 'Einreicher und Aufruf auf', 'der Chain.'], ['The server checks binding,', 'depositor and call on', 'chain.']))]
+            ('link', '6', tr('Verknüpfen', 'Link'), tr(['Der Server prüft Verweis,', 'Einreicher und Aufruf auf', 'der Chain.'], ['The server checks the link,', 'depositor and call on', 'chain.']))]
     b = ''
     for i, (icn, n, t, body) in enumerate(row1):
         b += box(i * (w + g), 0, w, h, icn, n, t, body)
@@ -266,7 +266,7 @@ def fig_moderation():
 
 # ---------------------------------------------------------------- mainnet EGOV1 strip
 def fig_mainnet():
-    state = ['n'] * 10 + ['ok', 'x', 'ok', 'ok', 'x', 'x', 'ok', 'ok', 'ok', 'ed', 'ok']
+    state = ['n'] * 10 + ['ok', 'ed', 'ok', 'ok', 'ed', 'ed', 'ok', 'ok', 'ok', 'ed', 'ok']
     n = len(state)
     cw, g = 26, (640 - 21 * 26) / 20
     col = {'n': (PAPER, LINE), 'ok': (OK50, OK), 'ed': (IND100, IND), 'x': ('#FFFBEB', WARN)}
@@ -281,15 +281,14 @@ def fig_mainnet():
             b += ic('pen', x + 6, 32, 14, IND7, 2.2)
         b += T(x + cw / 2, 68, f'#{i}', 10, 500, MUTED, 'middle')
     leg = [('ok', tr('EGOV1-Eintrag, Hash passt (7)', 'EGOV1 record, hash matches (7)')),
-           ('ed', tr('EGOV1-Eintrag, danach bearbeitet (1)', 'EGOV1 record, edited later (1)')),
-           ('x', tr('Bindung gesetzt, Inhalt nicht mehr lesbar (3)', 'binding set, content no longer readable (3)')),
-           ('n', tr('ohne Bindung über setMetadata (10)', 'no binding through setMetadata (10)'))]
+           ('ed', tr('EGOV1-Eintrag, danach bearbeitet (4)', 'EGOV1 record, edited after filing (4)')),
+           ('n', tr('ohne Verweis auf einen Text (10)', 'no link to a text (10)'))]
     for i, (s, t) in enumerate(leg):
-        x = (i % 2) * 320
-        y = 92 + (i // 2) * 24
+        x = 0
+        y = 90 + i * 22
         f, st = col[s]
         b += f'<rect x="{x}" y="{y}" width="14" height="14" rx="3" fill="{f}" stroke="{st}" stroke-width="1.4"/>' + T(x + 22, y + 11.5, t, 10.8, 500, INK2)
-    return svg(640, 134, b, tr('EGOV1 auf dem Mainnet', 'EGOV1 on mainnet'))
+    return svg(640, 150, b, tr('EGOV1 auf dem Mainnet', 'EGOV1 on mainnet'))
 
 
 # ---------------------------------------------------------------- commits chart

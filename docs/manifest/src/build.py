@@ -20,14 +20,13 @@ def fig(m):
 src = re.sub(r'\{\{FIG:(\w+)\|([^|]+)\|(.*?)\}\}', fig, src, flags=re.S)
 LABELS = {
     'list': ('Referenden, ohne Wallet lesbar', 'Referenda, readable without a wallet'),
-    'proposal': ('Ein Antrag mit Treasury-Anfrage', 'A proposal with its treasury request'),
+    'proposal': ('Ein Referendum auf dem Mainnet', 'A referendum on mainnet'),
     'text': ('Antragstext, EGOV1 geprüft', 'Proposal text, EGOV1 verified'),
-    'vote': ('Abstimmen mit Abstain', 'Voting Abstain'),
+    'vote': ('Abstain, Test-Wallet ohne Guthaben', 'Abstain, test wallet with no balance'),
     'fellowship': ('Die Fellowship', 'The Fellowship'),
     'moderation': ('Moderation: eine Warteschlange', 'Moderation: one queue'),
     'create': ('Treasury-Antrag, Schritt 1', 'Treasury proposal, step 1'),
     'treasury': ('Treasury', 'Treasury'),
-    'docs': ('Anleitung und Regeln', 'Guide and rules'),
 }
 import base64
 def phones(m):

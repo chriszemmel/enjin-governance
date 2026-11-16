@@ -43,8 +43,8 @@
     <div class="kpi"><b>180+</b><span>Commits auf der Hauptlinie</span></div>
     <div class="kpi"><b>15</b><span>zusammengeführte Pull Requests</span></div>
     <div class="kpi"><b>1.200+</b><span>automatische Tests, dazu Browsertests</span></div>
-    <div class="kpi"><b>2.0</b><span>in Betrieb unter gov.enjin.cloud</span></div>
-    <div class="kpi"><b>8</b><span>Referenden auf der Enjin Relaychain mit EGOV1-Eintrag dieser App</span></div>
+    <div class="kpi"><b>seit 2026</b><span>öffentlich unter gov.enjin.cloud, EGOV1-Einträge dort ab August 2026</span></div>
+    <div class="kpi"><b>10+</b><span>Referenden auf der Enjin Relaychain mit EGOV1-Eintrag dieser App</span></div>
   </div>
 
   <div class="pr">
@@ -205,10 +205,10 @@
   <h2>Der EGOV1-Eintrag</h2>
   <p class="lead">EGOV1 ist ein kleines, offenes Format: Es bindet den Text eines Antrags an sein Referendum, so dass jeder ihn ohne diese App finden und prüfen kann.</p>
   <p>Der Text eines Antrags liegt als JSON-Datei im Dateispeicher der App, ausgeliefert über ihre eigene Adresse. Auf die Chain kommt nur ein kurzer Umschlag: <code>EGOV1:{"u":"…","h":"…"}</code>, mit der Adresse <code>u</code> des JSON und seinem SHA-256 <code>h</code>. Der Hash wird über eine feste Form gebildet, Schlüssel auf jeder Ebene sortiert, damit jedes Programm denselben Wert errechnet.</p>
-  {{FIG:batch|Abb. 5|Ein Antrag, eine Signatur. Der Aufruf, das Referendum, der Umschlag und seine Bindung gehen in einem Stapel auf die Chain. Ist der vorausberechnete Index veraltet, lehnt die Runtime die Bindung ab, und der ganze Stapel wird zurückgerollt. So kann ein veralteter Index nie das Referendum eines anderen beschriften.}}
-  <p>Die Runtime erlaubt die Bindung <code>setMetadata</code> nur dem, der das Referendum eingereicht hat, und nur solange es läuft. Kommt ein anderer Antrag zuvor, scheitert der Stapel als Ganzes. Die App baut ihn dann neu und versucht es noch einmal. Ältere Anträge aus der Zeit vor dieser Bindung tragen denselben Umschlag in einem <code>system.remark</code> innerhalb ihres Stapels.</p>
+  {{FIG:batch|Abb. 5|Ein Antrag, eine Signatur. Der Aufruf, das Referendum, der Umschlag und der Verweis darauf gehen in einem Stapel auf die Chain. Ist der vorausberechnete Index veraltet, lehnt die Runtime den Verweis ab, und der ganze Stapel wird zurückgerollt. So kann ein veralteter Index nie das Referendum eines anderen beschriften.}}
+  <p>Die Runtime erlaubt den Verweis über <code>setMetadata</code> nur dem, der das Referendum eingereicht hat, und nur solange es läuft. Kommt ein anderer Antrag zuvor, scheitert der Stapel als Ganzes. Die App baut ihn dann neu und versucht es noch einmal. Ältere Anträge aus der Zeit vor diesem Verweis tragen denselben Umschlag in einem <code>system.remark</code> innerhalb ihres Stapels.</p>
   <h3>Wie jeder prüfen kann</h3>
-  <p>Wer einen Text prüfen will, liest die Bindung des Referendums, löst den Hash über den Preimage-Speicher zum Umschlag auf, lädt das JSON von <code>u</code> und vergleicht seinen SHA-256 mit <code>h</code>. Das geht mit jedem Knoten, in jedem Browser, aus jedem Skript. Ein Indexer, ein Explorer oder ein anderer Client kann so den ganzen Bestand an Antragstexten aufbauen.</p>
+  <p>Wer einen Text prüfen will, liest den Metadaten-Hash des Referendums, löst den Hash über den Preimage-Speicher zum Umschlag auf, lädt das JSON von <code>u</code> und vergleicht seinen SHA-256 mit <code>h</code>. Das geht mit jedem Knoten, in jedem Browser, aus jedem Skript. Ein Indexer, ein Explorer oder ein anderer Client kann so den ganzen Bestand an Antragstexten aufbauen.</p>
   <p>Die App zeigt den Stand als Abzeichen am Text. Ändert ein Antragsteller den Text eines laufenden Referendums, wird das JSON an derselben Adresse neu geschrieben. Sein Hash passt dann nicht mehr zum Umschlag auf der Chain. Genau diese Abweichung ist das öffentliche Zeichen einer Bearbeitung. Aufruf, Betrag und Empfänger lassen sich nicht ändern.</p>
   {{FIG:verify|Abb. 6|Fünf Schritte vom Referendum zum geprüften Text. Die ersten drei liest man von der Chain, die letzten beiden kann jeder selbst ausführen.}}
   <div class="triad">
@@ -246,7 +246,7 @@
   <p>Treasury-Anträge entstehen in einem Assistenten in drei Schritten. Er wählt die kleinste Stufe, deren Grenze den Betrag deckt, warnt, wenn die Treasury weniger hält als verlangt, und prüft, ob eine Empfängeradresse aus dem richtigen Netz stammt. Eine Adresse aus einem anderen Netz wird erkannt und erst nach Rückfrage umgewandelt. Ein zweites Formular reicht jeden anderen Aufruf ein: ein Referendum abbrechen, einen Aufruf auf die Whitelist setzen, ein Runtime-Upgrade per Code-Hash freigeben, einen beliebigen kodierten Aufruf. Der Code-Hash eines Upgrades wird im Browser aus der Datei errechnet.</p>
   {{FIG:filing|Abb. 8|Der Weg eines Antrags. Entwürfe liegen im Speicher, bevor jemand signiert, und lassen sich fortsetzen. Jede abgelegte Fassung bleibt unter ihrem eigenen Hash, damit ein Stapel, der aus einer älteren Fassung signiert wurde, genau auf die Bytes zeigt, die er festnagelt. Erst die Prüfung auf der Chain verknüpft Entwurf und Referendum.}}
   <p>Vor dem Signieren listet die App, was der Antrag reserviert: die Einreichungskaution, die Kautionen für die Preimages von Aufruf und EGOV1-Eintrag, die Gebühren und das Mindestguthaben, alles von der Chain gelesen. Weiter geht es nur, wenn das freie Guthaben reicht. Die Entscheidungskaution des Tracks steht dabei, wird aber nicht verlangt: Sie kann später jeder hinterlegen.</p>
-  {{PHONES:list,create,treasury|Am Telefon: Referenden ohne Wallet lesen, einen Treasury-Antrag beginnen, die Treasury mit ihren laufenden Anfragen. Bildschirmfotos der echten App. Links Beispieldaten aus dem Repository, Mitte und rechts mit einer Test-Wallet gegen das Canary-Netz aufgenommen, Adressen fremder Konten unkenntlich gemacht.}}
+  {{PHONES:list,create,treasury|Am Telefon: Referenden ohne Wallet lesen und suchen, einen Treasury-Antrag beginnen, die Treasury mit ihren laufenden Anfragen. Bildschirmfotos der echten App auf der Enjin Relaychain. Links und rechts die öffentliche Instanz gov.enjin.cloud, die Mitte ein lokaler Produktions-Build mit einer Test-Wallet ohne Guthaben, die nie signiert. Adressen und Titel fremder Anträge unkenntlich gemacht.}}
 </section>
 
 <!-- 07 -->
@@ -299,7 +299,7 @@
 <section class="sec pb" id="heute">
   <div class="num">09</div>
   <h2>Was es heute kann</h2>
-  <p class="lead">Jede Fähigkeit steht hier mit ihrem Stand. <span class="st live">{{I:circle-check}} in Betrieb</span> heißt: auf der Hauptlinie ausgeliefert und Teil der Version 2.0.3 unter gov.enjin.cloud.</p>
+  <p class="lead">Jede Fähigkeit steht hier mit ihrem Stand. <span class="st live">{{I:circle-check}} in Betrieb</span> heißt: auf der Hauptlinie ausgeliefert und in der öffentlichen Instanz unter gov.enjin.cloud nutzbar.</p>
   <table class="tbl caps">
     <tr><th>Bereich</th><th>Was es tut</th><th>Stand</th></tr>
     <tr><td>Referenden lesen</td><td>Liste, Suche und Filter, Detailseite mit Aufruf, Auszählung, Wählern, Lebenslauf und Einschätzung, alles von der Chain, auch für entschiedene Referenden.</td><td><span class="st live">{{I:circle-check}} in Betrieb</span></td></tr>
@@ -325,11 +325,12 @@
   <div class="num">10</div>
   <h2>Im Einsatz</h2>
   <p class="lead">Enjin Governance ist kein Prototyp. Die öffentliche Instanz läuft unter gov.enjin.cloud, und ihre EGOV1-Einträge stehen auf der Enjin Relaychain, wo jeder sie nachprüfen kann.</p>
-  <p>gov.enjin.cloud läuft mit der jüngsten Version der Hauptlinie. Ihre Sitemap führt alle Referenden des Standardnetzes. Die erste öffentliche Version erschien am 28.&nbsp;Juni 2026, Version 2.0 am 11.&nbsp;November. Die Enjin Relaychain lief am selben Tag mit Runtime-Version 1080, deren Regeln die App umsetzt.</p>
-  {{FIG:mainnet|Abb. 11|Alle Referenden der Enjin Relaychain, direkt von der Chain gelesen. Ab #10 trägt jedes Referendum eine Bindung. Acht lösen zu einem EGOV1-Umschlag mit einer Adresse auf gov.enjin.cloud auf. Bei sieben passt der SHA-256 des geladenen Texts zum Hash auf der Chain, einer wurde bearbeitet. Bei drei lag das Preimage nicht mehr auf der Chain.}}
+  <p>Die öffentliche Instanz läuft unter gov.enjin.cloud, und ihre Sitemap führt jedes Referendum des Standardnetzes. Die erste öffentliche Version erschien am 28.&nbsp;Juni 2026, Version 2.0 am 11.&nbsp;November. Die App folgt den Regeln der jeweils aktiven Runtime-Version: Sie liest sie von der Chain und übernimmt ein Upgrade, ohne neu ausgeliefert zu werden.</p>
+  {{FIG:mainnet|Abb. 11|Die ersten 21 Referenden der Enjin Relaychain, direkt von der Chain gelesen. Ab #10 trägt jedes einen Metadaten-Hash, also einen Verweis auf seinen Text, und alle elf Texte liegen in der App. Bei sieben passt der SHA-256 des Texts zum Hash auf der Chain. Vier wurden nach dem Einreichen bearbeitet.}}
+  <p>Eine Bearbeitung schreibt das JSON an derselben Adresse neu, der Hash auf der Chain zeigt weiter auf die erste Fassung (Kapitel&nbsp;5). Bei drei der vier bearbeiteten Referenden (#11, #14, #15) wurde zudem der ursprüngliche Umschlag von der Chain entfernt, so dass dort nur noch der Hash der ersten Fassung steht.</p>
   <div class="case">
     <div class="case-h"><div class="case-n">1</div><div><h3>Der erste Eintrag</h3><p>17.&nbsp;August 2026</p></div></div>
-    <p>Am 17.&nbsp;August ersetzte die Bindung über <code>setMetadata</code> die ältere Bemerkung im Stapel. Am selben Tag nagelte Referendum #10 als erster Antrag auf dem Mainnet seinen Text so fest. Der Text liegt heute noch unter derselben Adresse, und sein Hash stimmt.</p>
+    <p>Am 17.&nbsp;August ersetzte der Verweis über <code>setMetadata</code> die ältere Bemerkung im Stapel. Am selben Tag nagelte Referendum #10 als erster Antrag auf dem Mainnet seinen Text so fest. Der Text liegt heute noch unter derselben Adresse, und sein Hash stimmt.</p>
   </div>
   <div class="case">
     <div class="case-h"><div class="case-n">2</div><div><h3>Die sichtbare Bearbeitung</h3><p>4.&nbsp;November 2026</p></div></div>
@@ -339,7 +340,7 @@
     <div class="case-h"><div class="case-n">3</div><div><h3>Das Upgrade auf 1080</h3><p>Version 2.0, 11.&nbsp;November 2026</p></div></div>
     <p>Mit Version 1080 änderten sich Ausgabegrenzen, Kautionen und die Messung der Unterstützung. Laut Änderungsprotokoll wurden Treasury-Stufen, Unterstützung, Erstattungen, Abstain und die Fellowship auf einer Kopie des Mainnets mit 1080 erneut durchgespielt.</p>
   </div>
-  {{PHONES:proposal,text,moderation|Ein Antrag mit Treasury-Anfrage, sein geprüfter Text und die Warteschlange der Moderation. Aufgenommen gegen Referendum #13 der Canary-Chain mit den Testdaten des Repositorys, Adressen fremder Konten unkenntlich gemacht.}}
+  {{PHONES:proposal,text,moderation|Referendum #10 auf gov.enjin.cloud, sein geprüfter Text und die Warteschlange der Moderation. Die Warteschlange sehen nur Moderatoren. Sie stammt deshalb aus einem lokalen Produktions-Build auf der Enjin Relaychain und zeigt die Testdaten des Repositorys. Adressen fremder Konten unkenntlich gemacht.}}
 </section>
 
 <!-- 11 -->
@@ -378,7 +379,7 @@
     <tr><td>Sicherungen</td><td>Nur Admins erstellen und laden sie, über einen kurzlebigen signierten Link. Sitzungen und Nonces sind nie enthalten.</td></tr>
     <tr><td>Meldestelle</td><td>Ein öffentliches Formular für Sicherheitslücken, ohne Konto. Die IP-Adresse wird nur als Hash gespeichert.</td></tr>
   </table>
-  <p>Das Projekt hat laut Änderungsprotokoll mehrere Sicherheitsprüfungen durchlaufen, zuletzt vor Version 2.0. Die letzte schloss unter anderem einen präparierten Link, der einem Antragsteller unter harmlosem Titel einen beliebigen Aufruf hätte unterschieben können: Links zum Formular wählen heute nur noch Netz und Kammer. 18 Testdateien führen die echten Routen gegen Angriffe aus und ersetzen dabei nur Datenbank, Speicher und externe Dienste. Eine externe Prüfung gibt es nicht (Kapitel&nbsp;14).</p>
+  <p>Das Projekt hat laut Änderungsprotokoll mehrere Sicherheitsprüfungen durchlaufen, darunter eine vor Version 2.0. Diese schloss unter anderem einen präparierten Link, der einem Antragsteller unter harmlosem Titel einen beliebigen Aufruf hätte unterschieben können: Links zum Formular wählen heute nur noch Netz und Kammer. 18 Testdateien führen die echten Routen gegen Angriffe aus und ersetzen dabei nur Datenbank, Speicher und externe Dienste. Eine externe Prüfung gibt es nicht (Kapitel&nbsp;14).</p>
 </section>
 
 <!-- 13 -->
@@ -433,9 +434,9 @@
     <ul>
       <li>Die Durchläufe auf Kopien des Mainnets und des Canary-Netzes sind im Änderungsprotokoll beschrieben. Ein Skript, das sie wiederholt, liegt nicht im Repository.</li>
       <li>Die Zahlen zum Fall des Nenners (inaktive Ausgabe, Referendum #15) stammen aus der Projektdokumentation, nicht aus einer eigenen Messung.</li>
-      <li>Die Browsertests liefen für dieses Manifest nicht vollständig. Die Bildschirmfotos entstanden mit derselben Testumgebung gegen einen frischen Produktions-Build.</li>
+      <li>Die Browsertests liefen für dieses Manifest nicht vollständig. Die Bildschirmfotos stammen von gov.enjin.cloud, die Ansichten mit Wallet und Moderation aus einem lokalen Produktions-Build auf der Enjin Relaychain.</li>
       <li>Wie die öffentliche Instanz im Betrieb verfügbar war, ist nicht gemessen.</li>
-      <li>Drei Metadaten-Bindungen auf dem Mainnet ließen sich nicht auflösen, weil ihr Preimage nicht mehr auf der Chain liegt. Ob sie von dieser App stammen, ist offen.</li>
+      <li>Für #11, #14 und #15 ist belegt, dass der ursprüngliche Umschlag nicht mehr auf der Chain liegt. Wie er entfernt wurde, ist nicht einzeln nachgeprüft.</li>
     </ul>
   </div>
   <div class="contact">

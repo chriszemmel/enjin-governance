@@ -43,8 +43,8 @@
     <div class="kpi"><b>180+</b><span>commits on the main line</span></div>
     <div class="kpi"><b>15</b><span>merged pull requests</span></div>
     <div class="kpi"><b>1,200+</b><span>automated tests, plus browser tests</span></div>
-    <div class="kpi"><b>2.0</b><span>live at gov.enjin.cloud</span></div>
-    <div class="kpi"><b>8</b><span>referenda on Enjin Relaychain with an EGOV1 record from this app</span></div>
+    <div class="kpi"><b>since 2026</b><span>public at gov.enjin.cloud, with EGOV1 records there from August 2026</span></div>
+    <div class="kpi"><b>10+</b><span>referenda on Enjin Relaychain with an EGOV1 record from this app</span></div>
   </div>
 
   <div class="pr">
@@ -143,7 +143,7 @@
       <h3>Open and easy to hand over</h3>
       <p class="stmt">The code is licensed under the AGPL-3.0. Anyone can run their own instance, with their own accounts and none of the operator’s credentials.</p>
       <div class="pr-cols">
-        <div><div class="label">Why</div><p>A client for public decisions must not depend on one person. The binding record, meaning referenda, votes, locks and every EGOV1 envelope, lives on chain anyway.</p></div>
+        <div><div class="label">Why</div><p>A client for public decisions must not depend on one person. The authoritative record, meaning referenda, votes, locks and every EGOV1 envelope, lives on chain anyway.</p></div>
         <div class="pr-case"><div class="label">The case</div><p>The handover document in the repository covers the maintainer stepping back: a new instance from the source, starting from an empty database. With a copy of the file storage, old EGOV1 links keep resolving. Without it, the hash on chain remains as proof.</p></div>
       </div>
     </div>
@@ -205,10 +205,10 @@
   <h2>The EGOV1 record</h2>
   <p class="lead">EGOV1 is a small, open format. It binds a proposal’s text to its referendum, so anyone can find and check it without this app.</p>
   <p>The text of a proposal is a JSON file in the app’s file storage, served from the app’s own address. Only a short envelope goes on chain: <code>EGOV1:{"u":"…","h":"…"}</code>, with the JSON’s URL <code>u</code> and its SHA-256 <code>h</code>. The hash is taken over a fixed form, with keys sorted at every level, so every program computes the same value.</p>
-  {{FIG:batch|Fig. 5|One proposal, one signature. The call, the referendum, the envelope and its binding go on chain in one batch. If the precomputed index is stale, the runtime refuses the binding and the whole batch is rolled back. A stale index can never label someone else’s referendum.}}
-  <p>The runtime accepts the <code>setMetadata</code> binding only from whoever filed the referendum, and only while it is ongoing. If another proposal gets in first, the batch fails as a whole. The app then rebuilds it and tries again. Older proposals from before this binding carry the same envelope in a <code>system.remark</code> inside their batch.</p>
+  {{FIG:batch|Fig. 5|One proposal, one signature. The call, the referendum, the envelope and the link to it go on chain in one batch. If the precomputed index is stale, the runtime refuses the link and the whole batch is rolled back. A stale index can never label someone else’s referendum.}}
+  <p>The runtime accepts the <code>setMetadata</code> link only from whoever filed the referendum, and only while it is ongoing. If another proposal gets in first, the batch fails as a whole. The app then rebuilds it and tries again. Older proposals from before this link carry the same envelope in a <code>system.remark</code> inside their batch.</p>
   <h3>How anyone can check</h3>
-  <p>To check a text, read the referendum’s binding, resolve the hash through the preimage store to the envelope, fetch the JSON at <code>u</code> and compare its SHA-256 with <code>h</code>. That works with any node, in any browser, from any script. An indexer, an explorer or another client can build the whole corpus of proposal texts this way.</p>
+  <p>To check a text, read the referendum’s metadata hash, resolve the hash through the preimage store to the envelope, fetch the JSON at <code>u</code> and compare its SHA-256 with <code>h</code>. That works with any node, in any browser, from any script. An indexer, an explorer or another client can build the whole corpus of proposal texts this way.</p>
   <p>The app shows the result as a badge on the text. If a proposer edits the text of an ongoing referendum, the JSON is rewritten at the same address. Its hash then no longer matches the envelope on chain. That mismatch is the public sign of an edit. The call, the amount and the beneficiary can’t change.</p>
   {{FIG:verify|Fig. 6|Five steps from a referendum to a checked text. The first three are read from the chain; the last two anyone can run.}}
   <div class="triad">
@@ -246,7 +246,7 @@
   <p>Treasury proposals are made in a three-step wizard. It picks the smallest tier whose limit covers the amount, warns when the treasury holds less than requested and checks that a beneficiary address belongs to the right network. An address from another network is caught and converted only after asking. A second composer files any other call: cancel a referendum, whitelist a call, authorize a runtime upgrade by its code hash, or any encoded call. The code hash of an upgrade is computed in the browser from the file.</p>
   {{FIG:filing|Fig. 8|The path of a proposal. Drafts are stored before anyone signs and can be resumed. Every staged version stays under its own hash, so a batch signed from an older version points at exactly the bytes it pins. Only the check on chain links draft and referendum.}}
   <p>Before signing, the app lists what the proposal reserves: the submission deposit, the preimage deposits for the call and the EGOV1 record, the fees and the minimum balance, all read from the chain. It only goes on if the free balance covers them. The track’s decision deposit is shown but not required: anyone can place it later.</p>
-  {{PHONES:list,create,treasury|On a phone: reading referenda without a wallet, starting a treasury proposal, the treasury with its open requests. Screenshots of the real app. Left, sample data from the repository; middle and right, captured with a test wallet against the Canary network, with other people’s addresses blurred.}}
+  {{PHONES:list,create,treasury|On a phone: reading and searching referenda without a wallet, starting a treasury proposal, the treasury with its open requests. Screenshots of the real app on Enjin Relaychain. Left and right, the public instance gov.enjin.cloud; middle, a local production build with a test wallet that holds nothing and never signs. Other people’s addresses and proposal titles blurred.}}
 </section>
 
 <!-- 07 -->
@@ -299,7 +299,7 @@
 <section class="sec pb" id="today">
   <div class="num">09</div>
   <h2>What it does today</h2>
-  <p class="lead">Every capability is listed with its status. <span class="st live">{{I:circle-check}} live</span> means shipped on the main line and part of version 2.0.3 at gov.enjin.cloud.</p>
+  <p class="lead">Every capability is listed with its status. <span class="st live">{{I:circle-check}} live</span> means shipped on the main line and usable in the public instance at gov.enjin.cloud.</p>
   <table class="tbl caps">
     <tr><th>Area</th><th>What it does</th><th>Status</th></tr>
     <tr><td>Reading referenda</td><td>List, search and filters; a detail page with call, tally, voters, lifecycle and outlook, all from the chain, decided referenda included.</td><td><span class="st live">{{I:circle-check}} live</span></td></tr>
@@ -325,11 +325,12 @@
   <div class="num">10</div>
   <h2>In production</h2>
   <p class="lead">Enjin Governance is not a prototype. The public instance runs at gov.enjin.cloud, and its EGOV1 records sit on Enjin Relaychain, where anyone can check them.</p>
-  <p>gov.enjin.cloud runs the newest version on the main line. Its sitemap lists all referenda of the default network. The first public version came out on June&nbsp;28, 2026, version 2.0 on November&nbsp;11. That same day in November, Enjin Relaychain ran runtime version 1080, whose rules the app implements.</p>
-  {{FIG:mainnet|Fig. 11|Every referendum on Enjin Relaychain, read straight from the chain. From #10 on, every referendum carries a binding. Eight resolve to an EGOV1 envelope with a URL on gov.enjin.cloud. For seven, the SHA-256 of the fetched text matches the hash on chain; one was edited. For three, the preimage was no longer on chain.}}
+  <p>The public instance runs at gov.enjin.cloud, and its sitemap lists every referendum of the default network. The first public version came out on June&nbsp;28, 2026, version 2.0 on November&nbsp;11. The app follows the rules of whichever runtime version is active: it reads them from the chain and picks up an upgrade without being redeployed.</p>
+  {{FIG:mainnet|Fig. 11|The first 21 referenda on Enjin Relaychain, read straight from the chain. From #10 on, each carries a metadata hash, a link to its text, and all eleven texts are held by the app. For seven, the SHA-256 of the text matches the hash on chain. Four were edited after filing.}}
+  <p>An edit rewrites the JSON at the same address, while the hash on chain keeps pointing at the first version (chapter&nbsp;5). For three of the four edited referenda (#11, #14, #15), the original envelope was also removed from chain, so only the hash of the first version remains there.</p>
   <div class="case">
     <div class="case-h"><div class="case-n">1</div><div><h3>The first record</h3><p>August&nbsp;17, 2026</p></div></div>
-    <p>On August&nbsp;17, binding through <code>setMetadata</code> replaced the older route of a remark in the batch. The same day, referendum #10 became the first proposal on mainnet to pin its text this way. Its text is still at the same address today, and its hash matches.</p>
+    <p>On August&nbsp;17, the link through <code>setMetadata</code> replaced the older route of a remark in the batch. The same day, referendum #10 became the first proposal on mainnet to pin its text this way. Its text is still at the same address today, and its hash matches.</p>
   </div>
   <div class="case">
     <div class="case-h"><div class="case-n">2</div><div><h3>The visible edit</h3><p>November&nbsp;4, 2026</p></div></div>
@@ -339,7 +340,7 @@
     <div class="case-h"><div class="case-n">3</div><div><h3>The upgrade to 1080</h3><p>Version 2.0, November&nbsp;11, 2026</p></div></div>
     <p>Version 1080 changed spend limits, deposits and the way support is measured. According to the changelog, treasury tiers, support, refunds, Abstain and the Fellowship were run again on a copy of mainnet on 1080.</p>
   </div>
-  {{PHONES:proposal,text,moderation|A proposal with its treasury request, its checked text and the moderation queue. Captured against referendum #13 on the Canary chain with the repository’s test data, other people’s addresses blurred.}}
+  {{PHONES:proposal,text,moderation|Referendum #10 at gov.enjin.cloud, its checked text and the moderation queue. Only moderators see the queue, so it comes from a local production build on Enjin Relaychain and shows the repository’s test data. Other people’s addresses blurred.}}
 </section>
 
 <!-- 11 -->
@@ -378,7 +379,7 @@
     <tr><td>Backups</td><td>Only admins create and download them, through a short-lived signed link. Sessions and nonces are never included.</td></tr>
     <tr><td>Disclosures</td><td>A public form for security reports, no account needed. The IP address is stored only as a hash.</td></tr>
   </table>
-  <p>According to the changelog, the project has been through several security reviews, the last one before version 2.0. Among other things it closed a crafted link that could have handed a proposer any call under a harmless title: links to the composer now choose only the network and the chamber. 18 test files run the real routes against attacks, replacing only the database, storage and outside services. There has been no external review (chapter&nbsp;14).</p>
+  <p>According to the changelog, the project has been through several security reviews, one of them before version 2.0. Among other things, that one closed a crafted link that could have handed a proposer any call under a harmless title: links to the composer now choose only the network and the chamber. 18 test files run the real routes against attacks, replacing only the database, storage and outside services. There has been no external review (chapter&nbsp;14).</p>
 </section>
 
 <!-- 13 -->
@@ -402,7 +403,7 @@
     <li><b>Database tests.</b> The SQL runs against a real in-process Postgres, with every migration production gets.</li>
     <li><b>Browser tests.</b> 29 tests in Chromium against the production build. The chain data is real and comes from the Canary network. The test wallet never signs.</li>
   </ul>
-  <h3>Bugs that became rules</h3>
+  <h3 class="pb-before">Bugs that became rules</h3>
   <table class="tbl cases">
     <tr><th>Case</th><th>What happened</th><th>The rule since</th></tr>
     <tr><td>The double lock</td><td>On most tracks, the app showed twice a vote’s real lock period.</td><td>Lock periods come from the runtime, never from an assumption.</td></tr>
@@ -433,9 +434,9 @@
     <ul>
       <li>The runs on copies of mainnet and the Canary network are described in the changelog. No script that repeats them is in the repository.</li>
       <li>The numbers in the denominator case (inactive issuance, referendum #15) come from the project documentation, not from a measurement of our own.</li>
-      <li>The full browser test suite was not run for this manifesto. The screenshots were taken with the same test harness against a fresh production build.</li>
+      <li>The full browser test suite was not run for this manifesto. The screenshots come from gov.enjin.cloud; the wallet and moderation views from a local production build on Enjin Relaychain.</li>
       <li>The public instance’s uptime is not measured.</li>
-      <li>Three metadata bindings on mainnet could not be resolved because their preimage is no longer on chain. Whether they came from this app is open.</li>
+      <li>For #11, #14 and #15 it is proven that the original envelope is no longer on chain. How it was removed was not checked one by one.</li>
     </ul>
   </div>
   <div class="contact">
