@@ -69,5 +69,5 @@ html = f'''<!doctype html>
 assert '\u2014' not in html, 'em dash found'
 assert '{{' not in html, re.findall(r'\{\{.{0,30}', html)
 os.makedirs(OUT, exist_ok=True)
-open(os.path.join(OUT, f'manifest.{lang}.html'), 'w').write(html)
+open(os.path.join(OUT, f'enjin-governance-manifest-{lang}.html'), 'w').write(html)
 print('ok', lang, len(html))
