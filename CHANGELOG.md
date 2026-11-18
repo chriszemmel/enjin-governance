@@ -3,6 +3,14 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.4 - 2026-11-18
+
+- **"Rejected 1 hour ago", not "Rejected on 1 hour ago":** within a day of
+  its result, a finished referendum's title now says how long ago it
+  happened. "on" only goes in front of a date, such as "Rejected on Sep
+  22". This applies to approved, enacted, paid out, rejected, timed out,
+  cancelled and killed alike.
+
 ## 2.0.3 - 2026-11-13
 
 - **sENJ votes, said plainly:** the chain counts sENJ 1:1 like ENJ, for
