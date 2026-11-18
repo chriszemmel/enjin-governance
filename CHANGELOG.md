@@ -3,6 +3,15 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.5 - 2026-11-18
+
+- **Payout dates survive a change of the spend period:** a paid-out spend
+  is dated by finding the spend period that awarded it, and that search
+  used today's `treasury.spendPeriod`. Canary's runtime 1082 changed it
+  from 14,400 to 345,600, so spends paid earlier lost their "paid at"
+  block and date. The search now uses the period that was in force when
+  the spend was enacted, read from the archive node.
+
 ## 2.0.4 - 2026-11-18
 
 - **"Rejected 1 hour ago", not "Rejected on 1 hour ago":** within a day of

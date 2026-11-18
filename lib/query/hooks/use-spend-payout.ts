@@ -10,6 +10,7 @@ import {
   findAwardBlock,
   type PayoutStatus,
   readSpendPeriod,
+  readSpendPeriodAt,
   readTreasuryProposals,
   resolvePayout,
   type SpendTarget,
@@ -80,23 +81,22 @@ export function useSpendPayout(
     queryKey: ["spend-award", target.id, paid?.proposalIndex ?? null, enactedAt],
     queryFn: async () => {
       const a = archive.data
-      if (!a || !api || paid?.proposalIndex == null || enactedAt == null || spendPeriod == null) {
+      if (!a || !api || paid?.proposalIndex == null || enactedAt == null) {
         throw new Error("Archive not ready")
       }
+      // The period of the time, not today's: an upgrade can change it.
+      const periodThen = await readSpendPeriodAt(a, enactedAt)
+      if (periodThen == null) return null
       const head = await api.rpc.chain.getHeader()
       return findAwardBlock({
         enactedAt,
         currentBlock: (head.number as unknown as { toNumber: () => number }).toNumber(),
-        spendPeriod,
+        spendPeriod: periodThen,
         ...awardReaders(a, paid.proposalIndex),
       })
     },
     enabled:
-      archive.isSuccess &&
-      apiQuery.isSuccess &&
-      paid?.proposalIndex != null &&
-      enactedAt != null &&
-      spendPeriod != null,
+      archive.isSuccess && apiQuery.isSuccess && paid?.proposalIndex != null && enactedAt != null,
     staleTime: Infinity,
     retry: 2,
   })

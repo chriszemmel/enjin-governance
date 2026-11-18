@@ -1,9 +1,11 @@
+import type { ApiPromise } from "@polkadot/api"
 import { beforeAll, describe, expect, it } from "vitest"
 import { initializeWasm } from "@/lib/chain/ss58"
 import {
   findAwardBlock,
   localSpendTarget,
   nextSpendPeriodBlock,
+  readSpendPeriodAt,
   resolvePayout,
   type SpendTarget,
   type TreasuryProposalEntry,
@@ -186,5 +188,47 @@ describe("findAwardBlock", () => {
     await expect(
       findAwardBlock({ enactedAt: ENACTED, currentBlock: 17_600_000, spendPeriod: SP, ...c }),
     ).resolves.toBeNull()
+  })
+})
+
+describe("the spend period of its time", () => {
+  // Canary Relay: referendum 13's treasury proposal #2 was enacted at
+  // 17,387,352 and awarded at 17,395,200, when the spend period was 14,400.
+  // Runtime 1082 made it 345,600, so today's value looks in the wrong blocks.
+  const ENACTED = 17_387_352
+  const AWARD = 17_395_200
+  const HEAD = 18_632_037
+  const chain = {
+    stored: async (block: number) => block < AWARD,
+    awarded: async (block: number) => block === AWARD,
+  }
+
+  it("today's period misses the award, the one from enactment finds it", async () => {
+    await expect(
+      findAwardBlock({ enactedAt: ENACTED, currentBlock: HEAD, spendPeriod: 345_600, ...chain }),
+    ).resolves.toBeNull()
+    await expect(
+      findAwardBlock({ enactedAt: ENACTED, currentBlock: HEAD, spendPeriod: 14_400, ...chain }),
+    ).resolves.toBe(AWARD)
+  })
+
+  it("reads the period from the state at that block", async () => {
+    const periodAt = (block: number) => (block < 18_000_000 ? 14_400 : 345_600)
+    const api = {
+      rpc: { chain: { getBlockHash: async (block: number) => `0x${block}` } },
+      at: async (hash: string) => ({
+        consts: { treasury: { spendPeriod: { toNumber: () => periodAt(Number(hash.slice(2))) } } },
+      }),
+    } as unknown as ApiPromise
+    await expect(readSpendPeriodAt(api, ENACTED)).resolves.toBe(14_400)
+    await expect(readSpendPeriodAt(api, HEAD)).resolves.toBe(345_600)
+  })
+
+  it("a runtime without a treasury has none", async () => {
+    const api = {
+      rpc: { chain: { getBlockHash: async () => "0x1" } },
+      at: async () => ({ consts: {} }),
+    } as unknown as ApiPromise
+    await expect(readSpendPeriodAt(api, ENACTED)).resolves.toBeNull()
   })
 })
