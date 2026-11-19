@@ -272,6 +272,28 @@ describe("once it has all happened", () => {
   })
 })
 
+describe("a result within the last day", () => {
+  // "Rejected on 1 hour ago" read wrong: "on" belongs before a date only.
+  const rejectedAt = (block: number): Referendum => {
+    const base = approved(11, block)
+    return { ...base, status: { ...(base.status as TerminalStatus), type: "Rejected" } }
+  }
+
+  it("says how long ago, without 'on'", () => {
+    const at = HEAD - 600
+    expect(
+      finishedSummary(getLifecycle(rejectedAt(at), mediumSpender, HEAD), HEAD, at, null),
+    ).toMatchObject({ title: "Rejected 1 hour ago", tone: "danger" })
+  })
+
+  it("keeps 'on' before a date", () => {
+    const at = HEAD - 14_400 * 3
+    expect(
+      finishedSummary(getLifecycle(rejectedAt(at), mediumSpender, HEAD), HEAD, at, null).title,
+    ).toMatch(/^Rejected on [A-Z][a-z]{2} \d{1,2}$/)
+  })
+})
+
 describe("dayText", () => {
   it("is relative within a day and a date beyond, with the year when it isn't this one", () => {
     expect(dayText(HEAD - 6_000, HEAD)).toBe("10 hours ago")

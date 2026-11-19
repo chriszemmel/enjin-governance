@@ -273,7 +273,7 @@ export function finishedSummary(
   decidedAt: number | null,
   amount: string | null,
 ): { title: string; sub: string | null; tone: "ok" | "danger" | "muted" } {
-  const on = (block: number | null) => (block != null ? ` on ${dayText(block, currentBlock)}` : "")
+  const on = (block: number | null) => (block != null ? ` ${onDayText(block, currentBlock)}` : "")
   switch (lifecycle.terminal) {
     case "approved": {
       const enact = lifecycle.stages.find((s) => s.id === "enact")
@@ -335,18 +335,32 @@ const DAY_MS = 86_400_000
  * Within a day of now it says how long ago or ahead instead ("11 hours ago").
  */
 export function dayText(block: number, currentBlock: number | null): string {
-  if (currentBlock == null) return `#${formatBlockNumber(block)}`
+  return dayParts(block, currentBlock).text
+}
+
+/**
+ * `dayText` behind "on" when it is a date ("on Oct 21"), bare when it is
+ * relative ("1 hour ago", "in 3 hours"), where "on" would read wrong.
+ */
+function onDayText(block: number, currentBlock: number | null): string {
+  const { text, relative } = dayParts(block, currentBlock)
+  return relative ? text : `on ${text}`
+}
+
+function dayParts(block: number, currentBlock: number | null): { text: string; relative: boolean } {
+  if (currentBlock == null) return { text: `#${formatBlockNumber(block)}`, relative: false }
   const now = new Date()
   const date = blockToDate(block, currentBlock, now)
   if (Math.abs(date.getTime() - now.getTime()) < DAY_MS) {
-    return formatRelativeBlockTime(block, currentBlock, now)
+    return { text: formatRelativeBlockTime(block, currentBlock, now), relative: true }
   }
-  return date.toLocaleDateString("en-US", {
+  const text = date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     ...(date.getUTCFullYear() !== now.getUTCFullYear() ? { year: "numeric" } : {}),
     timeZone: "UTC",
   })
+  return { text, relative: false }
 }
 
 /** A step's date: future ones are estimates ("≈ Oct 21"). */

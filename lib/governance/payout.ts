@@ -169,9 +169,19 @@ export function awardReaders(
 }
 
 /** `treasury.spendPeriod`, or null when the runtime has no treasury. */
-export function readSpendPeriod(api: ApiPromise): number | null {
+export function readSpendPeriod(api: Pick<ApiPromise, "consts">): number | null {
   const raw = api.consts.treasury?.spendPeriod as { toNumber?: () => number } | undefined
   return raw?.toNumber ? raw.toNumber() : null
+}
+
+/**
+ * `treasury.spendPeriod` as it was at `block`, on an archive node. A runtime
+ * upgrade can change it (Canary went from 14,400 to 345,600), and a spend was
+ * awarded on a multiple of the period of its own time, so dating one needs
+ * that period, not today's.
+ */
+export async function readSpendPeriodAt(api: ApiPromise, block: number): Promise<number | null> {
+  return readSpendPeriod(await api.at(await api.rpc.chain.getBlockHash(block)))
 }
 
 /** The treasury's stored proposals and the approved indices waiting for a spend period. */
