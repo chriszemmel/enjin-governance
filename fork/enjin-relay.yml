@@ -1,0 +1,10 @@
+# Chopsticks fork of Enjin Relay mainnet for `pnpm test:fork`.
+# The latest finalised block is forked; nothing is sent to the real chain.
+endpoint:
+  - wss://rpc.relay.blockchain.enjin.io
+  - wss://archive.relay.blockchain.enjin.io
+port: 8011
+# Signatures are checked like on chain: the tests sign with real sr25519 keys.
+mock-signature-host: false
+# Blocks are produced only when a test asks for one (dev_newBlock).
+build-block-mode: Manual

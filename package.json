@@ -15,6 +15,7 @@
     "knip": "knip",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:fork": "vitest run --config vitest.fork.config.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "db:migrate": "node scripts/run-migrations.mjs"
