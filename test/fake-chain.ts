@@ -25,6 +25,7 @@ type SignedRecord = { extrinsic: FakeExtrinsic; address: string; options: unknow
 /** Arity per call, as the Enjin runtime declares it (multi-token conviction voting). */
 const ENJIN_ARITY: Record<string, Record<string, number>> = {
   convictionVoting: { vote: 3, removeVote: 3, delegate: 5, undelegate: 2, unlock: 3 },
+  fellowshipCollective: { vote: 2 },
 }
 
 const IN_BLOCK = {
@@ -41,6 +42,8 @@ const IN_BLOCK = {
 
 export function createFakeChain(opts: { voteLockingPeriod?: number; specVersion?: number } = {}) {
   const signed: SignedRecord[] = []
+  /** Make the next N signatures fail, as a wallet rejecting the request would. */
+  const controls = { rejectNextSigns: 0 }
 
   const extrinsic = (call: string, args: unknown[]): FakeExtrinsic => {
     const ex: FakeExtrinsic = {
@@ -48,6 +51,10 @@ export function createFakeChain(opts: { voteLockingPeriod?: number; specVersion?
       args,
       hash: { toHex: () => `0x${call.replace(/\W/g, "")}` },
       signAsync: async (address, options) => {
+        if (controls.rejectNextSigns > 0) {
+          controls.rejectNextSigns -= 1
+          throw new Error("Rejected in wallet")
+        }
         signed.push({ extrinsic: ex, address, options })
         return {
           send: async (cb) => {
@@ -84,5 +91,5 @@ export function createFakeChain(opts: { voteLockingPeriod?: number; specVersion?
     runtimeVersion: { specVersion: { toNumber: () => opts.specVersion ?? 1080 } },
   } as unknown as ApiPromise
 
-  return { api, signed }
+  return { api, signed, controls }
 }
