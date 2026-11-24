@@ -14,6 +14,7 @@
     "format:check": "prettier --check .",
     "knip": "knip",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "db:migrate": "node scripts/run-migrations.mjs"
@@ -93,6 +94,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@vitest/coverage-v8": "^5.0.3",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.4.6",
     "knip": "^5.42.0",

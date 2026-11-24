@@ -51,7 +51,9 @@ jobs:
         run: pnpm audit --prod
 
       - name: Test
-        run: pnpm test
+        # Fails on no tests found and on coverage below the floors in
+        # vitest.config.ts (lib/governance, lib/auth).
+        run: pnpm test:coverage
 
       - name: Build
         run: pnpm build
