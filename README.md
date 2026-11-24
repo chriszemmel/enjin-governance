@@ -396,7 +396,7 @@
 | Browser tests | **29** (Playwright, against the production build) |
 | Test coverage (lines) | **88%** of API routes, **81%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and most components are covered by the browser tests; the vote panel, delegation panel and sign-request modal also by component tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
-| Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov, spec 1080) plus the 2 **Matrix** chains, registered but not enabled yet (planned for 2.1). Dedicated archive RPCs per chain. |
+| Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov, spec 1082) plus the 2 **Matrix** chains, registered but not enabled yet (planned for 2.1). Dedicated archive RPCs per chain. |
 | External indexer dependencies | **0 required** (Subscan optional, only for very old finalised refs) |
 | Off-chain stores | **Neon Postgres** (users, sessions, profiles, comments, proposals, attachments, security disclosures, moderation) · **Cloudflare R2** (avatars, proposal JSON, proposal media) |
 
@@ -798,7 +798,7 @@ its cost.
 | Enjin Matrixchain | `wss://rpc.matrix.blockchain.enjin.io` | 1110 (`ef…`) | ENJ | Rails only - legacy `democracy` pallet, not OpenGov |
 | Canary Matrixchain | `wss://rpc.matrix.canary.enjin.io` | 9030 (`cx…`) | cENJ | Rails only - OpenGov since spec 1042 (no treasury), planned for 2.1 |
 
-Both Relaychains run spec 1080 (Fort Canning). The app reads tracks,
+Both Relaychains run spec 1082. The app reads tracks,
 deposits and support thresholds from the runtime, and keeps the treasury
 spend limits per spec version in `lib/governance/treasury.ts`, the one
 table to extend when a runtime upgrade changes them.
