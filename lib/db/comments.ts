@@ -7,6 +7,7 @@
 
 import "server-only"
 import { getSql } from "./client"
+import { firstRow } from "./rows"
 
 export type CommentRow = {
   id: string
@@ -38,7 +39,7 @@ export async function createComment(a: CreateCommentArgs): Promise<CommentRow> {
     )
     RETURNING *
   `) as CommentRow[]
-  return rows[0]
+  return firstRow(rows, "Comment insert returned no row")
 }
 
 export async function listCommentsForProposal(

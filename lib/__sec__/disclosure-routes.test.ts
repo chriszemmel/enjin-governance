@@ -42,6 +42,7 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => {
 import { __resetRateLimitStore, enforceRateLimit, RATE_LIMITS } from "@/lib/rate-limit"
 import { HONEYPOT_FIELD } from "@/lib/security/disclosure"
 import { POST } from "@/app/api/security-disclosures/route"
+import { defined } from "@/test/defined"
 
 const IP = "203.0.113.50"
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -109,26 +110,26 @@ describe("POST /api/security-disclosures", () => {
     expect(body).toEqual({ ok: true, id: expect.stringMatching(UUID) })
 
     expect(io.queries).toHaveLength(1)
-    const { text, values } = io.queries[0]
+    const { text, values } = defined(io.queries[0])
     expect(text).toContain("INSERT INTO security_disclosures")
     expect(values).toContain(createHash("sha256").update(IP).digest("hex"))
     expect(values).toContain("vitest-reporter")
     expect(JSON.stringify(values)).not.toContain(IP)
 
     expect(io.sent).toHaveLength(1)
-    expect(io.sent[0].url).toBe("https://api.telegram.org/botbot-token/sendMessage")
-    expect(io.sent[0].body.chat_id).toBe("-100security")
-    expect(io.sent[0].body.text).toContain("[HIGH]")
-    expect(io.sent[0].body.text).toContain(`Ref: ${body.id}`)
+    expect(defined(io.sent[0]).url).toBe("https://api.telegram.org/botbot-token/sendMessage")
+    expect(defined(io.sent[0]).body.chat_id).toBe("-100security")
+    expect(defined(io.sent[0]).body.text).toContain("[HIGH]")
+    expect(defined(io.sent[0]).body.text).toContain(`Ref: ${body.id}`)
     // The reporter's IP doesn't go to the chat either.
-    expect(io.sent[0].body.text).not.toContain(IP)
+    expect(defined(io.sent[0]).body.text).not.toContain(IP)
   })
 
   it('without a client IP header the stored IP hash is null, not a hash of "unknown"', async () => {
     const res = await submit(report(), { "x-forwarded-for": "" })
     expect(res.status).toBe(200)
-    expect(io.queries[0].values).not.toContain(createHash("sha256").update("unknown").digest("hex"))
-    expect(io.queries[0].values).toContain(null)
+    expect(defined(io.queries[0]).values).not.toContain(createHash("sha256").update("unknown").digest("hex"))
+    expect(defined(io.queries[0]).values).toContain(null)
   })
 
   it("a filled honeypot looks like success but stores and sends nothing", async () => {
@@ -195,7 +196,7 @@ describe("POST /api/security-disclosures", () => {
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0)
     expect(io.queries).toHaveLength(RATE_LIMITS.securityDisclosure.limit)
     expect(io.sent).toHaveLength(RATE_LIMITS.securityDisclosure.limit)
-    expect(vi.mocked(enforceRateLimit).mock.calls[0][0]).toEqual({
+    expect(defined(vi.mocked(enforceRateLimit).mock.calls[0])[0]).toEqual({
       ...RATE_LIMITS.securityDisclosure,
       identity: IP,
     })

@@ -10,7 +10,7 @@
 
 import "server-only"
 import type { ApiPromise } from "@polkadot/api"
-import { getApi } from "@/lib/chain/api"
+import { getApi, getArchiveApi } from "@/lib/chain/api"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { formatTokenAmount } from "@/lib/chain/format"
 import { intentFromPreimage } from "@/lib/governance/call-extract"
@@ -59,7 +59,7 @@ async function readChain(
   // the block before the decision, from the archive.
   let status: OngoingStatus | null = referendum.status.type === "Ongoing" ? referendum.status : null
   if (!status && referendum.status.type !== "Ongoing") {
-    const archive = await getApi(chain.archiveRpc ?? chain.rpc, 0)
+    const archive = await getArchiveApi(chain, 0)
     const history = await getReferendumHistory(archive, index, referendum.status.at)
     status = history?.status.type === "Ongoing" ? history.status : null
   }

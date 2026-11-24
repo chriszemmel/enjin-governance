@@ -17,9 +17,22 @@
 
 import type * as PolkadotApi from "@polkadot/api"
 import type { ApiPromise } from "@polkadot/api"
+import type { ChainConfig } from "./chains"
 
 const CONNECT_TIMEOUT_MS = 10_000
 const READY_TIMEOUT_MS = 15_000
+/**
+ * How long an archive node gets, to connect and per request. Its big
+ * historical reads - an old runtime's metadata above all, needed to decode
+ * a block from before an upgrade - take 5 to 50 s on Enjin's public archive
+ * nodes; at the RPC node's 10 s they were dropped and the history never
+ * loaded.
+ */
+const ARCHIVE_TIMEOUT_MS = 60_000
+
+type Timeouts = { connect: number; ready: number }
+const RPC_TIMEOUTS: Timeouts = { connect: CONNECT_TIMEOUT_MS, ready: READY_TIMEOUT_MS }
+const ARCHIVE_TIMEOUTS: Timeouts = { connect: ARCHIVE_TIMEOUT_MS, ready: ARCHIVE_TIMEOUT_MS }
 const MAX_RETRIES = 3
 const RETRY_DELAY_MS = 1_000
 
@@ -38,16 +51,42 @@ export function preloadApiLibrary(): Promise<typeof PolkadotApi> {
   return library
 }
 
-async function openConnection(endpoint: string): Promise<ApiPromise> {
+/** Each open connection's metadata as hex, encoded once. */
+const metadataHex = new WeakMap<ApiPromise, `0x${string}`>()
+
+/**
+ * The runtime metadata of every open connection, keyed the way
+ * ApiPromise.create's `metadata` option looks it up: genesis hash and spec
+ * version. A new connection to the same chain at the same runtime - the
+ * archive node next to the RPC node - takes it from here instead of
+ * downloading several MB again, which an archive node can take longer to
+ * serve than a connection is given to open.
+ */
+function knownMetadata(): Record<string, `0x${string}`> {
+  const known: Record<string, `0x${string}`> = {}
+  for (const api of apiCache.values()) {
+    if (!api.isConnected) continue
+    let hex = metadataHex.get(api)
+    if (!hex) {
+      hex = api.runtimeMetadata.toHex()
+      metadataHex.set(api, hex)
+    }
+    known[`${api.genesisHash.toHex()}-${api.runtimeVersion.specVersion.toString()}`] = hex
+  }
+  return known
+}
+
+async function openConnection(endpoint: string, timeouts: Timeouts): Promise<ApiPromise> {
   const { ApiPromise, WsProvider } = await preloadApiLibrary()
-  const provider = new WsProvider(endpoint, 1_000, {}, CONNECT_TIMEOUT_MS)
+  // The last argument is the timeout of every request on this socket.
+  const provider = new WsProvider(endpoint, 1_000, {}, timeouts.connect)
 
   let createTimer: ReturnType<typeof setTimeout> | undefined
-  const create = ApiPromise.create({ provider, noInitWarn: true })
+  const create = ApiPromise.create({ provider, noInitWarn: true, metadata: knownMetadata() })
   const createTimeout = new Promise<never>((_, reject) => {
     createTimer = setTimeout(
       () => reject(new Error(`API creation timeout: ${endpoint}`)),
-      CONNECT_TIMEOUT_MS,
+      timeouts.connect,
     )
   })
 
@@ -67,7 +106,7 @@ async function openConnection(endpoint: string): Promise<ApiPromise> {
   const readyTimeout = new Promise<never>((_, reject) => {
     readyTimer = setTimeout(
       () => reject(new Error(`API ready timeout: ${endpoint}`)),
-      READY_TIMEOUT_MS,
+      timeouts.ready,
     )
   })
   try {
@@ -89,7 +128,11 @@ async function openConnection(endpoint: string): Promise<ApiPromise> {
  * Concurrent callers for the same endpoint share a single in-flight connection
  * promise rather than racing to open multiple sockets.
  */
-export async function getApi(endpoint: string, retries = MAX_RETRIES): Promise<ApiPromise> {
+export async function getApi(
+  endpoint: string,
+  retries = MAX_RETRIES,
+  timeouts: Timeouts = RPC_TIMEOUTS,
+): Promise<ApiPromise> {
   const cached = apiCache.get(endpoint)
   if (cached && cached.isConnected) return cached
   if (cached && !cached.isConnected) {
@@ -104,7 +147,7 @@ export async function getApi(endpoint: string, retries = MAX_RETRIES): Promise<A
     let lastError: unknown
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const api = await openConnection(endpoint)
+        const api = await openConnection(endpoint, timeouts)
         apiCache.set(endpoint, api)
         return api
       } catch (err) {
@@ -125,6 +168,23 @@ export async function getApi(endpoint: string, retries = MAX_RETRIES): Promise<A
   } finally {
     inFlight.delete(endpoint)
   }
+}
+
+/**
+ * The chain's archive connection (its RPC node where it has none). The RPC
+ * connection is opened first, so the archive one can reuse its metadata
+ * (see knownMetadata); an RPC node that can't be reached only costs that.
+ * Archive connections get ARCHIVE_TIMEOUT_MS. Open them only through here,
+ * so the one cached per endpoint always has it.
+ */
+export async function getArchiveApi(
+  chain: Pick<ChainConfig, "rpc" | "archiveRpc">,
+  retries = MAX_RETRIES,
+): Promise<ApiPromise> {
+  const endpoint = chain.archiveRpc ?? chain.rpc
+  if (endpoint === chain.rpc) return getApi(endpoint, retries)
+  await getApi(chain.rpc, retries).catch(() => undefined)
+  return getApi(endpoint, retries, ARCHIVE_TIMEOUTS)
 }
 
 /** Disconnect a specific cached API. Safe to call when nothing is cached. */

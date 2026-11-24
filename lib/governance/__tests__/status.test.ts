@@ -51,6 +51,12 @@ function ongoing(overrides: Record<string, unknown> = {}) {
 }
 
 describe("decodeStatus - Ongoing", () => {
+  it("refuses a submission deposit without a depositor", () => {
+    expect(() => decodeStatus(ongoing({ submissionDeposit: { amount: big(10n) } }))).toThrow(
+      "Deposit has no depositor",
+    )
+  })
+
   it("decodes the full ongoing shape", () => {
     const s = decodeStatus(ongoing())
     expect(s.type).toBe("Ongoing")

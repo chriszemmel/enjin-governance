@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { evaluateCurve, sampleCurve } from "@/lib/governance/curves"
 import type { GovernanceCurve } from "@/lib/governance/types"
+import { defined } from "@/test/defined"
 
 const PB = 1_000_000_000
 
@@ -120,14 +121,14 @@ describe("sampleCurve", () => {
     const pts = sampleCurve(curve, 10)
     expect(pts).toHaveLength(11)
     expect(pts[0]).toEqual({ x: 0, y: 1 })
-    expect(pts[10].x).toBeCloseTo(1)
-    expect(pts[10].y).toBeCloseTo(0)
+    expect(defined(pts[10]).x).toBeCloseTo(1)
+    expect(defined(pts[10]).y).toBeCloseTo(0)
   })
 
   it("is monotonically decreasing for a decreasing curve", () => {
     const pts = sampleCurve(curve, 20)
     for (let i = 1; i < pts.length; i++) {
-      expect(pts[i].y).toBeLessThanOrEqual(pts[i - 1].y)
+      expect(defined(pts[i]).y).toBeLessThanOrEqual(defined(pts[i - 1]).y)
     }
   })
 })

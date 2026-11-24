@@ -17,6 +17,7 @@ import { __resetRateLimitStore, enforceRateLimit, RATE_LIMITS } from "@/lib/rate
 import { SITE_ACCESS_COOKIE, SITE_ACCESS_MAX_AGE_SECONDS } from "@/lib/auth/site-password"
 import { POST as UNLOCK } from "@/app/api/unlock/route"
 import { proxy } from "@/proxy"
+import { defined } from "@/test/defined"
 
 const PASSWORD = "correct horse battery staple"
 const IP = "203.0.113.9"
@@ -192,7 +193,7 @@ describe("POST /api/unlock", () => {
     expect(blocked.status).toBe(429)
     expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0)
     expect(setCookie(blocked, SITE_ACCESS_COOKIE)).toBeUndefined()
-    expect(vi.mocked(enforceRateLimit).mock.calls[0][0]).toEqual({
+    expect(defined(vi.mocked(enforceRateLimit).mock.calls[0])[0]).toEqual({
       ...RATE_LIMITS.siteUnlock,
       identity: IP,
     })

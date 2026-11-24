@@ -14,6 +14,7 @@ import { useWallet } from "@/lib/wallet/use-wallet"
 import { useApi } from "./use-api"
 import { queryKeys } from "@/lib/query/keys"
 import { formatError } from "@/lib/utils/format-error"
+import { txCall } from "@/lib/chain/runtime"
 
 /**
  * Mortality window, in blocks, baked into every signature this hook makes.
@@ -163,7 +164,7 @@ export function useExtrinsic(options: UseExtrinsicOptions) {
     const tx: AnyExtrinsic =
       txs.length === 1
         ? txs[0]!
-        : (api.tx.utility.batchAll(txs) as AnyExtrinsic)
+        : (txCall(api, "utility", "batchAll")(txs) as AnyExtrinsic)
 
     const meta = getConnectorMeta(session.connectorId)
 

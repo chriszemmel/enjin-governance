@@ -289,7 +289,7 @@ export async function deleteProposalById(id: string): Promise<boolean> {
   proposals.delete(id)
   // ON DELETE CASCADE
   for (let i = attachments.length - 1; i >= 0; i -= 1) {
-    if (attachments[i].proposal_id === id) attachments.splice(i, 1)
+    if (attachments[i]?.proposal_id === id) attachments.splice(i, 1)
   }
   return true
 }
@@ -332,7 +332,7 @@ export async function replaceAttachments(
 ): Promise<void> {
   // DELETE FROM proposal_attachments WHERE proposal_id = $1
   for (let i = attachments.length - 1; i >= 0; i -= 1) {
-    if (attachments[i].proposal_id === proposalId) attachments.splice(i, 1)
+    if (attachments[i]?.proposal_id === proposalId) attachments.splice(i, 1)
   }
   // INSERT ... ON CONFLICT (bucket_key) DO NOTHING
   for (const a of items) {

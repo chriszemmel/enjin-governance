@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 import type * as RateLimit from "@/lib/rate-limit"
 import sharp from "sharp"
+import { defined } from "@/test/defined"
 
 const USER = "efRd63tR845wJ4FxoUfFgrDpxfAQ2t1iydU7LyzJCf577hgTH"
 const OTHER = "enCrdzdh8TVcEuoWtWokRRzgWVgLdGoyo5P4c7344LXRzFidX"
@@ -352,7 +353,7 @@ describe("PATCH /api/users/me", () => {
     expect(res.status).toBe(429)
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0)
     expect(io.updates).toHaveLength(RATE_LIMITS.profileUpdate.limit)
-    expect(vi.mocked(enforceRateLimit).mock.calls[0][0]).toEqual({
+    expect(defined(vi.mocked(enforceRateLimit).mock.calls[0])[0]).toEqual({
       ...RATE_LIMITS.profileUpdate,
       identity: ME_ID,
     })
@@ -502,7 +503,7 @@ describe("POST /api/users/me/avatar", () => {
     expect(res.status).toBe(429)
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0)
     expect(io.avatars).toHaveLength(RATE_LIMITS.avatarUpload.limit)
-    expect(vi.mocked(enforceRateLimit).mock.calls[0][0]).toEqual({
+    expect(defined(vi.mocked(enforceRateLimit).mock.calls[0])[0]).toEqual({
       ...RATE_LIMITS.avatarUpload,
       identity: ME_ID,
     })

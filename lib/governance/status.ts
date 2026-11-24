@@ -172,8 +172,10 @@ function decodeTally(raw: unknown): Tally {
 
 function decodeDeposit(raw: unknown): Deposit {
   const d = raw as Record<string, Codec>
+  const who = d.who
+  if (!who) throw new Error("Deposit has no depositor")
   return {
-    who: d.who.toString(),
+    who: who.toString(),
     amount: toBigInt(d.amount),
   }
 }

@@ -35,9 +35,9 @@ export function isBackupKey(key: unknown): key is string {
 
 /** When a backup was started (ISO), read from its key. */
 export function backupCreatedAt(key: string): string {
-  const m = KEY.exec(key)
-  if (!m) throw new Error("not a backup key")
-  return new Date(m[1]).toISOString()
+  const startedAt = KEY.exec(key)?.[1]
+  if (startedAt === undefined) throw new Error("not a backup key")
+  return new Date(startedAt).toISOString()
 }
 
 /** The file name a download is saved under: no colons, which Windows refuses. */

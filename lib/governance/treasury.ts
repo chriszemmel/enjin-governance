@@ -22,6 +22,7 @@
 import type { ApiPromise } from "@polkadot/api"
 import type { Call } from "@polkadot/types/interfaces"
 import type { TreasuryTier } from "./types"
+import { txCall } from "@/lib/chain/runtime"
 
 const ENJ = 10n ** 18n
 
@@ -51,19 +52,21 @@ export type SpendLimits = {
  * of its own and every later listed limit, so referenda filed before the
  * upgrade still enact after it.
  */
+const RELAYCHAIN_1070_LIMITS: SpendLimits = {
+  // relaychain v1.7.0
+  specVersion: 1070,
+  tiers: [
+    { origin: "SmallTipper", maxAmount: 100n * ENJ },
+    { origin: "BigTipper", maxAmount: 5_000n * ENJ },
+    { origin: "SmallSpender", maxAmount: 50_000n * ENJ },
+    { origin: "MediumSpender", maxAmount: 250_000n * ENJ },
+    { origin: "BigSpender", maxAmount: 2_500_000n * ENJ },
+    { origin: "TreasuryAdmin", maxAmount: 25_000_000n * ENJ },
+  ],
+}
+
 export const ENJIN_SPEND_LIMITS: readonly SpendLimits[] = [
-  {
-    // relaychain v1.7.0
-    specVersion: 1070,
-    tiers: [
-      { origin: "SmallTipper", maxAmount: 100n * ENJ },
-      { origin: "BigTipper", maxAmount: 5_000n * ENJ },
-      { origin: "SmallSpender", maxAmount: 50_000n * ENJ },
-      { origin: "MediumSpender", maxAmount: 250_000n * ENJ },
-      { origin: "BigSpender", maxAmount: 2_500_000n * ENJ },
-      { origin: "TreasuryAdmin", maxAmount: 25_000_000n * ENJ },
-    ],
-  },
+  RELAYCHAIN_1070_LIMITS,
   {
     // relaychain v1.8.0 - raises SmallTipper and BigTipper
     specVersion: 1080,
@@ -79,7 +82,7 @@ export const ENJIN_SPEND_LIMITS: readonly SpendLimits[] = [
 ]
 
 /** The treasury spend origins, smallest → largest spend authority. */
-export const TREASURY_SPEND_ORIGINS: readonly string[] = ENJIN_SPEND_LIMITS[0].tiers.map(
+export const TREASURY_SPEND_ORIGINS: readonly string[] = RELAYCHAIN_1070_LIMITS.tiers.map(
   (t) => t.origin,
 )
 
@@ -124,8 +127,8 @@ export function treasuryTiersForSpec(
     if (l.specVersion <= specVersion) baseIdx = i
   })
   let table: TreasuryTierTable | null = null
-  if (baseIdx >= 0) {
-    const base = limits[baseIdx]
+  const base = limits[baseIdx]
+  if (base) {
     const later = limits.slice(baseIdx + 1)
     table = {
       tiers: base.tiers.map((tier) => ({
@@ -212,7 +215,7 @@ export type SpendLocalParams = {
  * native token from the relay treasury account.
  */
 export function buildSpendLocalCall(api: ApiPromise, params: SpendLocalParams): Call {
-  return api.tx.treasury.spendLocal(
+  return txCall(api, "treasury", "spendLocal")(
     params.amount.toString(),
     params.beneficiary,
   ).method as Call

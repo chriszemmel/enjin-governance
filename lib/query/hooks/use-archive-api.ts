@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import type { ApiPromise } from "@polkadot/api"
-import { getApi } from "@/lib/chain/api"
+import { getArchiveApi } from "@/lib/chain/api"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { queryKeys } from "@/lib/query/keys"
@@ -21,7 +21,7 @@ export function useArchiveApi(chain?: ChainConfig) {
   const endpoint = target.archiveRpc ?? target.rpc
   return useQuery<ApiPromise>({
     queryKey: queryKeys.api(endpoint),
-    queryFn: () => getApi(endpoint),
+    queryFn: () => getArchiveApi(target),
     staleTime: Infinity,
     gcTime: Infinity,
     retry: 3,

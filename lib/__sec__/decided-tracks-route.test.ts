@@ -11,7 +11,7 @@ let failing = new Set<number>()
 vi.mock("next/cache", () => ({
   unstable_cache: (fn: () => Promise<unknown>) => fn,
 }))
-vi.mock("@/lib/chain/api", () => ({ getApi: async () => ({}) }))
+vi.mock("@/lib/chain/api", () => ({ getApi: async () => ({}), getArchiveApi: async () => ({}) }))
 vi.mock("@/lib/governance/referenda", () => ({
   listReferenda: async () => [
     { index: 15, status: { type: "Ongoing" }, trackId: 203 },

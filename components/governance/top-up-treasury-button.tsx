@@ -28,6 +28,7 @@ import { useWallet } from "@/lib/wallet/use-wallet"
 import { walletDisplayFor } from "@/lib/wallet/connector-registry"
 import { useSignFlow } from "@/lib/wallet/use-sign-flow"
 import { cn } from "@/lib/utils"
+import { txCall } from "@/lib/chain/runtime"
 
 type Props = {
   chain: ChainConfig
@@ -86,7 +87,7 @@ export function TopUpTreasuryButton({ chain }: Props) {
   const tx = useExtrinsic({
     build: (api) => {
       if (parsed.value == null) throw new Error("Enter a valid amount.")
-      return api.tx.balances.transferKeepAlive(
+      return txCall(api, "balances", "transferKeepAlive")(
         chain.treasuryAddress,
         parsed.value,
       )

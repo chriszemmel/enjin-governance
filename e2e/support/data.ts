@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
+import { defined } from "../../test/defined"
 
 export const NETWORK = "canary-relay"
 /** Concluded and approved on Canary; its on-chain state no longer changes. */
@@ -104,7 +105,7 @@ const BODY = `## Motivation
 
 Community tools for Enjin governance need a **shared**, maintained home. Funds are sent to the community multisig ${MULTISIG} which is controlled by three signers.
 
-![Roadmap Q4 2026](${ATTACHMENTS[0].url})
+![Roadmap Q4 2026](${defined(ATTACHMENTS[0]).url})
 
 ## Milestones
 

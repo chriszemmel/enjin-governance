@@ -56,8 +56,8 @@ vi.mock("@/lib/moderation/suspension", async () => {
         : null,
   }
 })
-vi.mock("@/lib/chain/api", () => ({
-  getApi: async () => ({
+vi.mock("@/lib/chain/api", () => {
+  const getApi = async () => ({
     query: {
       referenda: {
         metadataOf: async () =>
@@ -66,8 +66,9 @@ vi.mock("@/lib/chain/api", () => ({
             : { isSome: false },
       },
     },
-  }),
-}))
+  })
+  return { getApi, getArchiveApi: getApi }
+})
 vi.mock("@/lib/governance/referenda", () => ({
   getReferendum: async () => chain.ref,
   getReferendumHistory: async () => chain.history,

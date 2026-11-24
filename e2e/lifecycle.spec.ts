@@ -6,6 +6,12 @@ import { expect, openProposal, test } from "./support/test"
 // proposal #2 awarded at the spend period 17,395,200. All of it is settled history,
 // read from the Canary RPC and archive node. The payout needs the call
 // decoded from its preimage, as the page's treasury summary does.
+// The payout and its block are read at blocks from August on Canary's public
+// archive node, which starts each old runtime to serve its metadata: 20 to
+// 50 s per runtime version, more while another test asks it too. The app
+// waits for that (see ARCHIVE_TIMEOUT_MS); so does this.
+const ARCHIVE_READ_MS = 150_000
+
 for (const width of [360, 390, 1280]) {
   test.describe(`${width} px`, () => {
     test.use({
@@ -16,13 +22,14 @@ for (const width of [360, 390, 1280]) {
     test("a paid-out spend folds to one line and opens to its events, within the screen", async ({
       page,
     }) => {
+      test.setTimeout(2 * ARCHIVE_READ_MS + 60_000)
       await openProposal(page)
       // All of it has happened, so the card is one line until opened.
       const card = page.getByRole("region", { name: "Lifecycle" })
       const details = card.getByRole("button", { name: /Details/ })
-      await expect(details).toContainText("Paid out 1 cENJ", { timeout: 60_000 })
+      await expect(details).toContainText("Paid out 1 cENJ", { timeout: ARCHIVE_READ_MS })
       // The payout's block, found on the archive node.
-      await expect(details).toContainText("paid at #17,395,200", { timeout: 60_000 })
+      await expect(details).toContainText("paid at #17,395,200", { timeout: ARCHIVE_READ_MS })
       await details.click()
 
       const timeline = card.getByRole("list", { name: "Timeline" })

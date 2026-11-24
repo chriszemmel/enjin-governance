@@ -96,6 +96,7 @@ function restoreOrder(tables: TableInfo[]): TableInfo[] {
   while (left.length > 0) {
     const ready = left.findIndex((t) => t.parents.every((p) => placed.has(p) || !names.has(p)))
     const [next] = left.splice(Math.max(ready, 0), 1)
+    if (next === undefined) break
     placed.add(next.name)
     out.push(next)
   }
@@ -113,6 +114,13 @@ export async function readMigrations(): Promise<MigrationEntry[] | null> {
     if (isMissingTable(err)) return null
     throw err
   }
+}
+
+/** A column every row of `readRows`' query selects; missing means the query is wrong. */
+function column(row: Record<string, string>, name: string, table: string): string {
+  const value = row[name]
+  if (value === undefined) throw new Error(`Backup of ${table}: row has no ${name}`)
+  return value
 }
 
 /** BIGINT and NUMERIC as strings: as JSON numbers they would lose digits in JavaScript. */
@@ -145,9 +153,9 @@ export async function readRows(t: TableInfo): Promise<string[]> {
       `${base}${last ? ` WHERE ${after}` : ""} ORDER BY ${order} LIMIT ${PAGE_ROWS}`,
       last ?? [],
     )) as Record<string, string>[]
-    for (const r of page) rows.push(r.j)
-    if (page.length < PAGE_ROWS) return rows
+    for (const r of page) rows.push(column(r, "j", t.name))
     const end = page[page.length - 1]
-    last = t.primaryKey.map((_, i) => end[`k${i}`])
+    if (end === undefined || page.length < PAGE_ROWS) return rows
+    last = t.primaryKey.map((_, i) => column(end, `k${i}`, t.name))
   }
 }

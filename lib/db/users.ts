@@ -12,6 +12,7 @@
 import "server-only"
 import { networkOfAddress } from "@/lib/auth/sign-in-network"
 import { getSql } from "./client"
+import { firstRow } from "./rows"
 
 export type UserRow = {
   id: string
@@ -54,10 +55,7 @@ export async function upsertUserByAddress(address: string): Promise<UserRow> {
     SELECT * FROM users WHERE address = ${address}
     LIMIT 1
   `) as UserRow[]
-  if (rows.length === 0) {
-    throw new Error(`Failed to upsert user for address ${address}`)
-  }
-  return rows[0]
+  return firstRow(rows, `Failed to upsert user for address ${address}`)
 }
 
 export async function getUserByAddress(address: string): Promise<UserRow | null> {
@@ -107,8 +105,7 @@ export async function updateProfile(
     WHERE id = ${userId}
     RETURNING *
   `) as UserRow[]
-  if (rows.length === 0) throw new Error(`No user ${userId}`)
-  return rows[0]
+  return firstRow(rows, `No user ${userId}`)
 }
 
 export async function setAvatar(

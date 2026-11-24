@@ -3,6 +3,31 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.6 - 2026-11-24
+
+- **Your vote shows again:** since runtime 1082 the chain stores each vote
+  as the vote cast next to what the tally counts for it, and the app still
+  read the old shape. Votes landed as signed, but right after voting the
+  panel offered "Cast your vote" again with no way to remove the vote, the
+  locked-balance panel failed for anyone with an active vote, and a
+  referendum's vote list said no votes had been cast (referendum 20 had
+  21). All of them read both shapes now.
+- **Fellowship Retry keeps your choice:** when a fellowship vote did land
+  but the app reported it lost, Retry could sign Nay for a member who chose
+  Aye, and the success card could name the wrong side. Both now use the
+  choice you signed.
+- **The vote total has room on a phone:** "1,695,758.73 ENJ" no longer
+  breaks before "ENJ". The voter count takes only its own width, and on the
+  narrowest phones the two tiles stack.
+- **Checked before it ships:** CI now fails when it finds no tests, and when
+  coverage of `lib/governance` or `lib/auth` drops below its floor.
+  TypeScript checks every indexed read (`noUncheckedIndexedAccess`).
+  Component tests drive the vote, delegation, fellowship and sign-request
+  UI and check what reaches the signer; `pnpm test:fork` runs every signing
+  flow on a fork of Enjin Relay mainnet. The README's test count comes from
+  CI. `docs/security/tx-signing-review.md` reviews every place the app
+  signs.
+
 ## 2.0.5 - 2026-11-18
 
 - **Payout dates survive a change of the spend period:** a paid-out spend

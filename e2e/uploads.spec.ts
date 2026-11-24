@@ -8,6 +8,7 @@ import type { Page } from "@playwright/test"
 import sharp from "sharp"
 import { fixture } from "./support/data"
 import { expect, openComposer, test } from "./support/test"
+import { defined } from "../test/defined"
 
 /** lib/uploads/limits.ts: MAX_UPLOAD_BYTES. */
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
@@ -85,7 +86,7 @@ test("a large photo is shrunk under 4 MB before the upload request", async ({
   expect(body!.length).toBeLessThan(4_500_000)
   await expect(page.getByRole("link", { name: "big-photo.jpg" })).toBeVisible()
   expect(api.uploads).toHaveLength(1)
-  const [upload] = api.uploads
+  const upload = defined(api.uploads[0], "upload")
   expect(upload.name).toBe("big-photo.jpg")
   expect(upload.contentType).toBe("image/jpeg")
   expect(upload.bytes.length).toBeLessThanOrEqual(MAX_UPLOAD_BYTES)

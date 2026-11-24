@@ -51,7 +51,21 @@ jobs:
         run: pnpm audit --prod
 
       - name: Test
-        run: pnpm test
+        # Fails on no tests found and on coverage below the floors in
+        # vitest.config.ts (lib/governance, lib/auth).
+        run: pnpm test:coverage --reporter=default --reporter=json --outputFile.json=vitest-results.json
+
+      - name: Test badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: node .github/scripts/test-badge.mjs vitest-results.json tests.json
+
+      - name: Upload test badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-badge
+          path: tests.json
+          retention-days: 1
 
       - name: Build
         run: pnpm build
@@ -59,6 +73,35 @@ jobs:
           # WC project ID is optional at build time since the hotfix; the
           # APP_URL just needs to be a valid URL.
           NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+
+  badge:
+    name: Publish test badge
+    # Only the count from a green run on main reaches the README. This job
+    # runs no project code and is the only one that may push: it writes the
+    # badge JSON to the `badges` branch, which holds nothing else.
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download test badge
+        uses: actions/download-artifact@v4
+        with:
+          name: test-badge
+
+      - name: Push to the badges branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir publish && mv tests.json publish/ && cd publish
+          git init -q -b badges
+          git add tests.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898315+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Test badge for ${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" badges
 
   e2e:
     name: Browser tests

@@ -15,6 +15,7 @@ import { u8aToHex } from "@polkadot/util"
 import { decodeAddress } from "@polkadot/util-crypto"
 import type { ProposalIntent } from "./call-extract"
 import type { EnactmentRecord } from "./scheduler"
+import { queryEntry } from "@/lib/chain/runtime"
 
 /** A `treasury.proposals` entry. */
 export type TreasuryProposalEntry = {
@@ -103,8 +104,9 @@ export function resolvePayout(input: {
   const waiting = proposals.filter(
     (p) => sameSpend(p.beneficiary, p.value) && approvals.includes(p.index),
   )
-  if (waiting.length > 0) {
-    return { status: "pending", proposalIndex: waiting.length === 1 ? waiting[0].index : null }
+  const [first, ...others] = waiting
+  if (first) {
+    return { status: "pending", proposalIndex: others.length === 0 ? first.index : null }
   }
   return { status: "unknown" }
 }
@@ -150,12 +152,12 @@ export function awardReaders(
   return {
     stored: async (block) => {
       const state = await at(block)
-      const entry = await state.query.treasury.proposals(proposalIndex)
+      const entry = await queryEntry(state, "treasury", "proposals")(proposalIndex)
       return (entry as unknown as { isSome: boolean }).isSome
     },
     awarded: async (block) => {
       const state = await at(block)
-      const events = (await state.query.system.events()) as unknown as {
+      const events = (await queryEntry(state, "system", "events")()) as unknown as {
         event: { section: string; method: string; data: { toJSON: () => unknown } }
       }[]
       return events.some(({ event }) => {

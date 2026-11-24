@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test"
 import { u8aToHex } from "@polkadot/util"
 import { decodeAddress } from "@polkadot/util-crypto"
 import { expect, test } from "./support/test"
+import { defined } from "../test/defined"
 
 test.use({ moderationRole: "admin", viewport: { width: 1280, height: 900 } })
 
@@ -12,7 +13,7 @@ test("Hide in the moderation queue needs a reason and posts it", async ({ page }
   // The first item opens by itself. The automatic check's sentence is shown
   // for the moderator but never pre-filled as the public reason: the model
   // reads the reported content, so that text is not the moderator's to publish.
-  await expect(page.getByText(QUEUE_ITEMS.automatic.details[0].explanation)).toBeVisible({
+  await expect(page.getByText(defined(QUEUE_ITEMS.automatic.details[0]).explanation)).toBeVisible({
     timeout: 30_000,
   })
   const reason = page.getByPlaceholder("Reason (public)")
@@ -76,8 +77,8 @@ test.describe("the Moderation menu entry", () => {
     test.use({ signedIn: false, moderationRole: null })
     test("shows before signing in", async ({ page }) => {
       await page.addInitScript(
-        ([k, v]) => localStorage.setItem(k, v),
-        [hintKey, JSON.stringify([u8aToHex(decodeAddress(ME))])],
+        ({ key, value }) => localStorage.setItem(key, value),
+        { key: hintKey, value: JSON.stringify([u8aToHex(decodeAddress(ME))]) },
       )
       await openMenu(page)
       await expect(entry(page)).toBeVisible({ timeout: 30_000 })
@@ -101,8 +102,8 @@ test.describe("the Moderation menu entry", () => {
     test.use({ signedIn: true, moderationRole: null })
     test("does not show, and a stale hint is dropped", async ({ page }) => {
       await page.addInitScript(
-        ([k, v]) => localStorage.setItem(k, v),
-        [hintKey, JSON.stringify([u8aToHex(decodeAddress(ME))])],
+        ({ key, value }) => localStorage.setItem(key, value),
+        { key: hintKey, value: JSON.stringify([u8aToHex(decodeAddress(ME))]) },
       )
       await openMenu(page)
       await expect(entry(page)).toHaveCount(0)

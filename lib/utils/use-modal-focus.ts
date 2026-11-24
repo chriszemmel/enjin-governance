@@ -37,12 +37,12 @@ export function useModalFocus(
       const items = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
         (el) => el.getClientRects().length > 0,
       )
-      if (items.length === 0) {
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (!first || !last) {
         e.preventDefault()
         return
       }
-      const first = items[0]
-      const last = items[items.length - 1]
       const active = document.activeElement
       if (!dialog.contains(active)) {
         e.preventDefault()

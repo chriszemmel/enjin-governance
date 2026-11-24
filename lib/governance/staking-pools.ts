@@ -18,6 +18,7 @@
 
 import type { ApiPromise } from "@polkadot/api"
 import { BN, bnToU8a, stringToU8a, u8aConcat } from "@polkadot/util"
+import { constEntry, queryEntry } from "@/lib/chain/runtime"
 
 export type PoolInfo = {
   poolId: number
@@ -146,9 +147,9 @@ export type StakedEnjHolding = {
  * (vs the reward account, which uses 0x00).
  */
 function poolStashAccount(api: ApiPromise, poolId: number): string {
-  const palletId = (
-    api.consts.nominationPools.palletId as unknown as { toU8a: () => Uint8Array }
-  ).toU8a()
+  const palletIdConst = constEntry(api, "nominationPools", "palletId")
+  if (!palletIdConst) throw new Error("Chain does not expose nominationPools.palletId")
+  const palletId = palletIdConst.toU8a()
   // 32-byte AccountId: "modl"(4) + palletId(8) + marker(1) + poolId(4 LE) + pad(15)
   const head = u8aConcat(
     stringToU8a("modl"),
@@ -200,12 +201,12 @@ export async function getStakedEnjBalances(
     poolIds.map(async (poolId): Promise<StakedEnjHolding | null> => {
       try {
         const [accountRaw, supplyRaw, ledgerRaw, poolMeta] = await Promise.all([
-          api.query.multiTokens.tokenAccounts(
+          queryEntry(api, "multiTokens", "tokenAccounts")(
             sEnjCollectionId.toString(),
             poolId,
             address,
           ),
-          api.query.multiTokens.tokens(sEnjCollectionId.toString(), poolId),
+          queryEntry(api, "multiTokens", "tokens")(sEnjCollectionId.toString(), poolId),
           readStakingActive(api, poolId),
           getPool(api, poolId),
         ])
