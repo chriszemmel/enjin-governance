@@ -103,7 +103,10 @@ export function TallyBar({
   return (
     <div className={cn("space-y-4", className)}>
       {(voterCount != null || chain) && (
-        <div className="grid grid-cols-2 gap-3">
+        // Side by side, the total takes the room it needs and the voter count,
+        // a short number, only its own width. On the narrowest phones the two
+        // stack, so "1,695,758.73 ENJ" keeps room around it.
+        <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-[minmax(0,1fr)_auto]">
           {chain && (
             <SummaryStat
               label="Total votes"
@@ -169,14 +172,14 @@ export function TallyBar({
 
       {chain && tally.support > 0n && (
         <div className="pt-4 mt-1 border-t border-border space-y-1">
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center justify-between gap-3 text-xs">
             <span className="text-muted-foreground">
               Raw support{" "}
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 (unweighted)
               </span>
             </span>
-            <span className="text-foreground font-medium font-mono tabular-nums">
+            <span className="shrink-0 whitespace-nowrap text-foreground font-medium font-mono tabular-nums">
               {formatTokenAmount(tally.support, chain, { maxFractionDigits: 2 })}
             </span>
           </div>
@@ -209,7 +212,7 @@ function SummaryStat({
       </p>
       <p
         className={cn(
-          "text-sm font-semibold text-foreground tabular-nums",
+          "text-sm font-semibold text-foreground tabular-nums whitespace-nowrap",
           monospace && "font-mono",
         )}
       >
