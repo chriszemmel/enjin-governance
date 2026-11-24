@@ -18,7 +18,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { blake2AsHex } from "@polkadot/util-crypto"
 import { z } from "zod"
 import { getCurrentUser } from "@/lib/auth/current-user"
-import { getApi } from "@/lib/chain/api"
+import { getApi, getArchiveApi } from "@/lib/chain/api"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
 import { initializeWasm, samePublicKey } from "@/lib/chain/ss58"
 import { isDbConfigured } from "@/lib/db/client"
@@ -204,7 +204,7 @@ async function filedByProposer(
         // an archive node still has both.
         if (status && status.type !== "Ongoing" && (!deposit || !ongoing) && chain.archiveRpc) {
           const past = await getReferendumHistory(
-            await getApi(chain.archiveRpc, 0),
+            await getArchiveApi(chain, 0),
             index,
             status.at,
             pallet,

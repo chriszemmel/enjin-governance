@@ -1,7 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { getApi } from "@/lib/chain/api"
+import { getArchiveApi } from "@/lib/chain/api"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { getDecidedTrack } from "@/lib/governance/referenda"
@@ -44,7 +44,7 @@ export function useDecidedTracks(referenda: Referendum[], chain?: ChainConfig) {
       }
       const missing = decided.filter((d) => !tracks.has(d.index))
       if (missing.length > 0) {
-        const archive = await getApi(target.archiveRpc ?? target.rpc)
+        const archive = await getArchiveApi(target)
         for (const d of missing) {
           const track = await withRetries(() => getDecidedTrack(archive, d.index, d.at))
           if (track != null) tracks.set(d.index, track)

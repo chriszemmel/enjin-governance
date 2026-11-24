@@ -3,14 +3,21 @@ import { expect, test } from "./support/test"
 // Canary runs a Fellowship with one decided referendum, F#0 (approved).
 // The test wallet isn't a member, so it can follow but not vote.
 
+// The fast-track link needs F#0's and public #5's state from January, read
+// on Canary's public archive node: it starts each old runtime to serve its
+// metadata, 20 to 50 s per runtime version, more while another test asks
+// it too. The app now waits for that (see ARCHIVE_TIMEOUT_MS); so does this.
+const ARCHIVE_READ_MS = 150_000
+
 test("the Fellowship hub lists members and referenda from the chain", async ({ page }) => {
+  test.setTimeout(ARCHIVE_READ_MS + 60_000)
   await page.goto("/fellowship?network=canary-relay")
   await expect(page.getByRole("heading", { level: 1, name: "Fellowship" })).toBeVisible()
   const card = page.getByRole("link", { name: /F # 0/ })
   await expect(card).toBeVisible({ timeout: 60_000 })
   await expect(card.getByText("Approved", { exact: true })).toBeVisible()
   // F#0 whitelisted the call public referendum #5 dispatched.
-  await expect(card.getByText("Public referendum #5")).toBeVisible({ timeout: 60_000 })
+  await expect(card.getByText("Public referendum #5")).toBeVisible({ timeout: ARCHIVE_READ_MS })
   await expect(card.getByText("Fellows · rank III+")).toBeVisible()
   await expect(page.getByText("Not a member")).toBeVisible()
 

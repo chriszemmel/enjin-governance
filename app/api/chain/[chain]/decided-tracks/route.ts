@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache"
 import { NextResponse } from "next/server"
-import { getApi } from "@/lib/chain/api"
+import { getApi, getArchiveApi } from "@/lib/chain/api"
 import { CHAINS, type ChainId } from "@/lib/chain/chains"
 import { getDecidedTrack, listReferenda } from "@/lib/governance/referenda"
 
@@ -76,7 +76,7 @@ function cachedTrack(chainId: string, index: number, at: number): Promise<number
   return unstable_cache(
     async () => {
       const chain = CHAINS[chainId as ChainId]
-      const archive = await getApi(chain.archiveRpc ?? chain.rpc, 0)
+      const archive = await getArchiveApi(chain, 0)
       const track = await getDecidedTrack(archive, index, at)
       if (track == null) throw new Error(`No track for referendum ${index}`)
       return track
