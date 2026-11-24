@@ -912,44 +912,74 @@ function decodeVotes(raw: unknown, trackId: number): VoteRecord[] {
   const votes =
     (casting.votes as unknown as ReadonlyArray<readonly [unknown, unknown]>) ?? []
 
-  return votes.map(([pollIndexCodec, accountVote]) => {
-    const pollIndex = toNumber(pollIndexCodec)
-    const av = accountVote as Record<string, unknown>
+  const out: VoteRecord[] = []
+  for (const [pollIndexCodec, record] of votes) {
+    const decoded = decodeAccountVote(toNumber(pollIndexCodec), trackId, record)
+    if (decoded) out.push(decoded)
+  }
+  return out
+}
 
-    if (av.isStandard) {
-      const inner = av.asStandard as Record<string, unknown>
-      const voteFlag = inner.vote as Record<string, unknown>
-      const aye = Boolean((voteFlag.isAye as boolean | undefined) ?? false)
-      const conviction = (voteFlag.conviction as { type: string }).type as Conviction
-      return {
-        type: "Standard" as const,
-        pollIndex,
-        trackId,
-        aye,
-        balance: toBigInt(inner.balance),
-        conviction,
-      }
+/**
+ * The account's own vote from one `casting.votes` entry.
+ *
+ * Up to spec 1080 the entry is the `AccountVote` itself. From spec 1082 the
+ * multi-token fork stores `{ vote, counted }`: `vote` is what the account
+ * cast - what the vote panel, the locks and the voter list show - and
+ * `counted` what the tally holds for it. An entry in neither shape is left
+ * out rather than failing every vote the account has.
+ */
+function decodeAccountVote(
+  pollIndex: number,
+  trackId: number,
+  record: unknown,
+): VoteRecord | null {
+  const r = record as Record<string, unknown> | null | undefined
+  if (!r) return null
+  const isAccountVote = (x: Record<string, unknown>) =>
+    typeof x.isStandard === "boolean" ||
+    typeof x.isSplit === "boolean" ||
+    typeof x.isSplitAbstain === "boolean"
+  const nested = r.vote as Record<string, unknown> | null | undefined
+  const av = isAccountVote(r) ? r : nested && isAccountVote(nested) ? nested : null
+  if (!av) return null
+
+  if (av.isStandard) {
+    const inner = av.asStandard as Record<string, unknown>
+    const voteFlag = inner.vote as Record<string, unknown>
+    const aye = Boolean((voteFlag.isAye as boolean | undefined) ?? false)
+    const conviction = (voteFlag.conviction as { type: string }).type as Conviction
+    return {
+      type: "Standard",
+      pollIndex,
+      trackId,
+      aye,
+      balance: toBigInt(inner.balance),
+      conviction,
     }
-    if (av.isSplit) {
-      const inner = av.asSplit as Record<string, unknown>
-      return {
-        type: "Split" as const,
-        pollIndex,
-        trackId,
-        aye: toBigInt(inner.aye),
-        nay: toBigInt(inner.nay),
-      }
+  }
+  if (av.isSplit) {
+    const inner = av.asSplit as Record<string, unknown>
+    return {
+      type: "Split",
+      pollIndex,
+      trackId,
+      aye: toBigInt(inner.aye),
+      nay: toBigInt(inner.nay),
     }
+  }
+  if (av.isSplitAbstain) {
     const inner = av.asSplitAbstain as Record<string, unknown>
     return {
-      type: "SplitAbstain" as const,
+      type: "SplitAbstain",
       pollIndex,
       trackId,
       aye: toBigInt(inner.aye),
       nay: toBigInt(inner.nay),
       abstain: toBigInt(inner.abstain),
     }
-  })
+  }
+  return null
 }
 
 function toNumber(x: unknown): number {

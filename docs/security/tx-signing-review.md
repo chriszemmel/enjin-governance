@@ -3,8 +3,8 @@
 Every place the app builds something for the user to sign, what the user sees
 before signing, and whether that is exactly what gets signed. Written
 2026-11-24 against `main` at `574a001` plus the QA patch; mainnet Enjin Relay
-was on spec 1082. No code was changed for this review; findings are listed,
-not fixed.
+was on spec 1082. F1 and F2 are fixed on the same branch; the other
+findings are listed, not fixed.
 
 **How it was checked**
 
@@ -20,8 +20,8 @@ not fixed.
   call == call in the block, the dispatch succeeded, and chain state matches
   the values the UI shows.
 
-Known findings are pinned with `it.fails`: those tests pass while the
-finding stands and turn red once it is fixed (then flip them to `it`).
+A finding left open can be pinned with `it.fails`: the test passes while
+the finding stands and turns red once it is fixed (then flip it to `it`).
 
 ## The signing path
 
@@ -78,11 +78,11 @@ shown differently or not at all (see the finding).
 Severity is about what a user could end up signing or believing; none of
 these lets the app sign a call other than the one it built.
 
-### F1 - High: votes cast on spec 1082 can't be read back
+### F1 - High: votes cast on spec 1082 can't be read back (fixed)
 
 Spec 1082 stores each casting vote as `{ vote: AccountVote, counted:
-AccountVote }`. `decodeVotes` (`lib/governance/conviction-voting.ts:908`)
-still reads the entry as a bare `AccountVote`, finds neither `isStandard`
+AccountVote }`. `decodeVotes` (`lib/governance/conviction-voting.ts`)
+still read the entry as a bare `AccountVote`, finds neither `isStandard`
 nor `isSplit`, and throws on `asSplitAbstain` (`TypeError: Cannot read
 properties of undefined (reading 'aye')`). On the fork:
 
@@ -93,8 +93,15 @@ properties of undefined (reading 'aye')`). On the fork:
 - `listVotesOnPoll` and `getMyVotesOnPollAnyTrack` use the same decoder.
 
 Signing is not affected (the vote lands as built), but what the user sees
-afterwards contradicts it. Pinned: `fork/signing.fork.ts` ("the app reads
-the stored vote back", "the app lists the locks…").
+afterwards contradicts it. On mainnet, referendum 20's page said "No votes
+have been cast" while its tally showed 21 votes.
+
+**Fix:** `decodeVotes` reads both shapes and takes the account's own vote
+from `vote` (`counted` is what the tally holds). An entry in neither shape
+is left out instead of failing every vote of the account. Checked by unit
+tests for both shapes, by the fork checks (the vote panel, voter list and
+locks readers see what was signed) and read-only against mainnet:
+referendum 20's 21 votes are read again.
 
 ### F2 - High: Fellowship Retry can sign the opposite vote
 

@@ -80,6 +80,7 @@ function accountVote(v: FakeVote) {
     return { isSplit: true, asSplit: { aye: big(v.aye), nay: big(v.nay) } }
   }
   return {
+    isSplitAbstain: true,
     asSplitAbstain: { aye: big(v.aye), nay: big(v.nay), abstain: big(v.abstain) },
   }
 }
@@ -90,6 +91,26 @@ function casting(votes: FakeVote[], prior?: [number, bigint]) {
     asCasting: {
       votes: votes.map((v) => [num(v.poll), accountVote(v)]),
       prior: prior ? [num(prior[0]), big(prior[1])] : undefined,
+    },
+  }
+}
+
+/**
+ * A Casting record as spec 1082 stores it: each entry is `{ vote, counted }`,
+ * the account's own vote next to what the tally holds for it.
+ */
+function casting1082(
+  entries: Array<{ vote: FakeVote; counted: FakeVote } | { unknown: true; poll: number }>,
+) {
+  return {
+    isCasting: true,
+    asCasting: {
+      votes: entries.map((e) =>
+        "unknown" in e
+          ? [num(e.poll), { somethingElse: true }]
+          : [num(e.vote.poll), { vote: accountVote(e.vote), counted: accountVote(e.counted) }],
+      ),
+      prior: undefined,
     },
   }
 }
@@ -656,5 +677,106 @@ describe("getAccountLocks - prior locks and split votes", () => {
       },
     })
     expect(await getAccountLocks(api, "me")).toEqual([])
+  })
+})
+
+describe("spec 1082 vote records ({ vote, counted })", () => {
+  const aye = (poll: number, balance: bigint): FakeVote => ({
+    kind: "Standard",
+    poll,
+    aye: true,
+    conviction: "Locked3x",
+    balance,
+  })
+
+  it("reads the account's own vote, not what the tally counted", async () => {
+    const api = asApi({
+      query: {
+        convictionVoting: {
+          votingFor: storageMap(throws("unused"), () => [
+            [
+              key(addrArg("me"), num(2), jsonArg({ Enj: null })),
+              casting1082([{ vote: aye(20, 12n), counted: aye(20, 11n) }]),
+            ],
+          ]),
+        },
+      },
+    })
+    const [mine] = await getMyVotesOnPoll(api, "me", 2, 20)
+    expect(defined(mine).vote).toEqual({
+      type: "Standard",
+      pollIndex: 20,
+      trackId: 2,
+      aye: true,
+      balance: 12n,
+      conviction: "Locked3x",
+    })
+  })
+
+  it("lists voters whose records come in either shape", async () => {
+    const api = asApi({
+      query: {
+        convictionVoting: {
+          votingFor: storageMap(throws("unused"), () => [
+            [key(addrArg("old"), num(2)), casting([aye(20, 1n)])],
+            [
+              key(addrArg("new"), num(2)),
+              casting1082([
+                {
+                  vote: { kind: "SplitAbstain", poll: 20, aye: 0n, nay: 0n, abstain: 5n },
+                  counted: { kind: "SplitAbstain", poll: 20, aye: 0n, nay: 0n, abstain: 5n },
+                },
+              ]),
+            ],
+          ]),
+        },
+      },
+    })
+    const voters = await listVotesOnPoll(api, 20)
+    expect(voters.map((v) => [v.voter, v.vote.type])).toEqual([
+      ["old", "Standard"],
+      ["new", "SplitAbstain"],
+    ])
+  })
+
+  it("shows a lock held by a 1082 vote", async () => {
+    const api = asApi({
+      query: {
+        convictionVoting: {
+          classLocksFor: storageMap(throws("unused"), () => [
+            [key(addrArg("me"), jsonArg({ Enj: null })), [[num(2), big(12n)]]],
+          ]),
+          votingFor: storageMap(throws("unused"), () => [
+            [
+              key(addrArg("me"), num(2), jsonArg({ Enj: null })),
+              casting1082([{ vote: aye(20, 12n), counted: aye(20, 12n) }]),
+            ],
+          ]),
+        },
+      },
+    })
+    const [lock] = await getAccountLocks(api, "me")
+    expect(defined(lock).activeVotes).toEqual([
+      { pollIndex: 20, balance: 12n, conviction: "Locked3x", aye: true },
+    ])
+  })
+
+  it("leaves out an entry in neither shape and keeps the others", async () => {
+    const api = asApi({
+      query: {
+        convictionVoting: {
+          votingFor: storageMap(throws("unused"), () => [
+            [
+              key(addrArg("me"), num(2), jsonArg({ Enj: null })),
+              casting1082([
+                { unknown: true, poll: 19 },
+                { vote: aye(20, 3n), counted: aye(20, 3n) },
+              ]),
+            ],
+          ]),
+        },
+      },
+    })
+    expect((await getVotesFor(api, "me", 2)).map((v) => v.pollIndex)).toEqual([20])
   })
 })

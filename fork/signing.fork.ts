@@ -10,6 +10,7 @@ import {
   getAccountLocks,
   getDelegationsFor,
   getMyVotesOnPoll,
+  listVotesOnPoll,
   sEnjCurrency,
 } from "@/lib/governance/conviction-voting"
 import { getPreimage } from "@/lib/governance/preimage"
@@ -129,21 +130,34 @@ describe("vote panel", () => {
     })
   })
 
-  // Known finding (docs/security/tx-signing-review.md, F1): on spec 1082 a
-  // casting vote is stored as `{ vote, counted }`, and the app's decodeVotes
-  // still expects a bare AccountVote, so it can't read the vote back - the
-  // panel then shows "Cast your vote" and no remove button. `it.fails` keeps
-  // this visible; it turns red once the reader is fixed, to be flipped then.
-  it.fails("the app reads the stored vote back (spec 1082 record shape)", async () => {
-    const [stored] = await getMyVotesOnPoll(fork.api, fork.alice.address, ROOT_TRACK, referendum)
-    expect(defined(stored).vote).toMatchObject({ aye: true, conviction: "Locked3x" })
-  })
+  // Spec 1082 stores a casting vote as `{ vote, counted }`; the app's own
+  // readers must see the same votes as the independent decoder above
+  // (docs/security/tx-signing-review.md, F1).
+  it("the app reads the stored vote back: vote panel, voter list, locks", async () => {
+    const [mine] = await getMyVotesOnPoll(fork.api, fork.alice.address, ROOT_TRACK, referendum)
+    expect(defined(mine).vote).toEqual({
+      type: "Standard",
+      pollIndex: referendum,
+      trackId: ROOT_TRACK,
+      aye: true,
+      balance: (125n * ENJ) / 10n,
+      conviction: "Locked3x",
+    })
 
-  // Same finding: the locks panel decodes active votes the same way, so
-  // it fails for every account that has one (here: Bob's abstain vote).
-  it.fails("the app lists the locks of an account with an active vote", async () => {
-    const locks = await getAccountLocks(fork.api, fork.bob.address)
-    expect(defined(locks.find((l) => l.trackId === ROOT_TRACK)).activeVotes).toHaveLength(1)
+    const voters = await listVotesOnPoll(fork.api, referendum)
+    const byVoter = new Map(voters.map((v) => [v.voter, v.vote]))
+    expect(byVoter.get(fork.alice.address)).toMatchObject({ type: "Standard", aye: true })
+    expect(byVoter.get(fork.bob.address)).toMatchObject({
+      type: "SplitAbstain",
+      abstain: 20n * ENJ,
+    })
+
+    const bobLock = defined(
+      (await getAccountLocks(fork.api, fork.bob.address)).find((l) => l.trackId === ROOT_TRACK),
+    )
+    expect(bobLock.activeVotes).toEqual([
+      { pollIndex: referendum, balance: 20n * ENJ, conviction: "None", aye: false },
+    ])
   })
 
   it("encodes an sENJ vote with the pool's token id as the currency", () => {
