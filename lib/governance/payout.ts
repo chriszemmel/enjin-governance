@@ -61,12 +61,18 @@ export function localSpendTarget(intent: ProposalIntent | undefined): SpendTarge
 }
 
 /**
- * The first spend-period block after `block`: payouts happen at the blocks
- * divisible by `spendPeriod`, and one at `block` itself has already run.
+ * The first spend-period block after `block`, and one at `block` itself has
+ * already run. Spend periods fall at `origin + k * spendPeriod`. Older
+ * treasuries pay at the blocks divisible by `spendPeriod` (origin 0); newer
+ * ones count from `treasury.lastSpendPeriod`, which need not be a multiple
+ * of the period once the period has been changed (Enjin Relay's runtime 1082
+ * set 345,600 with the last period at 18,259,200, so payouts fall at
+ * 18,604,800, not at 18,662,400).
  */
-export function nextSpendPeriodBlock(block: number, spendPeriod: number): number {
+export function nextSpendPeriodBlock(block: number, spendPeriod: number, origin = 0): number {
   if (!(spendPeriod > 0)) return block + 1
-  return (Math.floor(block / spendPeriod) + 1) * spendPeriod
+  if (block < origin) return origin + spendPeriod
+  return origin + (Math.floor((block - origin) / spendPeriod) + 1) * spendPeriod
 }
 
 /**
@@ -124,22 +130,26 @@ export async function findAwardBlock(input: {
   enactedAt: number
   currentBlock: number
   spendPeriod: number
+  /** Where the periods count from (`treasury.lastSpendPeriod` at enactment); 0 when it has none. */
+  origin?: number
   /** Whether the proposal is still stored in the state after `block`. */
   stored: (block: number) => Promise<boolean>
   /** Whether `block`'s events award the proposal. */
   awarded: (block: number) => Promise<boolean>
 }): Promise<number | null> {
-  const { enactedAt, currentBlock, spendPeriod, stored, awarded } = input
+  const { enactedAt, currentBlock, spendPeriod, origin = 0, stored, awarded } = input
   if (!(spendPeriod > 0)) return null
-  let lo = Math.floor(enactedAt / spendPeriod) + 1
-  let hi = Math.floor(currentBlock / spendPeriod)
-  if (lo > hi || (await stored(hi * spendPeriod))) return null
+  // Period k falls at origin + k * spendPeriod.
+  const first = nextSpendPeriodBlock(enactedAt, spendPeriod, origin)
+  let lo = Math.round((first - origin) / spendPeriod)
+  let hi = Math.floor((currentBlock - origin) / spendPeriod)
+  if (lo > hi || (await stored(origin + hi * spendPeriod))) return null
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2)
-    if (await stored(mid * spendPeriod)) lo = mid + 1
+    if (await stored(origin + mid * spendPeriod)) lo = mid + 1
     else hi = mid
   }
-  const block = lo * spendPeriod
+  const block = origin + lo * spendPeriod
   return (await awarded(block)) ? block : null
 }
 
@@ -184,6 +194,21 @@ export function readSpendPeriod(api: Pick<ApiPromise, "consts">): number | null 
  */
 export async function readSpendPeriodAt(api: ApiPromise, block: number): Promise<number | null> {
   return readSpendPeriod(await api.at(await api.rpc.chain.getBlockHash(block)))
+}
+
+/**
+ * `treasury.lastSpendPeriod` at `block` (or now, without one): the block the
+ * spend periods count from. Null when the runtime has no such storage, which
+ * means they fall at multiples of the period.
+ */
+export async function readLastSpendPeriod(api: ApiPromise, block?: number): Promise<number | null> {
+  const state = block == null ? api : await api.at(await api.rpc.chain.getBlockHash(block))
+  const entry = (state.query.treasury as Record<string, unknown> | undefined)?.lastSpendPeriod as
+    | (() => Promise<{ isSome?: boolean; unwrap?: () => { toNumber: () => number } }>)
+    | undefined
+  if (!entry) return null
+  const value = await entry()
+  return value.isSome && value.unwrap ? value.unwrap().toNumber() : null
 }
 
 /** The treasury's stored proposals and the approved indices waiting for a spend period. */

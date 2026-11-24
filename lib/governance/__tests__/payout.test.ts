@@ -35,6 +35,13 @@ describe("nextSpendPeriodBlock", () => {
     expect(nextSpendPeriodBlock(17_547_682, 14_400)).toBe(17_553_600)
   })
 
+  it("counts from lastSpendPeriod when the period was changed off its multiples", () => {
+    // Enjin Relay runtime 1082: period 345,600, last period at 18,259,200.
+    expect(nextSpendPeriodBlock(18_322_422, 345_600, 18_259_200)).toBe(18_604_800)
+    expect(nextSpendPeriodBlock(18_604_800, 345_600, 18_259_200)).toBe(18_950_400)
+    expect(nextSpendPeriodBlock(18_000_000, 345_600, 18_259_200)).toBe(18_604_800)
+  })
+
   it("a spend period that has just run is not the next one", () => {
     expect(nextSpendPeriodBlock(17_553_600, 14_400)).toBe(17_568_000)
   })

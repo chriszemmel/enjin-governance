@@ -9,6 +9,7 @@ import {
   awardReaders,
   findAwardBlock,
   type PayoutStatus,
+  readLastSpendPeriod,
   readSpendPeriod,
   readSpendPeriodAt,
   readTreasuryProposals,
@@ -44,6 +45,17 @@ export function useSpendPayout(
     () => (api && specVersion != null ? readSpendPeriod(api) : null),
     [api, specVersion],
   )
+
+  // Where the periods count from; they fall at this plus multiples of the period.
+  const lastQuery = useQuery<number | null>({
+    queryKey: ["last-spend-period", target.id, specVersion],
+    queryFn: async () => {
+      if (!api) throw new Error("API not ready")
+      return readLastSpendPeriod(api)
+    },
+    enabled: apiQuery.isSuccess && specVersion != null && spend != null,
+    staleTime: 60_000,
+  })
 
   // Wait for the archive record (or its failure) so the proposal index it
   // names is used rather than a beneficiary-and-amount match.
@@ -87,11 +99,13 @@ export function useSpendPayout(
       // The period of the time, not today's: an upgrade can change it.
       const periodThen = await readSpendPeriodAt(a, enactedAt)
       if (periodThen == null) return null
+      const originThen = (await readLastSpendPeriod(a, enactedAt)) ?? 0
       const head = await api.rpc.chain.getHeader()
       return findAwardBlock({
         enactedAt,
         currentBlock: (head.number as unknown as { toNumber: () => number }).toNumber(),
         spendPeriod: periodThen,
+        origin: originThen,
         ...awardReaders(a, paid.proposalIndex),
       })
     },
@@ -105,5 +119,5 @@ export function useSpendPayout(
   const payout: PayoutStatus = paid
     ? { ...paid, block: awardQuery.data ?? null }
     : (payoutQuery.data ?? { status: "unknown" })
-  return { spendPeriod, payout }
+  return { spendPeriod, lastSpendPeriod: lastQuery.data ?? null, payout }
 }

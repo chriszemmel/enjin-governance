@@ -179,6 +179,8 @@ export function enactmentStateFrom(
 export type SpendContext = {
   /** `treasury.spendPeriod`, when known. */
   spendPeriod: number | null
+  /** `treasury.lastSpendPeriod`: the periods fall at this block plus multiples of the period. Null: multiples of it. */
+  lastSpendPeriod?: number | null
   /** After enactment: where the treasury proposal stands. */
   payout: PayoutStatus
 }
@@ -358,7 +360,7 @@ function buildOngoingLifecycle(
   let payout: PayoutView | null = null
   if (context.spend) {
     const sp = context.spend.spendPeriod
-    const block = sp ? nextSpendPeriodBlock(expectedEnact, sp) : null
+    const block = sp ? nextSpendPeriodBlock(expectedEnact, sp, context.spend.lastSpendPeriod ?? 0) : null
     payout = { state: "upcoming", block, approx: true, proposalIndex: null }
     if (block != null && confirmEnd != null) {
       timeline.push({ id: "payout", label: "Payout", block, approx: true, status: "upcoming" })
@@ -652,7 +654,7 @@ function approvedPayout(
   if (enactment.status === "scheduled") {
     return {
       state: "upcoming",
-      block: sp ? nextSpendPeriodBlock(enactment.block, sp) : null,
+      block: sp ? nextSpendPeriodBlock(enactment.block, sp, spend.lastSpendPeriod ?? 0) : null,
       approx: true,
       proposalIndex: null,
     }
@@ -668,7 +670,7 @@ function approvedPayout(
       const from = currentBlock ?? enactedAt
       return {
         state: "active",
-        block: sp && from != null ? nextSpendPeriodBlock(from, sp) : null,
+        block: sp && from != null ? nextSpendPeriodBlock(from, sp, spend.lastSpendPeriod ?? 0) : null,
         approx: false,
         proposalIndex: spend.payout.proposalIndex,
         since: enactedAt,
