@@ -4,7 +4,12 @@ import path from "node:path"
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["lib/**/*.{test,spec}.ts", "lib/**/__tests__/**/*.ts"],
+    // Component tests opt into jsdom per file (`@vitest-environment jsdom`).
+    include: [
+      "lib/**/*.{test,spec}.ts",
+      "lib/**/__tests__/**/*.ts",
+      "components/**/*.test.tsx",
+    ],
     exclude: ["node_modules", ".next", "dist"],
     globals: false,
     coverage: {
