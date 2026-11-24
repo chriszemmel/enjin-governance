@@ -5,6 +5,13 @@ All notable changes to Enjin Governance. Versions follow
 
 ## 2.0.6 - 2026-11-24
 
+- **Payout dates follow the treasury's own count:** a spend's payout was
+  dated at the next multiple of `treasury.spendPeriod`. That held at 14,400
+  blocks, but since runtime 1082 the period is 345,600 (24 days) and the
+  treasury counts it from `treasury.lastSpendPeriod`, which is not a
+  multiple of it. On Enjin Relay the next run is block 18,604,800, not
+  18,662,400, so the estimate was four days late. The payout step and the
+  search for the block that paid a spend now count from that origin.
 - **Your vote shows again:** since runtime 1082 the chain stores each vote
   as the vote cast next to what the tally counts for it, and the app still
   read the old shape. Votes landed as signed, but right after voting the

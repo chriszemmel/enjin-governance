@@ -5,6 +5,7 @@ import {
   findAwardBlock,
   localSpendTarget,
   nextSpendPeriodBlock,
+  readLastSpendPeriod,
   readSpendPeriodAt,
   resolvePayout,
   type SpendTarget,
@@ -33,6 +34,13 @@ const record: EnactmentRecord = {
 describe("nextSpendPeriodBlock", () => {
   it("is the next multiple of spendPeriod after the block", () => {
     expect(nextSpendPeriodBlock(17_547_682, 14_400)).toBe(17_553_600)
+  })
+
+  it("counts from lastSpendPeriod when the period was changed off its multiples", () => {
+    // Enjin Relay runtime 1082: period 345,600, last period at 18,259,200.
+    expect(nextSpendPeriodBlock(18_322_422, 345_600, 18_259_200)).toBe(18_604_800)
+    expect(nextSpendPeriodBlock(18_604_800, 345_600, 18_259_200)).toBe(18_950_400)
+    expect(nextSpendPeriodBlock(18_000_000, 345_600, 18_259_200)).toBe(18_604_800)
   })
 
   it("a spend period that has just run is not the next one", () => {
@@ -230,5 +238,66 @@ describe("the spend period of its time", () => {
       at: async () => ({ consts: {} }),
     } as unknown as ApiPromise
     await expect(readSpendPeriodAt(api, ENACTED)).resolves.toBeNull()
+  })
+})
+
+describe("spend periods counted from lastSpendPeriod", () => {
+  // Enjin Relay after runtime 1082: period 345,600, last period 18,259,200.
+  const SP = 345_600
+  const ORIGIN = 18_259_200
+  const PAID = ORIGIN + 2 * SP
+
+  it("finds the award on origin + k * period, not on a multiple", async () => {
+    const reads: number[] = []
+    const found = await findAwardBlock({
+      enactedAt: ORIGIN + 1_000,
+      currentBlock: PAID + 10,
+      spendPeriod: SP,
+      origin: ORIGIN,
+      stored: async (block) => {
+        reads.push(block)
+        return block < PAID
+      },
+      awarded: async (block) => block === PAID,
+    })
+    expect(found).toBe(PAID)
+    expect(PAID % SP).not.toBe(0)
+  })
+
+  it("is not paid yet before the next period", async () => {
+    await expect(
+      findAwardBlock({
+        enactedAt: ORIGIN + 1_000,
+        currentBlock: ORIGIN + SP - 1,
+        spendPeriod: SP,
+        origin: ORIGIN,
+        stored: async () => true,
+        awarded: async () => false,
+      }),
+    ).resolves.toBeNull()
+  })
+})
+
+describe("readLastSpendPeriod", () => {
+  const apiWith = (lastSpendPeriod: unknown) => {
+    const query = { treasury: lastSpendPeriod === undefined ? {} : { lastSpendPeriod } }
+    return {
+      query,
+      rpc: { chain: { getBlockHash: async (block: number) => `0x${block}` } },
+      at: async () => ({ query }),
+    } as unknown as ApiPromise
+  }
+  const some = (n: number) => async () => ({ isSome: true, unwrap: () => ({ toNumber: () => n }) })
+
+  it("reads it now, or at a block", async () => {
+    await expect(readLastSpendPeriod(apiWith(some(18_259_200)))).resolves.toBe(18_259_200)
+    await expect(readLastSpendPeriod(apiWith(some(18_259_200)), 17_000_000)).resolves.toBe(
+      18_259_200,
+    )
+  })
+
+  it("is null when it is empty or the runtime has no such storage", async () => {
+    await expect(readLastSpendPeriod(apiWith(async () => ({ isSome: false })))).resolves.toBeNull()
+    await expect(readLastSpendPeriod(apiWith(undefined))).resolves.toBeNull()
   })
 })
