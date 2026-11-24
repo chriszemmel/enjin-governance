@@ -59,7 +59,7 @@ shown differently or not at all (see the finding).
 | # | Where | Signed call | Shown before signing | Equal? | Checked by |
 |---|---|---|---|---|---|
 | 1 | Vote - `components/governance/vote-panel.tsx:253` | `convictionVoting.vote(poll, Standard{aye, conviction, balance} \| SplitAbstain{0, 0, amount}, currency)` | referendum #, Aye/Nay/Abstain, amount as typed, source (ENJ / sENJ pool), conviction (multiplier + lock), voting power | ✅ values; ⚠️ preview rounding (F4), lock wording (F9) | component, fork |
-| 2 | Remove vote - `vote-panel.tsx:336` | `convictionVoting.removeVote(track, poll, currency)` | the vote card (amount, conviction, source); track not shown, taken from the vote | ✅ (track is the vote's own) - but see F1 | component, fork |
+| 2 | Remove vote - `vote-panel.tsx:336` | `convictionVoting.removeVote(track, poll, currency)` | the vote card (amount, conviction, source); track not shown, taken from the vote | ✅ (track is the vote's own; F1 fixed) | component, fork |
 | 3 | Delegate - `components/governance/delegation-panel.tsx:320` | `delegate(track, to, conviction, balance, Enj)`, or `batchAll` of one per track | track or "All tracks (N)", conviction multiplier, target address (full, as typed), amount as typed | ⚠️ "All tracks": count only, not which (F6) | component, fork |
 | 4 | Undelegate - `delegation-panel.tsx:95` | `undelegate(track, currency)` | row: amount, track name, target (short), conviction, currency | ✅ call; ⚠️ amount ticker (F7) | component, fork |
 | 5 | Unlock - `components/governance/locked-balance-panel.tsx:80` | `unlock(track, ownAddress, currency)` | amount + token; track not shown | ✅ (only frees own expired locks) | fork (builder) |
@@ -67,7 +67,7 @@ shown differently or not at all (see the finding).
 | 7 | Refund button - `components/governance/refund-deposit-button.tsx:65` | `refundDecisionDeposit(i)` / `refundSubmissionDeposit(i)` | button on referendum # page | ✅ | code |
 | 8 | Place decision deposit - `components/governance/place-deposit-button.tsx:51` | `referenda.placeDecisionDeposit(i)` | referendum page, amount "Reserves X" from the track table | ⚠️ amount missing while tracks load (F10) | fork (builder) |
 | 9 | Fellowship decision deposit - `components/fellowship/fellowship-deposit-button.tsx:28` | `fellowshipReferenda.placeDecisionDeposit(i)` | F# page, amount from the track | ✅ | code |
-| 10 | Fellowship vote - `components/fellowship/fellowship-vote-panel.tsx:66` | `fellowshipCollective.vote(poll, aye)` | F#, Aye/Nay, rank, weight | ✅ first try; ⚠️ Retry (F2) | component |
+| 10 | Fellowship vote - `components/fellowship/fellowship-vote-panel.tsx:66` | `fellowshipCollective.vote(poll, aye)` | F#, Aye/Nay, rank, weight | ✅ (Retry fixed, F2) | component |
 | 11 | Treasury top-up - `components/governance/top-up-treasury-button.tsx:88` | `balances.transferKeepAlive(chain.treasuryAddress, amount)` | amount (button: 6 decimals), USD estimate, "treasury system account" | ✅ amount and recipient; ⚠️ rounding (F4) | fork: address == treasury pallet account, exact amount transferred |
 | 12 | Treasury proposal - `app/create/page.tsx:750` | `batchAll[preimage.notePreimage(spendLocal(amount, beneficiary)), referenda.submit(Origins.<tier>, Lookup{hash, len}, enactment), preimage.notePreimage(envelope), referenda.setMetadata(index, hash)]` | review: amount, beneficiary, track, raw call hex, preimage hash, enactment; submit step: one card per call | ✅ (raw bytes shown); ⚠️ amount rounded (F4) | fork: referendum on the tier's track, preimage == spendLocal(amount, beneficiary), metadata == envelope |
 | 13 | Advanced composer - `app/create/advanced/page.tsx:854` | `batchAll[(notePreimage), submit(origin, Inline \| Lookup, enactment), (notePreimage envelope), setMetadata]`, or envelope + `setMetadata` for an existing referendum | pallet.method, call hex, hash, size, origin, enactment | ⚠️ arguments not decoded (F11) | unit (builders) |
@@ -103,7 +103,7 @@ tests for both shapes, by the fork checks (the vote panel, voter list and
 locks readers see what was signed) and read-only against mainnet:
 referendum 20's 21 votes are read again.
 
-### F2 - High: Fellowship Retry can sign the opposite vote
+### F2 - High: Fellowship Retry can sign the opposite vote (fixed)
 
 The Retry in the sign-request modal calls `tx.submit()` again, and `build`
 reads the panel's current choice (`vote === "aye"`). A
@@ -115,8 +115,13 @@ and Retry signs **Nay** while the user chose Aye. The vote panel, delegation
 and lock flows don't have this: they keep the target in a ref or hydrate
 only once.
 
-Pinned: `components/fellowship/__tests__/fellowship-vote-panel.test.tsx`
-(signs `[poll, false]`).
+The success card had the same cause: after a vote landed, the refetch reset
+the selection and the card named "Nay" for an Aye vote.
+
+**Fix:** the panel keeps the choice the user signed for; Retry signs it
+again and the success card names it, whatever the selection is by then.
+Checked by `components/fellowship/__tests__/fellowship-vote-panel.test.tsx`,
+which fails on the old panel (Retry signed `[poll, false]`).
 
 ### F3 - Medium: nothing in the sign-request modal says what is signed
 
@@ -146,7 +151,7 @@ is visible. Pinned in `vote-panel.test.tsx`.
 
 The form shows "All tracks (N)" and "Delegates across all N eligible tracks
 in one signature" but not their names. Eligibility excludes tracks with an
-active vote using the locks query; when that is not loaded or fails (F1),
+active vote using the locks query; while that is still loading or has failed,
 those tracks are included and the whole `batchAll` reverts with
 `AlreadyVoting`. Derived from code, not run on the fork.
 

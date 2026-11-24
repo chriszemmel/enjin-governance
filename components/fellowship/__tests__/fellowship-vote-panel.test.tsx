@@ -87,27 +87,38 @@ describe("FellowshipVotePanel", () => {
     expect([extrinsic.call, extrinsic.args]).toEqual(["fellowshipCollective.vote", [POLL, true]])
   })
 
-  // Finding F2: Retry rebuilds from the panel's current choice, and the
-  // choice is cleared whenever the on-chain vote changes - e.g. when the
-  // first attempt did land but the app reported it lost (90 s timeout),
-  // and the vote shows up on the next refetch. Retry then signs Nay.
-  it.fails(
-    "Retry signs the choice the user made, even after the on-chain vote changed",
-    async () => {
-      const user = userEvent.setup()
-      const view = renderPanel()
-      state.chain.controls.rejectNextSigns = 1
+  // F2 (docs/security/tx-signing-review.md): the selection resets when the
+  // vote on chain changes - e.g. when a first attempt did land but the app
+  // reported it lost (90 s timeout) and the vote shows up on the next
+  // refetch. Retry and the success card must keep to what the user signed.
+  it("Retry signs the choice the user made, even after the on-chain vote changed", async () => {
+    const user = userEvent.setup()
+    const view = renderPanel()
+    state.chain.controls.rejectNextSigns = 1
 
-      await user.click(screen.getByRole("button", { name: "Aye" }))
-      await user.click(screen.getByRole("button", { name: "Vote Aye" }))
-      await screen.findByRole("button", { name: "Retry" })
+    await user.click(screen.getByRole("button", { name: "Aye" }))
+    await user.click(screen.getByRole("button", { name: "Vote Aye" }))
+    await screen.findByRole("button", { name: "Retry" })
 
-      state.myVote = { aye: true, weight: 6 }
-      view.rerender()
-      await user.click(screen.getByRole("button", { name: "Retry" }))
+    state.myVote = { aye: true, weight: 6 }
+    view.rerender()
+    await user.click(screen.getByRole("button", { name: "Retry" }))
 
-      await waitFor(() => expect(state.chain.signed).toHaveLength(1))
-      expect(defined(state.chain.signed[0]).extrinsic.args).toEqual([POLL, true])
-    },
-  )
+    await waitFor(() => expect(state.chain.signed).toHaveLength(1))
+    expect(defined(state.chain.signed[0]).extrinsic.args).toEqual([POLL, true])
+  })
+
+  it("the success card names the vote cast, after the vote on chain is refetched", async () => {
+    const user = userEvent.setup()
+    const view = renderPanel()
+
+    await user.click(screen.getByRole("button", { name: "Aye" }))
+    await user.click(screen.getByRole("button", { name: "Vote Aye" }))
+    // The panel and the open sign-request modal both confirm it.
+    await screen.findAllByText("Vote recorded on chain")
+
+    state.myVote = { aye: true, weight: 6 }
+    view.rerender()
+    expect(await screen.findByText(/^Aye, counting \d+\.$/)).toBeTruthy()
+  })
 })

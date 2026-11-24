@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { CheckCircle2, Lock, ShieldCheck, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
@@ -62,8 +62,19 @@ export function FellowshipVotePanel({
     setVote(null)
   }, [myVote?.aye])
 
+  // The choice the user signed for. Retry signs it again and the success
+  // card names it, whatever the selection is by then: the selection resets
+  // when the vote on chain changes, which a vote that did land despite a
+  // "lost contact" error does.
+  const [submitted, setSubmitted] = useState<"aye" | "nay" | null>(null)
+  const submittedRef = useRef<"aye" | "nay" | null>(null)
+
   const tx = useExtrinsic({
-    build: (api) => buildFellowshipVote(api, index, vote === "aye"),
+    build: (api) => {
+      const choice = submittedRef.current
+      if (!choice) throw new Error("Pick Aye or Nay first.")
+      return buildFellowshipVote(api, index, choice === "aye")
+    },
     onStatus(status) {
       if (sign.isWalletConnect && status.kind !== "finalized") return
       if (status.kind === "broadcast") {
@@ -121,7 +132,7 @@ export function FellowshipVotePanel({
               <CheckCircle2 className="w-6 h-6 text-green-500 mx-auto" />
               <p className="font-semibold text-foreground text-sm">Vote recorded on chain</p>
               <p className="text-xs text-muted-foreground">
-                {label}, counting {weight}.
+                {submitted === "aye" ? "Aye" : "Nay"}, counting {weight}.
               </p>
               <button onClick={tx.reset} className="text-xs text-primary hover:text-primary/80">
                 Change it
@@ -206,6 +217,8 @@ export function FellowshipVotePanel({
                   <button
                     onClick={async () => {
                       if (!vote) return
+                      submittedRef.current = vote
+                      setSubmitted(vote)
                       sign.open()
                       try {
                         await tx.submit()
