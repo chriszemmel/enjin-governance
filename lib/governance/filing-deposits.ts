@@ -33,6 +33,7 @@ import { randomAsU8a } from "@polkadot/util-crypto"
 import type { ChainId } from "@/lib/chain/chains"
 import { proposalJsonVersionKey, publicUrlFor } from "@/lib/r2/paths"
 import { buildRemarkPayload } from "./proposal-metadata"
+import { txCall } from "@/lib/chain/runtime"
 
 /** A preimage deposit: `base + perByte × length`, in planck. */
 export type PreimageDepositRate = {
@@ -127,7 +128,7 @@ async function dryRunNote(api: ApiPromise, origin: string, len: number): Promise
     | (((...args: unknown[]) => Promise<unknown>) & { meta: { params: unknown[] } })
     | undefined
   if (!dryRunCall) return null
-  const call = api.tx.preimage.notePreimage(u8aToHex(randomAsU8a(len)))
+  const call = txCall(api, "preimage", "notePreimage")(u8aToHex(randomAsU8a(len)))
   // v1 takes (origin, call); v2 adds the XCM version to report results in.
   const xcmVersion = Number(
     (

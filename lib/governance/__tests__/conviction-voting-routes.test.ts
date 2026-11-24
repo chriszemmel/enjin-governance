@@ -453,6 +453,22 @@ describe("listVotesOnPoll", () => {
   it("returns [] when the runtime has no voting storage", async () => {
     expect(await listVotesOnPoll(asApi({ query: {} }), 5)).toEqual([])
   })
+
+  it("leaves out a row whose key has no account or track", async () => {
+    const vote = casting([{ kind: "Split", poll: 5, aye: 1n, nay: 1n }])
+    const api = asApi({
+      query: {
+        convictionVoting: {
+          votingFor: storageMap(throws("unused"), () => [
+            [key(), vote],
+            [key(addrArg("dave")), vote],
+            [key(addrArg("erin"), num(1)), vote],
+          ]),
+        },
+      },
+    })
+    expect((await listVotesOnPoll(api, 5)).map((v) => v.voter)).toEqual(["erin"])
+  })
 })
 
 describe("getClassLocks", () => {

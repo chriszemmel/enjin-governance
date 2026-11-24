@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
+import { defined } from "@/test/defined"
 
 const ADMIN = "enD9wdMEaQa3MEDUc7dtsCC86JYGMN5JBE2NBRoMyC37dX4iA"
 const MOD = "enCrdzdh8TVcEuoWtWokRRzgWVgLdGoyo5P4c7344LXRzFidX"
@@ -399,7 +400,7 @@ describe("posting pauses", () => {
       reason: "Repeated phishing links",
     })
     expect(res.status).toBe(200)
-    const [[key, until]] = [...mod.suspensions.entries()]
+    const [key, until] = defined([...mod.suspensions.entries()][0])
     expect(key).toBe(`0x${publicKeyOf(USER)}`)
     expect(until!.getTime()).toBeGreaterThan(Date.now())
     signIn(MOD)

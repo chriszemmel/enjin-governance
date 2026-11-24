@@ -9,6 +9,7 @@ import {
   type SpendLimits,
 } from "@/lib/governance/treasury"
 import type { TreasuryTier } from "@/lib/governance/types"
+import { defined } from "@/test/defined"
 
 const ENJ = (n: number | bigint) => BigInt(n) * 10n ** 18n
 
@@ -84,7 +85,7 @@ describe("treasuryTiersForSpec", () => {
     const table = treasuryTiersForSpec(1070)!
     expect(table.verified).toBe(true)
     expect(table.limitsSpecVersion).toBe(1070)
-    expect(table.tiers).toEqual(ENJIN_SPEND_LIMITS[0].tiers)
+    expect(table.tiers).toEqual(defined(ENJIN_SPEND_LIMITS[0]).tiers)
   })
 
   it("uses spec 1080's limits on 1080", () => {
@@ -135,7 +136,7 @@ describe("treasuryTiersForSpec", () => {
       { origin: "A", maxAmount: 50n },
       { origin: "B", maxAmount: 1_000n },
     ])
-    expect(treasuryTiersForSpec(2, limits)!.tiers).toEqual(limits[1].tiers)
+    expect(treasuryTiersForSpec(2, limits)!.tiers).toEqual(defined(limits[1]).tiers)
   })
 
   it("returns the same table for the same spec", () => {

@@ -13,6 +13,7 @@ import {
   getMyVotesOnPollAnyTrack,
   sEnjCurrency,
 } from "@/lib/governance/conviction-voting"
+import { defined } from "@/test/defined"
 
 /**
  * These tests exercise the runtime-detection logic that picks the right
@@ -60,8 +61,8 @@ describe("buildVote - pallet + arity routing", () => {
     } as unknown as ApiPromise
     buildVote(api, params)
     expect(sink).toHaveLength(1)
-    expect(sink[0].call).toBe("voteManager.vote")
-    expect(sink[0].args).toEqual([3, expectedAccountVote, { Enj: null }])
+    expect(defined(sink[0]).call).toBe("voteManager.vote")
+    expect(defined(sink[0]).args).toEqual([3, expectedAccountVote, { Enj: null }])
   })
 
   it("passes an explicit sENJ currency through to voteManager", () => {
@@ -70,7 +71,7 @@ describe("buildVote - pallet + arity routing", () => {
       tx: { voteManager: { vote: txFn("voteManager.vote", 3, sink) } },
     } as unknown as ApiPromise
     buildVote(api, { ...params, currency: sEnjCurrency(9) })
-    expect(sink[0].args).toEqual([3, expectedAccountVote, { SEnj: { tokenId: 9 } }])
+    expect(defined(sink[0]).args).toEqual([3, expectedAccountVote, { SEnj: { tokenId: 9 } }])
   })
 
   it("uses 2-arg convictionVoting.vote on stock Substrate (no currency)", () => {
@@ -79,8 +80,8 @@ describe("buildVote - pallet + arity routing", () => {
       tx: { convictionVoting: { vote: txFn("convictionVoting.vote", 2, sink) } },
     } as unknown as ApiPromise
     buildVote(api, params)
-    expect(sink[0].call).toBe("convictionVoting.vote")
-    expect(sink[0].args).toEqual([3, expectedAccountVote])
+    expect(defined(sink[0]).call).toBe("convictionVoting.vote")
+    expect(defined(sink[0]).args).toEqual([3, expectedAccountVote])
   })
 
   it("uses 3-arg convictionVoting.vote on the multi-token canary runtime", () => {
@@ -89,7 +90,7 @@ describe("buildVote - pallet + arity routing", () => {
       tx: { convictionVoting: { vote: txFn("convictionVoting.vote", 3, sink) } },
     } as unknown as ApiPromise
     buildVote(api, params)
-    expect(sink[0].args).toEqual([3, expectedAccountVote, { Enj: null }])
+    expect(defined(sink[0]).args).toEqual([3, expectedAccountVote, { Enj: null }])
   })
 })
 
@@ -100,7 +101,7 @@ describe("buildRemoveVote - arity routing", () => {
       tx: { voteManager: { removeVote: txFn("voteManager.removeVote", 3, sink) } },
     } as unknown as ApiPromise
     buildRemoveVote(api, 2, 3)
-    expect(sink[0].args).toEqual([2, 3, { Enj: null }])
+    expect(defined(sink[0]).args).toEqual([2, 3, { Enj: null }])
   })
 
   it("uses 2-arg convictionVoting.removeVote on stock Substrate", () => {
@@ -109,7 +110,7 @@ describe("buildRemoveVote - arity routing", () => {
       tx: { convictionVoting: { removeVote: txFn("convictionVoting.removeVote", 2, sink) } },
     } as unknown as ApiPromise
     buildRemoveVote(api, 2, 3)
-    expect(sink[0].args).toEqual([2, 3])
+    expect(defined(sink[0]).args).toEqual([2, 3])
   })
 })
 
@@ -127,8 +128,8 @@ describe("buildDelegate - arity routing", () => {
       tx: { voteManager: { delegate: txFn("voteManager.delegate", 5, sink) } },
     } as unknown as ApiPromise
     buildDelegate(api, params)
-    expect(sink[0].call).toBe("voteManager.delegate")
-    expect(sink[0].args).toEqual([1, "enBob", "Locked3x", "500", { Enj: null }])
+    expect(defined(sink[0]).call).toBe("voteManager.delegate")
+    expect(defined(sink[0]).args).toEqual([1, "enBob", "Locked3x", "500", { Enj: null }])
   })
 
   it("passes an explicit sENJ currency into the 5-arg voteManager.delegate", () => {
@@ -137,7 +138,7 @@ describe("buildDelegate - arity routing", () => {
       tx: { voteManager: { delegate: txFn("voteManager.delegate", 5, sink) } },
     } as unknown as ApiPromise
     buildDelegate(api, { ...params, currency: sEnjCurrency(4) })
-    expect(sink[0].args).toEqual([1, "enBob", "Locked3x", "500", { SEnj: { tokenId: 4 } }])
+    expect(defined(sink[0]).args).toEqual([1, "enBob", "Locked3x", "500", { SEnj: { tokenId: 4 } }])
   })
 
   it("drops the currency arg when voteManager.delegate declares only 4 args", () => {
@@ -146,7 +147,7 @@ describe("buildDelegate - arity routing", () => {
       tx: { voteManager: { delegate: txFn("voteManager.delegate", 4, sink) } },
     } as unknown as ApiPromise
     buildDelegate(api, params)
-    expect(sink[0].args).toEqual([1, "enBob", "Locked3x", "500"])
+    expect(defined(sink[0]).args).toEqual([1, "enBob", "Locked3x", "500"])
   })
 
   it("uses 4-arg convictionVoting.delegate on stock Substrate (no currency)", () => {
@@ -155,8 +156,8 @@ describe("buildDelegate - arity routing", () => {
       tx: { convictionVoting: { delegate: txFn("convictionVoting.delegate", 4, sink) } },
     } as unknown as ApiPromise
     buildDelegate(api, params)
-    expect(sink[0].call).toBe("convictionVoting.delegate")
-    expect(sink[0].args).toEqual([1, "enBob", "Locked3x", "500"])
+    expect(defined(sink[0]).call).toBe("convictionVoting.delegate")
+    expect(defined(sink[0]).args).toEqual([1, "enBob", "Locked3x", "500"])
   })
 
   it("uses 5-arg convictionVoting.delegate on the multi-token canary runtime", () => {
@@ -165,7 +166,7 @@ describe("buildDelegate - arity routing", () => {
       tx: { convictionVoting: { delegate: txFn("convictionVoting.delegate", 5, sink) } },
     } as unknown as ApiPromise
     buildDelegate(api, params)
-    expect(sink[0].args).toEqual([1, "enBob", "Locked3x", "500", { Enj: null }])
+    expect(defined(sink[0]).args).toEqual([1, "enBob", "Locked3x", "500", { Enj: null }])
   })
 })
 
@@ -177,8 +178,8 @@ describe("buildUndelegate - arity routing", () => {
       tx: { convictionVoting: { undelegate: txFn("convictionVoting.undelegate", 2, sink) } },
     } as unknown as ApiPromise
     buildUndelegate(api, 7)
-    expect(sink[0].call).toBe("convictionVoting.undelegate")
-    expect(sink[0].args).toEqual([7, { Enj: null }])
+    expect(defined(sink[0]).call).toBe("convictionVoting.undelegate")
+    expect(defined(sink[0]).args).toEqual([7, { Enj: null }])
   })
 
   it("drops currency on stock 1-arg convictionVoting.undelegate", () => {
@@ -187,7 +188,7 @@ describe("buildUndelegate - arity routing", () => {
       tx: { convictionVoting: { undelegate: txFn("convictionVoting.undelegate", 1, sink) } },
     } as unknown as ApiPromise
     buildUndelegate(api, 7)
-    expect(sink[0].args).toEqual([7])
+    expect(defined(sink[0]).args).toEqual([7])
   })
 
   it("routes to a 2-arg voteManager.undelegate when that pallet exists", () => {
@@ -196,7 +197,7 @@ describe("buildUndelegate - arity routing", () => {
       tx: { voteManager: { undelegate: txFn("voteManager.undelegate", 2, sink) } },
     } as unknown as ApiPromise
     buildUndelegate(api, 7, sEnjCurrency(3))
-    expect(sink[0].args).toEqual([7, { SEnj: { tokenId: 3 } }])
+    expect(defined(sink[0]).args).toEqual([7, { SEnj: { tokenId: 3 } }])
   })
 })
 
@@ -208,7 +209,7 @@ describe("buildUnlock - arity routing", () => {
       tx: { convictionVoting: { unlock: txFn("convictionVoting.unlock", 3, sink) } },
     } as unknown as ApiPromise
     buildUnlock(api, 2, "enAlice")
-    expect(sink[0].args).toEqual([2, "enAlice", { Enj: null }])
+    expect(defined(sink[0]).args).toEqual([2, "enAlice", { Enj: null }])
   })
 
   it("passes an explicit sENJ currency through to unlock", () => {
@@ -217,7 +218,7 @@ describe("buildUnlock - arity routing", () => {
       tx: { convictionVoting: { unlock: txFn("convictionVoting.unlock", 3, sink) } },
     } as unknown as ApiPromise
     buildUnlock(api, 2, "enAlice", sEnjCurrency(5))
-    expect(sink[0].args).toEqual([2, "enAlice", { SEnj: { tokenId: 5 } }])
+    expect(defined(sink[0]).args).toEqual([2, "enAlice", { SEnj: { tokenId: 5 } }])
   })
 
   it("drops currency on stock 2-arg convictionVoting.unlock", () => {
@@ -226,7 +227,7 @@ describe("buildUnlock - arity routing", () => {
       tx: { convictionVoting: { unlock: txFn("convictionVoting.unlock", 2, sink) } },
     } as unknown as ApiPromise
     buildUnlock(api, 2, "enAlice")
-    expect(sink[0].args).toEqual([2, "enAlice"])
+    expect(defined(sink[0]).args).toEqual([2, "enAlice"])
   })
 })
 
@@ -285,8 +286,8 @@ describe("getMyVotesOnPoll - multi-currency decode + weight sort", () => {
     const result = await getMyVotesOnPoll(api, "addr", 2, 5)
     expect(result).toHaveLength(2)
     // Heaviest (ENJ Locked6x) first.
-    expect(result[0].currencyRaw).toEqual({ Enj: null })
-    expect(result[0].vote).toMatchObject({
+    expect(defined(result[0]).currencyRaw).toEqual({ Enj: null })
+    expect(defined(result[0]).vote).toMatchObject({
       type: "Standard",
       pollIndex: 5,
       trackId: 2,
@@ -294,8 +295,8 @@ describe("getMyVotesOnPoll - multi-currency decode + weight sort", () => {
       balance: 100n,
       conviction: "Locked6x",
     })
-    expect(result[1].currencyRaw).toEqual({ SEnj: { tokenId: 7 } })
-    expect(result[1].vote).toMatchObject({ conviction: "Locked1x", balance: 100n })
+    expect(defined(result[1]).currencyRaw).toEqual({ SEnj: { tokenId: 7 } })
+    expect(defined(result[1]).vote).toMatchObject({ conviction: "Locked1x", balance: 100n })
   })
 
   it("filters out votes cast on other polls", async () => {
@@ -345,7 +346,7 @@ describe("getMyVotesOnPollAnyTrack - trackId recovery (terminal referenda)", () 
     // trackId recovered from the key, not passed in.
     expect(result.map((r) => r.vote.trackId).sort()).toEqual([5, 9])
     // sorted by weight desc: track 5 Locked2x (100*20=2000) before track 9 (50*10=500)
-    expect(result[0].vote.trackId).toBe(5)
+    expect(defined(result[0]).vote.trackId).toBe(5)
   })
 
   it("returns [] when the runtime exposes no voting storage", async () => {
@@ -509,9 +510,9 @@ describe("getDelegationsFor", () => {
       balance: 100n,
       conviction: "Locked3x",
     })
-    expect(res[0].currencyRaw).toEqual({ Enj: null })
+    expect(defined(res[0]).currencyRaw).toEqual({ Enj: null })
     expect(res[1]).toMatchObject({ trackId: 5, balance: 50n, conviction: "Locked1x" })
-    expect(res[1].currencyRaw).toEqual({ SEnj: { tokenId: 7 } })
+    expect(defined(res[1]).currencyRaw).toEqual({ SEnj: { tokenId: 7 } })
   })
 
   it("returns [] when the runtime exposes no voting storage", async () => {

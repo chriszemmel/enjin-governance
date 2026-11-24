@@ -24,6 +24,7 @@
 import type { ApiPromise } from "@polkadot/api"
 import { bnToU8a, compactAddLength, stringToU8a, u8aConcat, u8aToHex } from "@polkadot/util"
 import { blake2AsHex } from "@polkadot/util-crypto"
+import { queryEntry } from "@/lib/chain/runtime"
 
 /** `pallet_referenda::ASSEMBLY_ID`, a `[u8; 8]` (no length prefix). */
 const ASSEMBLY_ID = stringToU8a("assembly")
@@ -152,12 +153,12 @@ export async function readEnactmentRecord(
 ): Promise<EnactmentRecord | null> {
   const name = enactmentTaskName(index)
   const atApproval = await archive.at(await archive.rpc.chain.getBlockHash(approvalBlock))
-  const task = decodeTaskAddress(await atApproval.query.scheduler.lookup(name))
+  const task = decodeTaskAddress(await queryEntry(atApproval, "scheduler", "lookup")(name))
   if (!task) return null
   const head = await archive.rpc.chain.getHeader()
   if (task.block > toNumber(head.number)) return null
   const atRun = await archive.at(await archive.rpc.chain.getBlockHash(task.block))
-  const records = (await atRun.query.system.events()) as unknown as ArrayLike<unknown>
+  const records = (await queryEntry(atRun, "system", "events")()) as unknown as ArrayLike<unknown>
   const events = Array.from(records, toSchedulerEvent)
   return { block: task.block, ...enactmentOutcome(events, name) }
 }

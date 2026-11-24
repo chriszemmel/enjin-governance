@@ -16,7 +16,8 @@
  */
 
 import type { ApiPromise } from "@polkadot/api"
-import type { SubmittableExtrinsic } from "@polkadot/api/types"
+import { txCall } from "@/lib/chain/runtime"
+import type { QueryableStorageEntry, SubmittableExtrinsic } from "@polkadot/api/types"
 import type { ISubmittableResult } from "@polkadot/types/types"
 import {
   CONVICTION_LOCK_PERIODS,
@@ -184,17 +185,17 @@ function buildVoteExtrinsic(
   currency: VoteCurrency | undefined,
 ): Tx {
   if (hasVoteManager(api)) {
-    return api.tx.voteManager.vote(pollIndex, accountVote, currency ?? ENJ) as Tx
+    return txCall(api, "voteManager", "vote")(pollIndex, accountVote, currency ?? ENJ)
   }
   const argCount = convictionVotingArgCount(api)
   if (argCount === 3) {
-    return api.tx.convictionVoting.vote(
+    return txCall(api, "convictionVoting", "vote")(
       pollIndex,
       accountVote,
       currency ?? ENJ,
-    ) as Tx
+    )
   }
-  return api.tx.convictionVoting.vote(pollIndex, accountVote) as Tx
+  return txCall(api, "convictionVoting", "vote")(pollIndex, accountVote)
 }
 
 export function buildRemoveVote(
@@ -210,23 +211,23 @@ export function buildRemoveVote(
   if (hasVoteManager(api)) {
     const argCount = extrinsicArgCount(api, "voteManager", "removeVote")
     if (argCount === 3) {
-      return api.tx.voteManager.removeVote(
+      return txCall(api, "voteManager", "removeVote")(
         trackId,
         pollIndex,
         currency ?? ENJ,
-      ) as Tx
+      )
     }
-    return api.tx.voteManager.removeVote(trackId, pollIndex) as Tx
+    return txCall(api, "voteManager", "removeVote")(trackId, pollIndex)
   }
   const argCount = extrinsicArgCount(api, "convictionVoting", "removeVote")
   if (argCount === 3) {
-    return api.tx.convictionVoting.removeVote(
+    return txCall(api, "convictionVoting", "removeVote")(
       trackId,
       pollIndex,
       currency ?? ENJ,
-    ) as Tx
+    )
   }
-  return api.tx.convictionVoting.removeVote(trackId, pollIndex) as Tx
+  return txCall(api, "convictionVoting", "removeVote")(trackId, pollIndex)
 }
 
 /**
@@ -251,15 +252,15 @@ export function buildUnlock(
   if (hasVoteManager(api)) {
     const argCount = extrinsicArgCount(api, "voteManager", "unlock")
     if (argCount === 3) {
-      return api.tx.voteManager.unlock(trackId, target, currency ?? ENJ) as Tx
+      return txCall(api, "voteManager", "unlock")(trackId, target, currency ?? ENJ)
     }
-    return api.tx.voteManager.unlock(trackId, target) as Tx
+    return txCall(api, "voteManager", "unlock")(trackId, target)
   }
   const argCount = extrinsicArgCount(api, "convictionVoting", "unlock")
   if (argCount === 3) {
-    return api.tx.convictionVoting.unlock(trackId, target, currency ?? ENJ) as Tx
+    return txCall(api, "convictionVoting", "unlock")(trackId, target, currency ?? ENJ)
   }
-  return api.tx.convictionVoting.unlock(trackId, target) as Tx
+  return txCall(api, "convictionVoting", "unlock")(trackId, target)
 }
 
 export type DelegateParams = {
@@ -279,37 +280,37 @@ export function buildDelegate(api: ApiPromise, params: DelegateParams): Tx {
   if (hasVoteManager(api)) {
     const argCount = extrinsicArgCount(api, "voteManager", "delegate")
     if (argCount === 5) {
-      return api.tx.voteManager.delegate(
+      return txCall(api, "voteManager", "delegate")(
         params.trackId,
         params.to,
         params.conviction,
         params.balance.toString(),
         params.currency ?? ENJ,
-      ) as Tx
+      )
     }
-    return api.tx.voteManager.delegate(
+    return txCall(api, "voteManager", "delegate")(
       params.trackId,
       params.to,
       params.conviction,
       params.balance.toString(),
-    ) as Tx
+    )
   }
   const argCount = extrinsicArgCount(api, "convictionVoting", "delegate")
   if (argCount === 5) {
-    return api.tx.convictionVoting.delegate(
+    return txCall(api, "convictionVoting", "delegate")(
       params.trackId,
       params.to,
       params.conviction,
       params.balance.toString(),
       params.currency ?? ENJ,
-    ) as Tx
+    )
   }
-  return api.tx.convictionVoting.delegate(
+  return txCall(api, "convictionVoting", "delegate")(
     params.trackId,
     params.to,
     params.conviction,
     params.balance.toString(),
-  ) as Tx
+  )
 }
 
 /**
@@ -326,15 +327,15 @@ export function buildUndelegate(
   if (hasVoteManager(api)) {
     const argCount = extrinsicArgCount(api, "voteManager", "undelegate")
     if (argCount === 2) {
-      return api.tx.voteManager.undelegate(trackId, currency ?? ENJ) as Tx
+      return txCall(api, "voteManager", "undelegate")(trackId, currency ?? ENJ)
     }
-    return api.tx.voteManager.undelegate(trackId) as Tx
+    return txCall(api, "voteManager", "undelegate")(trackId)
   }
   const argCount = extrinsicArgCount(api, "convictionVoting", "undelegate")
   if (argCount === 2) {
-    return api.tx.convictionVoting.undelegate(trackId, currency ?? ENJ) as Tx
+    return txCall(api, "convictionVoting", "undelegate")(trackId, currency ?? ENJ)
   }
-  return api.tx.convictionVoting.undelegate(trackId) as Tx
+  return txCall(api, "convictionVoting", "undelegate")(trackId)
 }
 
 function voteQuery(api: ApiPromise) {
@@ -591,6 +592,9 @@ export async function listVotesOnPoll(
     // it. Reading the currency straight from the key avoids a separate
     // per-row storage lookup on the voteManager path.
     const currencyCodec = args[2]
+    // Every votingFor key carries (account, track); a row without them is
+    // not a vote we can attribute, so leave it out rather than fail the list.
+    if (!accountCodec || !trackCodec) continue
     const voter = accountCodec.toString()
     const trackId = trackCodec.toNumber?.() ?? Number(trackCodec.toString())
     const currencyFromKey = currencyCodec?.toJSON?.() ?? null
@@ -790,14 +794,14 @@ export async function getAccountLocks(
   api: ApiPromise,
   address: string,
 ): Promise<TrackLock[]> {
-  const q = voteQuery(api)
-  if (!q?.votingFor) return []
+  const votingFor = voteQuery(api)?.votingFor
+  if (!votingFor) return []
   const classLocks = await getClassLocksAllCurrencies(api, address)
   const out: TrackLock[] = []
   for (const { trackId, amount, currencyRaw } of classLocks) {
     if (amount <= 0n) continue
     const { activeVotes, prior } = await readTrackVoting(
-      api,
+      votingFor,
       address,
       trackId,
       currencyRaw,
@@ -808,7 +812,7 @@ export async function getAccountLocks(
 }
 
 async function readTrackVoting(
-  api: ApiPromise,
+  votingFor: QueryableStorageEntry<"promise">,
   address: string,
   trackId: number,
   currencyRaw: unknown,
@@ -816,7 +820,6 @@ async function readTrackVoting(
   activeVotes: ActiveVoteLock[]
   prior: { unlockAt: number; amount: bigint } | null
 }> {
-  const q = voteQuery(api)
   const want = lockCurrencyKey(currencyRaw)
   const activeVotes: ActiveVoteLock[] = []
   let prior: { unlockAt: number; amount: bigint } | null = null
@@ -831,7 +834,7 @@ async function readTrackVoting(
   }
   let entries: Array<[unknown, unknown]> | null = null
   try {
-    entries = (await q.votingFor.entries(address, trackId)) as Array<[unknown, unknown]>
+    entries = (await votingFor.entries(address, trackId)) as Array<[unknown, unknown]>
   } catch {
     entries = null
   }
@@ -848,7 +851,7 @@ async function readTrackVoting(
     }
   } else {
     try {
-      consume(await q.votingFor(address, trackId))
+      consume(await votingFor(address, trackId))
     } catch {
       // no voting state for this track
     }

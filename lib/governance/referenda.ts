@@ -15,6 +15,7 @@ import { getPreimage } from "./preimage"
 import { parseRemarkPayload, type RemarkEnvelope } from "./proposal-metadata"
 import { decodeReferendumInfo } from "./status"
 import type { PreimageRef, Referendum, ReferendumStatusType } from "./types"
+import { queryEntry, txCall } from "@/lib/chain/runtime"
 
 /**
  * Pull the new referendum index out of a `referenda.Submitted` event in a
@@ -40,13 +41,9 @@ export function extractReferendumIndex(
  */
 export type ReferendaPallet = "referenda" | "fellowshipReferenda"
 
-/** The pallet's query section; throws on a runtime without it. */
-function referendaQuery(api: ApiPromise, pallet: ReferendaPallet) {
-  const section = api.query[pallet]
-  if (!section?.referendumInfoFor) {
-    throw new Error(`Chain does not expose ${pallet}.referendumInfoFor`)
-  }
-  return section
+/** The pallet's `referendumInfoFor`; throws on a runtime without it. */
+function referendumInfoFor(api: ApiPromise, pallet: ReferendaPallet) {
+  return queryEntry(api, pallet, "referendumInfoFor")
 }
 
 export type ReferendumFilter = {
@@ -66,7 +63,7 @@ export async function listReferenda(
   filter: ReferendumFilter = {},
   pallet: ReferendaPallet = "referenda",
 ): Promise<Referendum[]> {
-  const entries = await referendaQuery(api, pallet).referendumInfoFor.entries()
+  const entries = await referendumInfoFor(api, pallet).entries()
   const decoded: Referendum[] = []
 
   for (const [key, info] of entries) {
@@ -88,7 +85,7 @@ export async function getReferendum(
   index: number,
   pallet: ReferendaPallet = "referenda",
 ): Promise<Referendum | null> {
-  const info = await referendaQuery(api, pallet).referendumInfoFor(index)
+  const info = await referendumInfoFor(api, pallet)(index)
   return decodeReferendumInfo(index, info)
 }
 
@@ -130,7 +127,7 @@ export async function getDecidedTrack(
   if (atBlock <= 1) return null
   try {
     const blockHash = await api.rpc.chain.getBlockHash(atBlock - 1)
-    const key = api.query.referenda.referendumInfoFor.key(index)
+    const key = queryEntry(api, "referenda", "referendumInfoFor").key(index)
     const raw = (await api.rpc.state.getStorage(key, blockHash)) as unknown as {
       isSome?: boolean
       unwrap?: () => { toU8a: (bare: boolean) => Uint8Array }
@@ -151,7 +148,7 @@ export async function getReferendumCount(
   api: ApiPromise,
   pallet: ReferendaPallet = "referenda",
 ): Promise<number> {
-  const count = await referendaQuery(api, pallet).referendumCount!()
+  const count = await queryEntry(api, pallet, "referendumCount")()
   return (count as unknown as { toNumber: () => number }).toNumber()
 }
 
@@ -236,7 +233,7 @@ export async function getReferendumMetadata(
   api: ApiPromise,
   index: number,
 ): Promise<RemarkEnvelope | null> {
-  const raw = await api.query.referenda.metadataOf(index)
+  const raw = await queryEntry(api, "referenda", "metadataOf")(index)
   const opt = raw as unknown as {
     isSome: boolean
     unwrap: () => { toHex: () => `0x${string}` }
@@ -258,24 +255,24 @@ export async function getReferendumMetadata(
 
 /** Build `referenda.cancel(index)` - stops an ongoing referendum, refunding deposits. */
 export function buildCancelReferendumCall(api: ApiPromise, index: number): Call {
-  return api.tx.referenda.cancel(index).method as Call
+  return txCall(api, "referenda", "cancel")(index).method as Call
 }
 
 /** Build `referenda.kill(index)` - stops a referendum and SLASHES its deposits. */
 export function buildKillReferendumCall(api: ApiPromise, index: number): Call {
-  return api.tx.referenda.kill(index).method as Call
+  return txCall(api, "referenda", "kill")(index).method as Call
 }
 
 /** Build `whitelist.whitelistCall(callHash)` - marks a call hash whitelisted. */
 export function buildWhitelistCall(api: ApiPromise, callHash: `0x${string}`): Call {
-  return api.tx.whitelist.whitelistCall(callHash).method as Call
+  return txCall(api, "whitelist", "whitelistCall")(callHash).method as Call
 }
 
 export function buildPlaceDecisionDeposit(
   api: ApiPromise,
   index: number,
 ): SubmittableExtrinsic<"promise", ISubmittableResult> {
-  return api.tx.referenda.placeDecisionDeposit(index) as SubmittableExtrinsic<
+  return txCall(api, "referenda", "placeDecisionDeposit")(index) as SubmittableExtrinsic<
     "promise",
     ISubmittableResult
   >
@@ -285,7 +282,7 @@ export function buildRefundSubmissionDeposit(
   api: ApiPromise,
   index: number,
 ): SubmittableExtrinsic<"promise", ISubmittableResult> {
-  return api.tx.referenda.refundSubmissionDeposit(index) as SubmittableExtrinsic<
+  return txCall(api, "referenda", "refundSubmissionDeposit")(index) as SubmittableExtrinsic<
     "promise",
     ISubmittableResult
   >
@@ -295,7 +292,7 @@ export function buildRefundDecisionDeposit(
   api: ApiPromise,
   index: number,
 ): SubmittableExtrinsic<"promise", ISubmittableResult> {
-  return api.tx.referenda.refundDecisionDeposit(index) as SubmittableExtrinsic<
+  return txCall(api, "referenda", "refundDecisionDeposit")(index) as SubmittableExtrinsic<
     "promise",
     ISubmittableResult
   >

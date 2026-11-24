@@ -48,6 +48,7 @@ import {
   buildProposalCall,
   PROPOSAL_KIND_META,
   SUBMIT_ORIGINS,
+  submitOriginAt,
   type ProposalCallSpec,
   type ProposalKind,
 } from "@/lib/governance/proposal-calls"
@@ -454,7 +455,7 @@ export default function AdvancedCreatePage() {
         track: t?.name ?? `track ${trackId}`,
       }
     }
-    const picked = SUBMIT_ORIGINS[originIdx] ?? SUBMIT_ORIGINS[0]
+    const picked = submitOriginAt(originIdx)
     return { origin: picked.origin, label: picked.label, track: picked.track }
   }, [kind, spec, originIdx, tierTable, fellowship, fellowshipOrigin, fellowshipTracks.data])
 
@@ -1414,7 +1415,7 @@ export default function AdvancedCreatePage() {
                       This call isn&apos;t run directly - it&apos;s enacted by a referendum on the
                       track you pick here, which sets who votes on it and the passing thresholds.{" "}
                       {meta.suggestedOrigin
-                        ? `${meta.label} should run on ${SUBMIT_ORIGINS[suggestedOriginIdx(kind)].label}.`
+                        ? `${meta.label} should run on ${submitOriginAt(suggestedOriginIdx(kind)).label}.`
                         : "Pick a track whose authority covers this call - Root can dispatch anything but is the hardest to pass."}
                     </p>
                   </>

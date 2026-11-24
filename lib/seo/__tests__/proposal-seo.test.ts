@@ -73,6 +73,7 @@ import {
   proposalPath,
   siteUrl,
 } from "@/lib/seo/site"
+import { defined } from "@/test/defined"
 
 const PROPOSER = "enD9wdMEaQa3MEDUc7dtsCC86JYGMN5JBE2NBRoMyC37dX4iA"
 const CREATED = new Date("2026-08-01T12:00:00Z")
@@ -101,7 +102,7 @@ const render = async (index = 42, chain = defaultChain()) =>
   renderToStaticMarkup(await ProposalSeoFallback({ chainId: chain.id, index }))
 const ldScripts = (html: string) =>
   [...html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g)].map((m) =>
-    JSON.parse(m[1]),
+    JSON.parse(defined(m[1])),
   )
 
 beforeEach(() => {
@@ -304,15 +305,15 @@ describe("structured data", () => {
       name: "Enjin Governance",
       publisher: { "@id": `${siteUrl()}/#publisher` },
     })
-    expect(publisher["@type"]).toBe("Person")
-    expect(publisher.name).not.toMatch(/^Enjin/)
+    expect(defined(publisher)["@type"]).toBe("Person")
+    expect(defined(publisher).name).not.toMatch(/^Enjin/)
   })
 
   it("describes a published proposal as an Article with only the facts we have", async () => {
     io.row = publishedRow({ edited_at: EDITED })
     const [crumbs, article] = proposalJsonLd(await load())["@graph"]
-    expect(crumbs["@type"]).toBe("BreadcrumbList")
-    expect((crumbs.itemListElement as Array<{ item: string }>).map((i) => i.item)).toEqual([
+    expect(defined(crumbs)["@type"]).toBe("BreadcrumbList")
+    expect((defined(crumbs).itemListElement as Array<{ item: string }>).map((i) => i.item)).toEqual([
       `${siteUrl()}/`,
       `${siteUrl()}/proposals`,
       `${siteUrl()}/proposals/42`,
@@ -493,7 +494,7 @@ describe("the preview the layout hands the page", () => {
     })) as unknown as { props: { children: unknown } } | string
     if (typeof tree === "string") return { page: tree, preview: null }
     // The SEO fallback, then the provider around the page.
-    const provider = (tree.props.children as Array<{ props: Record<string, unknown> }>)[1]
+    const provider = defined((tree.props.children as Array<{ props: Record<string, unknown> }>)[1], "page provider")
     return { page: provider.props.children, preview: provider.props.preview as Source }
   }
 

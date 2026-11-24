@@ -13,6 +13,7 @@ import {
   getReferendumMetadata,
 } from "@/lib/governance/referenda"
 import type { EventRecord } from "@polkadot/types/interfaces"
+import { defined } from "@/test/defined"
 
 /**
  * buildSubmit wraps the bounded proposal as `{ Lookup: { hash, len } }` and
@@ -47,7 +48,7 @@ describe("buildSubmit - enactment + origin variants", () => {
       proposal: PROPOSAL,
       enactment: { type: "After", block: 0 },
     })
-    expect(sink[0].args).toEqual([
+    expect(defined(sink[0]).args).toEqual([
       { Origins: "SmallTipper" },
       { Lookup: { hash: "0xabc", len: 42 } },
       { After: 0 },
@@ -61,7 +62,7 @@ describe("buildSubmit - enactment + origin variants", () => {
       proposal: PROPOSAL,
       enactment: { type: "At", block: 1_000 },
     })
-    expect(sink[0].args[2]).toEqual({ At: 1_000 })
+    expect(defined(sink[0]).args[2]).toEqual({ At: 1_000 })
   })
 
   it("passes a { System: 'Root' } origin straight through", () => {
@@ -71,9 +72,9 @@ describe("buildSubmit - enactment + origin variants", () => {
       proposal: PROPOSAL,
       enactment: { type: "At", block: 5 },
     })
-    expect(sink[0].args[0]).toEqual({ System: "Root" })
-    expect(sink[0].args[1]).toEqual({ Lookup: { hash: "0xabc", len: 42 } })
-    expect(sink[0].args[2]).toEqual({ At: 5 })
+    expect(defined(sink[0]).args[0]).toEqual({ System: "Root" })
+    expect(defined(sink[0]).args[1]).toEqual({ Lookup: { hash: "0xabc", len: 42 } })
+    expect(defined(sink[0]).args[2]).toEqual({ At: 5 })
   })
 
   it("wraps an Inline proposal as { Inline: <hex> } (skips the preimage)", () => {
@@ -84,7 +85,7 @@ describe("buildSubmit - enactment + origin variants", () => {
       proposal: { inline: bytes },
       enactment: { type: "After", block: 0 },
     })
-    expect(sink[0].args[1]).toEqual({ Inline: u8aToHex(bytes) })
+    expect(defined(sink[0]).args[1]).toEqual({ Inline: u8aToHex(bytes) })
   })
 })
 
@@ -123,20 +124,20 @@ describe("admin call builders", () => {
     const call = buildCancelReferendumCall(adminApi(sink), 12) as unknown as {
       __call: string
     }
-    expect(sink[0].args).toEqual([12])
+    expect(defined(sink[0]).args).toEqual([12])
     expect(call.__call).toBe("referenda.cancel")
   })
 
   it("buildKillReferendumCall calls referenda.kill(index)", () => {
     const sink: Recorded[] = []
     buildKillReferendumCall(adminApi(sink), 9)
-    expect(sink[0].args).toEqual([9])
+    expect(defined(sink[0]).args).toEqual([9])
   })
 
   it("buildWhitelistCall calls whitelist.whitelistCall(hash)", () => {
     const sink: Recorded[] = []
     buildWhitelistCall(adminApi(sink), "0xdeadbeef")
-    expect(sink[0].args).toEqual(["0xdeadbeef"])
+    expect(defined(sink[0]).args).toEqual(["0xdeadbeef"])
   })
 })
 
@@ -154,7 +155,7 @@ describe("buildSetMetadata", () => {
       },
     } as unknown as ApiPromise
     const tx = buildSetMetadata(api, 11, "0xfeed")
-    expect(sink[0].args).toEqual([11, "0xfeed"])
+    expect(defined(sink[0]).args).toEqual([11, "0xfeed"])
     expect(tx).toEqual({ __tx: "setMetadata" })
   })
 })

@@ -1,5 +1,6 @@
 import { ATTACHMENTS, ME, MULTISIG, PROPOSAL_PATH, SUMMARY, TITLE } from "./support/data"
 import { expect, openProposal, test } from "./support/test"
+import { defined } from "../test/defined"
 
 test("proposal title, summary and proposer show before the chain answers", async ({ page }) => {
   // The chain sockets open but never answer, so nothing from the chain arrives.
@@ -33,7 +34,7 @@ test("proposal page shows the verified EGOV1 text with its table, image and addr
   // Inline image: one of the proposal's own files, loaded through /r
   const image = page.getByRole("img", { name: "Roadmap Q4 2026", exact: true })
   await image.scrollIntoViewIfNeeded()
-  await expect(image).toHaveAttribute("src", `/r/${ATTACHMENTS[0].key}`)
+  await expect(image).toHaveAttribute("src", `/r/${defined(ATTACHMENTS[0]).key}`)
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1200)
 
   // Address chip: short on screen, the full address on the clipboard

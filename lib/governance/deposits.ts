@@ -30,6 +30,7 @@ import { samePublicKey } from "@/lib/chain/ss58"
 import { REMARK_MAGIC } from "./proposal-metadata"
 import { listReferenda } from "./referenda"
 import type { Referendum, ReferendumStatusType } from "./types"
+import { queryEntry } from "@/lib/chain/runtime"
 
 export type DepositKind = "submission" | "decision"
 
@@ -290,7 +291,7 @@ async function readEnvelopeHashes(
   await Promise.all(
     deposits.map(async (d) => {
       if (d.len == null || d.len > MAX_ENVELOPE_BYTES) return
-      const raw = await api.query.preimage.preimageFor([d.hash, d.len])
+      const raw = await queryEntry(api, "preimage", "preimageFor")([d.hash, d.len])
       const opt = raw as unknown as {
         isSome: boolean
         unwrap: () => { toU8a: (isBare?: boolean) => Uint8Array }
@@ -314,7 +315,7 @@ export async function getPreimageDepositsFor(
   api: ApiPromise,
   address: string,
 ): Promise<PreimageDeposit[]> {
-  const entries = await api.query.preimage.requestStatusFor.entries()
+  const entries = await queryEntry(api, "preimage", "requestStatusFor").entries()
   const out: PreimageDeposit[] = []
   for (const [key, val] of entries) {
     const json = (val as unknown as { toJSON: () => RequestStatusJson }).toJSON()

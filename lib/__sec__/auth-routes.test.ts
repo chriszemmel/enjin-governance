@@ -18,6 +18,7 @@ import {
   sr25519Sign,
 } from "@polkadot/util-crypto"
 import { stringToU8a, u8aToHex } from "@polkadot/util"
+import { defined } from "@/test/defined"
 
 type Row = {
   id: string
@@ -287,7 +288,7 @@ describe("POST /api/auth/nonce", () => {
     expect(io.nonces.size).toBe(RATE_LIMITS.authNonce.limit)
 
     // Keyed on the first X-Forwarded-For hop, under the auth-nonce ceiling.
-    expect(vi.mocked(enforceRateLimit).mock.calls[0][0]).toEqual({
+    expect(defined(vi.mocked(enforceRateLimit).mock.calls[0])[0]).toEqual({
       ...RATE_LIMITS.authNonce,
       identity: IP,
     })
@@ -337,7 +338,7 @@ describe("POST /api/auth/verify", () => {
     expect(line).toMatch(/;\s*Path=\/(;|$)/)
     // Not "Secure" outside production (so local http works); see the next test.
     expect(line).not.toMatch(/;\s*Secure/i)
-    const expires = Date.parse(/Expires=([^;]+)/i.exec(line)![1])
+    const expires = Date.parse(defined(/Expires=([^;]+)/i.exec(line)?.[1]))
     expect(expires).toBeGreaterThanOrEqual(Math.floor(before / 1000) * 1000 + SESSION_TTL_MS - 1000)
     expect(expires).toBeLessThanOrEqual(Date.now() + SESSION_TTL_MS)
 

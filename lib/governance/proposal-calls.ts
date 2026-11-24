@@ -24,6 +24,7 @@ import {
   buildKillReferendumCall,
   buildWhitelistCall,
 } from "./referenda"
+import { txCall } from "@/lib/chain/runtime"
 
 export type ProposalCallSpec =
   | { kind: "treasurySpend"; amount: bigint; beneficiary: string }
@@ -56,8 +57,13 @@ export type ProposalKind = ProposalCallSpec["kind"]
  * (200-204). Treasury spends derive their tier from the amount and don't
  * use this list.
  */
-export const SUBMIT_ORIGINS: { label: string; origin: unknown; track: string }[] = [
-  { label: "Root", origin: { System: "Root" }, track: "root" },
+type SubmitOrigin = { label: string; origin: unknown; track: string }
+
+/** Root: the default origin, and the fallback for an index out of range. */
+const ROOT_SUBMIT_ORIGIN: SubmitOrigin = { label: "Root", origin: { System: "Root" }, track: "root" }
+
+export const SUBMIT_ORIGINS: SubmitOrigin[] = [
+  ROOT_SUBMIT_ORIGIN,
   { label: "WhitelistedCaller", origin: { Origins: "WhitelistedCaller" }, track: "whitelisted_caller" },
   { label: "ReferendumCanceller", origin: { Origins: "ReferendumCanceller" }, track: "referendum_canceller" },
   { label: "ReferendumKiller", origin: { Origins: "ReferendumKiller" }, track: "referendum_killer" },
@@ -78,6 +84,11 @@ export const SUBMIT_ORIGINS: { label: string; origin: unknown; track: string }[]
   { label: "BigSpender", origin: { Origins: "BigSpender" }, track: "big_spender" },
 ]
 
+/** `SUBMIT_ORIGINS[index]`, or Root when the index is out of range. */
+export function submitOriginAt(index: number): SubmitOrigin {
+  return SUBMIT_ORIGINS[index] ?? ROOT_SUBMIT_ORIGIN
+}
+
 /**
  * Build the inner Call for a proposal spec. Throws (via the codec) if a
  * pasted raw call or code hash can't be encoded - surfaced to the user
@@ -97,7 +108,7 @@ export function buildProposalCall(api: ApiPromise, spec: ProposalCallSpec): Call
     case "whitelistCall":
       return buildWhitelistCall(api, spec.callHash)
     case "removeWhitelistedCall":
-      return api.tx.whitelist.removeWhitelistedCall(spec.callHash).method as Call
+      return txCall(api, "whitelist", "removeWhitelistedCall")(spec.callHash).method as Call
     case "fellowshipMember": {
       const c = api.tx.fellowshipCollective!
       switch (spec.action) {
@@ -112,9 +123,9 @@ export function buildProposalCall(api: ApiPromise, spec: ProposalCallSpec): Call
       }
     }
     case "authorizeUpgrade":
-      return api.tx.system.authorizeUpgrade(spec.codeHash).method as Call
+      return txCall(api, "system", "authorizeUpgrade")(spec.codeHash).method as Call
     case "remark":
-      return api.tx.system.remark(stringToHex(spec.text)).method as Call
+      return txCall(api, "system", "remark")(stringToHex(spec.text)).method as Call
     case "rawCall": {
       // Decoding stops at the end of the call, so trailing bytes would be
       // dropped silently: the call must re-encode to exactly what was pasted.

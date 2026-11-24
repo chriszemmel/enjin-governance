@@ -10,6 +10,7 @@ import {
   type PreimageDeposit,
 } from "@/lib/governance/deposits"
 import type { Referendum } from "@/lib/governance/types"
+import { defined } from "@/test/defined"
 
 /**
  * A proposal's EGOV1 envelope is noted as a preimage and bound with
@@ -153,12 +154,12 @@ describe("markProposalRecords", () => {
       new Map([[ENVELOPE_HASH.toLowerCase(), 14]]),
       new Set(),
     )
-    expect(d.proposalRecord).toEqual({ referendumIndex: 14 })
+    expect(defined(d).proposalRecord).toEqual({ referendumIndex: 14 })
   })
 
   it("flags EGOV1 bytes no referendum points at with a null index", () => {
     const [d] = markProposalRecords([deposit(ENVELOPE_HASH)], new Map(), new Set([ENVELOPE_HASH]))
-    expect(d.proposalRecord).toEqual({ referendumIndex: null })
+    expect(defined(d).proposalRecord).toEqual({ referendumIndex: null })
   })
 
   it("prefers the MetadataOf binding when both match", () => {
@@ -167,7 +168,7 @@ describe("markProposalRecords", () => {
       new Map([[ENVELOPE_HASH, 3]]),
       new Set([ENVELOPE_HASH]),
     )
-    expect(d.proposalRecord).toEqual({ referendumIndex: 3 })
+    expect(defined(d).proposalRecord).toEqual({ referendumIndex: 3 })
   })
 
   it("leaves other deposits untouched", () => {
@@ -182,7 +183,7 @@ describe("holdOngoingProposals", () => {
   it("holds back an Ongoing referendum's proposal, whatever the hash's case", () => {
     const upper = `0x${CALL_HASH.slice(2).toUpperCase()}` as `0x${string}`
     const [held] = holdOngoingProposals([deposit(upper)], new Set([CALL_HASH]))
-    expect(held.unnotable).toBe(false)
+    expect(defined(held).unnotable).toBe(false)
   })
 
   it("leaves other deposits untouched", () => {
@@ -213,14 +214,14 @@ describe("getPreimageDepositsFor - proposal records", () => {
   it("flags an unbound EGOV1 envelope by its bytes", async () => {
     const { api } = fakeApi([{ hash: ENVELOPE_HASH, who: ME, bytes: ENVELOPE_BYTES }], {})
     const [d] = await getPreimageDepositsFor(api, ME)
-    expect(d.proposalRecord).toEqual({ referendumIndex: null })
+    expect(defined(d).proposalRecord).toEqual({ referendumIndex: null })
   })
 
   it("leaves a proposal call no Ongoing referendum uses as a routine reclaim", async () => {
     const { api } = fakeApi([{ hash: CALL_HASH, who: ME, bytes: CALL_BYTES }], {})
     const [d] = await getPreimageDepositsFor(api, ME)
-    expect(d.unnotable).toBe(true)
-    expect(d.proposalRecord).toBeUndefined()
+    expect(defined(d).unnotable).toBe(true)
+    expect(defined(d).proposalRecord).toBeUndefined()
   })
 
   it("holds back the proposal call of an Ongoing referendum, though it's Unrequested", async () => {
@@ -246,7 +247,7 @@ describe("getPreimageDepositsFor - proposal records", () => {
     const bigHash = blake2AsHex(big, 256) as `0x${string}`
     const { api, bytesRead } = fakeApi([{ hash: bigHash, who: ME, bytes: big }], {})
     const [d] = await getPreimageDepositsFor(api, ME)
-    expect(d.proposalRecord).toBeUndefined()
+    expect(defined(d).proposalRecord).toBeUndefined()
     expect(bytesRead).toEqual([])
   })
 
@@ -278,7 +279,7 @@ describe("getPreimageDepositsFor - proposal records", () => {
       { 9: ENVELOPE_HASH },
     )
     const [d] = await getPreimageDepositsFor(api, ME)
-    expect(d.unnotable).toBe(false)
-    expect(d.proposalRecord).toEqual({ referendumIndex: 9 })
+    expect(defined(d).unnotable).toBe(false)
+    expect(defined(d).proposalRecord).toEqual({ referendumIndex: 9 })
   })
 })

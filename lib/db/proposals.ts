@@ -9,6 +9,7 @@
 import "server-only"
 import type { ReferendaPallet } from "@/lib/governance/referenda"
 import { getSql } from "./client"
+import { firstRow } from "./rows"
 
 export type ProposalStatus =
   | "draft"
@@ -94,7 +95,7 @@ export async function insertProposalDraft(
     )
     RETURNING *
   `) as ProposalRow[]
-  return rows[0]
+  return firstRow(rows, `Proposal draft insert returned no row for ${d.id}`)
 }
 
 export type UpdateProposalDraftArgs = {
@@ -177,8 +178,7 @@ export async function attachReferendumIndex(
     WHERE id = ${a.proposalId}
     RETURNING *
   `) as ProposalRow[]
-  if (rows.length === 0) throw new Error(`No proposal ${a.proposalId}`)
-  return rows[0]
+  return firstRow(rows, `No proposal ${a.proposalId}`)
 }
 
 export type UpdateProposalContentArgs = {
@@ -213,8 +213,7 @@ export async function updateProposalContent(
     WHERE id = ${a.id}
     RETURNING *
   `) as ProposalRow[]
-  if (rows.length === 0) throw new Error(`No proposal ${a.id}`)
-  return rows[0]
+  return firstRow(rows, `No proposal ${a.id}`)
 }
 
 export type ReplaceAttachmentItem = {
@@ -278,8 +277,7 @@ export async function setProposalWithdrawn(
         WHERE id = ${id}
         RETURNING *
       `) as ProposalRow[]
-  if (rows.length === 0) throw new Error(`No proposal ${id}`)
-  return rows[0]
+  return firstRow(rows, `No proposal ${id}`)
 }
 
 export async function markProposalFailed(
@@ -436,7 +434,7 @@ export async function insertAttachment(
     )
     RETURNING *
   `) as AttachmentRow[]
-  return rows[0]
+  return firstRow(rows, "Attachment insert returned no row")
 }
 
 export async function listAttachments(

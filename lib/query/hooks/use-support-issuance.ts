@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
+import { queryEntry } from "@/lib/chain/runtime"
 import {
   type SupportBasis,
   supportBasisForSpec,
@@ -35,12 +36,13 @@ export function useSupportIssuance(chain?: ChainConfig) {
     queryFn: async () => {
       const api = apiQuery.data
       if (!api || specVersion == null) throw new Error("API not ready")
-      const balances = api.query.balances
+      const totalIssuance = queryEntry(api, "balances", "totalIssuance")
+      // Every runtime this app targets has it; one without it has nothing
+      // inactive, so its active issuance is the total.
+      const inactiveIssuance = api.query.balances?.inactiveIssuance
       const [total, inactive] = await Promise.all([
-        balances.totalIssuance(),
-        // Every runtime this app targets has it; one without it has nothing
-        // inactive, so its active issuance is the total.
-        balances.inactiveIssuance ? balances.inactiveIssuance() : null,
+        totalIssuance(),
+        inactiveIssuance ? inactiveIssuance() : null,
       ])
       return {
         denominator: supportDenominator(specVersion, toBigInt(total), toBigInt(inactive)),

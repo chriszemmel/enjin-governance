@@ -7,6 +7,7 @@ import {
   previewPreimage,
 } from "@/lib/governance/submit-treasury-proposal"
 import { ENJIN_SPEND_LIMITS } from "@/lib/governance/treasury"
+import { defined } from "@/test/defined"
 
 /**
  * buildTreasuryProposal composes [notePreimage, submit, notePreimage,
@@ -44,7 +45,7 @@ function fakeApi(sink: Recorded[]): ApiPromise {
   } as unknown as ApiPromise
 }
 
-const tier = ENJIN_SPEND_LIMITS[0].tiers[0]
+const tier = defined(defined(ENJIN_SPEND_LIMITS[0]).tiers[0])
 
 const ENVELOPE = 'EGOV1:{"u":"https://x/p.json","h":"deadbeef"}'
 const ENVELOPE_BYTES = stringToU8a(ENVELOPE)
@@ -147,7 +148,7 @@ describe("buildTreasuryProposal", () => {
     })
     const notes = sink.filter((r) => r.call === "preimage.notePreimage")
     expect(notes).toHaveLength(2)
-    expect(notes[1].args).toEqual([u8aToHex(ENVELOPE_BYTES)])
+    expect(defined(notes[1]).args).toEqual([u8aToHex(ENVELOPE_BYTES)])
   })
 
   it("submits with the tier origin, Lookup wrapper, and After-0 enactment", () => {

@@ -16,6 +16,7 @@ import type { ISubmittableResult } from "@polkadot/types/types"
 import { blake2AsU8a, blake2AsHex } from "@polkadot/util-crypto"
 import { u8aToHex } from "@polkadot/util"
 import type { Preimage, PreimageRef, PreimageStatus } from "./types"
+import { queryEntry, txCall } from "@/lib/chain/runtime"
 
 export type NotedPreimage = {
   extrinsic: SubmittableExtrinsic<"promise", ISubmittableResult>
@@ -47,7 +48,7 @@ export function canInline(
  */
 export function noteAndHash(api: ApiPromise, callBytes: Uint8Array): NotedPreimage {
   const hash = blake2AsHex(callBytes, 256) as `0x${string}`
-  const extrinsic = api.tx.preimage.notePreimage(
+  const extrinsic = txCall(api, "preimage", "notePreimage")(
     u8aToHex(callBytes),
   ) as SubmittableExtrinsic<"promise", ISubmittableResult>
   return { extrinsic, hash, len: callBytes.length }
@@ -57,7 +58,7 @@ export function buildUnnotePreimage(
   api: ApiPromise,
   hash: `0x${string}`,
 ): SubmittableExtrinsic<"promise", ISubmittableResult> {
-  return api.tx.preimage.unnotePreimage(hash) as SubmittableExtrinsic<
+  return txCall(api, "preimage", "unnotePreimage")(hash) as SubmittableExtrinsic<
     "promise",
     ISubmittableResult
   >
@@ -86,7 +87,7 @@ export async function getPreimage(
   // call bytes, otherwise `api.createType("Call", …)` decodes the length
   // prefix as the pallet index and produces empty section/method.
   const tryLen = async (len: number) => {
-    const raw = await api.query.preimage.preimageFor([ref.hash, len])
+    const raw = await queryEntry(api, "preimage", "preimageFor")([ref.hash, len])
     const opt = raw as unknown as {
       isSome: boolean
       unwrap: () => { toU8a: (isBare?: boolean) => Uint8Array }
@@ -139,7 +140,7 @@ async function getLenFromStatus(
   hash: `0x${string}`,
 ): Promise<number | null> {
   try {
-    const raw = await api.query.preimage.requestStatusFor(hash)
+    const raw = await queryEntry(api, "preimage", "requestStatusFor")(hash)
     const opt = raw as unknown as {
       isSome: boolean
       unwrap: () => Record<string, unknown>
@@ -178,7 +179,7 @@ async function findLenByScanning(
   hash: `0x${string}`,
 ): Promise<number | null> {
   try {
-    const keys = await api.query.preimage.preimageFor.keys()
+    const keys = await queryEntry(api, "preimage", "preimageFor").keys()
     for (const key of keys) {
       const tuple = key.args[0] as unknown as {
         toJSON: () => [string, number]
@@ -199,7 +200,7 @@ export async function getPreimageStatus(
   api: ApiPromise,
   hash: `0x${string}`,
 ): Promise<PreimageStatus> {
-  const raw = await api.query.preimage.requestStatusFor(hash)
+  const raw = await queryEntry(api, "preimage", "requestStatusFor")(hash)
   const opt = raw as unknown as { isSome: boolean; unwrap: () => Record<string, unknown> }
   if (!opt.isSome) return "Missing"
   const status = opt.unwrap()

@@ -7,6 +7,7 @@
 import "server-only"
 import { createHash } from "node:crypto"
 import { getSql } from "./client"
+import { firstRow } from "./rows"
 import type { DisclosureInput } from "@/lib/security/disclosure"
 
 type CreateDisclosureArgs = DisclosureInput & {
@@ -31,5 +32,5 @@ export async function createSecurityDisclosure(
     )
     RETURNING id
   `) as { id: string }[]
-  return { id: rows[0].id }
+  return { id: firstRow(rows, "Disclosure insert returned no row").id }
 }

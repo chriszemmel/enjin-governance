@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import robots from "@/app/robots"
 import { siteUrl } from "@/lib/seo/site"
+import { defined } from "@/test/defined"
 
 type Rules = { allow?: string | string[]; disallow?: string | string[] }
 
@@ -37,8 +38,9 @@ function mayFetch(rules: Rules, path: string): boolean {
 function rulesFor(result: ReturnType<typeof robots>): Rules {
   const rules = Array.isArray(result.rules) ? result.rules : [result.rules]
   expect(rules).toHaveLength(1)
-  expect(rules[0].userAgent).toBe("*")
-  return rules[0]
+  const [rule] = rules
+  expect(defined(rule).userAgent).toBe("*")
+  return defined(rule)
 }
 
 afterEach(() => {
