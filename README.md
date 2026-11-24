@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1253%20passing-22c55e?style=flat-square" />
+  <a href="https://github.com/chriszemmel/enjin-governance/actions/workflows/ci.yml"><img alt="Tests" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchriszemmel%2Fenjin-governance%2Fbadges%2Ftests.json&style=flat-square" /></a>
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-6d28d9?style=flat-square" /></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
@@ -392,9 +392,9 @@
 |---|---|
 | TypeScript source files (excl. vendored shadcn and tests) | **~340** |
 | Docs files | **7** |
-| Unit tests | **1253** (106 files), including route tests and database tests against PGlite |
+| Unit tests | Vitest, counted by CI (see the badge above): unit, route and database tests against PGlite, plus component tests for the vote, delegation and sign-request UI. CI fails below the coverage floors for `lib/governance` and `lib/auth`. |
 | Browser tests | **29** (Playwright, against the production build) |
-| Test coverage (lines) | **88%** of API routes, **81%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and components are covered by the browser tests, not by unit tests. |
+| Test coverage (lines) | **88%** of API routes, **81%** of server code (`app/api` and `lib`, without the browser-only `lib/query` and `lib/wallet`). Pages and most components are covered by the browser tests; the vote panel, delegation panel and sign-request modal also by component tests. |
 | Wallets supported | **6** (Enjin Wallet · generic WalletConnect · Polkadot.js · Talisman · SubWallet · PolkaGate) |
 | Chains configured | **4** - 2 live (Enjin + Canary **Relay**, OpenGov, spec 1080) plus the 2 **Matrix** chains, registered but not enabled yet (planned for 2.1). Dedicated archive RPCs per chain. |
 | External indexer dependencies | **0 required** (Subscan optional, only for very old finalised refs) |
@@ -464,7 +464,9 @@ pnpm lint:fix     # ESLint --fix
 pnpm format       # Prettier --write
 pnpm format:check # Prettier --check
 pnpm knip         # Find dead code / unused deps
-pnpm test         # Vitest (1253 tests)
+pnpm test         # Vitest (fails when it finds no tests)
+pnpm test:coverage # Vitest with coverage; fails below the floors in vitest.config.ts
+pnpm test:fork    # Signing checks on a Chopsticks fork of Enjin Relay (network, minutes; not in CI)
 pnpm test:watch   # Vitest watch
 pnpm test:e2e     # Playwright browser tests (builds, then serves on :3100)
 
