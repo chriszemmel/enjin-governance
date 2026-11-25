@@ -419,6 +419,7 @@ describe("listVotesOnPoll", () => {
         voter: "alice",
         trackId: 2,
         currencyRaw: { Enj: null },
+        counted: null,
         vote: {
           type: "Standard",
           pollIndex: 5,
@@ -432,6 +433,7 @@ describe("listVotesOnPoll", () => {
         voter: "bob",
         trackId: 2,
         currencyRaw: null,
+        counted: null,
         vote: { type: "Split", pollIndex: 5, trackId: 2, aye: 3n, nay: 4n },
       },
     ])
@@ -736,6 +738,35 @@ describe("spec 1082 vote records ({ vote, counted })", () => {
     expect(voters.map((v) => [v.voter, v.vote.type])).toEqual([
       ["old", "Standard"],
       ["new", "SplitAbstain"],
+    ])
+  })
+
+  it("carries what the tally counts for an sENJ vote, which can exceed what was cast", async () => {
+    // Spec 1082 counts sENJ at the pool's ENJ rate when the vote is cast:
+    // mainnet referendum #20, pool 59, 75,000 sENJ counted as 103,820.67.
+    const api = asApi({
+      query: {
+        convictionVoting: {
+          votingFor: storageMap(throws("unused"), () => [
+            [
+              key(addrArg("pool"), num(2), jsonArg({ sEnj: { tokenId: 59 } })),
+              casting1082([{ vote: aye(20, 75_000n), counted: aye(20, 103_820n) }]),
+            ],
+            [
+              key(addrArg("early"), num(2), jsonArg({ sEnj: { tokenId: 13 } })),
+              casting1082([{ vote: aye(20, 423_000n), counted: aye(20, 423_000n) }]),
+            ],
+            [key(addrArg("old"), num(2)), casting([aye(20, 5n)])],
+          ]),
+        },
+      },
+    })
+    const voters = await listVotesOnPoll(api, 20)
+    const balance = (v: { type: string; balance?: bigint } | null) => v?.balance ?? null
+    expect(voters.map((v) => [v.voter, balance(v.vote), balance(v.counted)])).toEqual([
+      ["pool", 75_000n, 103_820n],
+      ["early", 423_000n, 423_000n],
+      ["old", 5n, null],
     ])
   })
 

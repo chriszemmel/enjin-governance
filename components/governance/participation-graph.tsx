@@ -274,7 +274,12 @@ function summarise(rows: readonly ReferendumVote[]): Summary {
     // Conviction-weighted voting power. None counts as 0.1x; multiplier
     // values are floats so scale balance into a fixed-point bigint to
     // keep precision.
-    const power = scaleByMultiplier(row.balance, CONVICTION_MULTIPLIER[conviction])
+    // What the tally holds for it: from spec 1082 an sENJ vote counts at the
+    // pool's ENJ rate, so use that rather than the amount cast.
+    const power = scaleByMultiplier(
+      row.countedBalance ?? row.balance,
+      CONVICTION_MULTIPLIER[conviction],
+    )
     const slice: VoterSlice = { voter: row.voter, power, aye: decoded.aye }
     if (decoded.aye) {
       aye.push(slice)
@@ -288,8 +293,7 @@ function summarise(rows: readonly ReferendumVote[]): Summary {
     bucket.power += power
 
     // Track raw (unweighted) balances per currency so the header can
-    // surface "X ENJ + Y sENJ across N pools" - chain tally already
-    // counts both at 1:1, but breaking it out makes it clear that
+    // surface "X ENJ + Y sENJ across N pools", which makes it clear that
     // staked-pool holders are participating.
     const currency = decodeCurrency(row.currencyRaw)
     if (currency.kind === "SEnj") {

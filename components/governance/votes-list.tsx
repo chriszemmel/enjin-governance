@@ -259,6 +259,16 @@ function VoteRow({
               })}
             </span>
             <CurrencyBadge currency={currency} />
+            {row.countedBalance != null && row.countedBalance !== row.balance && (
+              <span className="font-mono tabular-nums" title="What the tally counts for this vote">
+                counts{" "}
+                {formatTokenAmount(row.countedBalance, chain, {
+                  maxFractionDigits: 2,
+                  withTicker: false,
+                })}{" "}
+                ENJ
+              </span>
+            )}
             {lockLabel && (
               <>
                 <span aria-hidden>·</span>

@@ -266,6 +266,12 @@ describe("VotingPanel - voting with sENJ", () => {
 
     await setAmount(user, "50")
     expect(screen.getByText(/50 sENJ × 1/)).toBeTruthy()
+    // 50 sENJ at the pool's rate (55 / 50) count as 55 ENJ, not 50.
+    const power = screen.getByText("Voting power").parentElement
+    expect(power?.textContent).toMatch(/≈\s*55\s*ENJ/)
+    expect(
+      screen.getByText(/Counts at what the sENJ is worth in ENJ when you vote, not 1:1/),
+    ).toBeTruthy()
     await user.click(submitButton(/^Vote Aye$/))
 
     const { extrinsic } = await signedExtrinsic()

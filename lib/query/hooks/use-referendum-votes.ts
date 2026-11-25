@@ -5,6 +5,7 @@ import type { ApiPromise } from "@polkadot/api"
 import type { ChainConfig } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { listVotesOnPoll } from "@/lib/governance/conviction-voting"
+import type { VoteRecord } from "@/lib/governance/types"
 import { isPureAbstain } from "@/lib/governance/vote-decode"
 import { useApi } from "./use-api"
 import { useArchiveApi } from "./use-archive-api"
@@ -21,6 +22,12 @@ export type ReferendumVote = {
   convictionRaw: number | null
   /** AccountVote.balance as bigint of planck. */
   balance: bigint
+  /**
+   * What the tally holds for the vote, summed over its parts. Null before
+   * spec 1082. For sENJ it is at the pool's rate when the vote was cast, so
+   * it can be larger than `balance`.
+   */
+  countedBalance: bigint | null
   /** voteManager currency: { Enj: null } | { SEnj: N } | null. */
   currencyRaw: unknown
   /** Block height where this vote was last observed - null when we read live state. */
@@ -87,12 +94,8 @@ export function useReferendumVotes(
         abstain: isPureAbstain(r.vote),
         convictionRaw:
           r.vote.type === "Standard" ? conviction(r.vote.conviction) : null,
-        balance:
-          r.vote.type === "Standard"
-            ? r.vote.balance
-            : r.vote.type === "Split"
-              ? r.vote.aye + r.vote.nay
-              : r.vote.aye + r.vote.nay + r.vote.abstain,
+        balance: voteBalance(r.vote),
+        countedBalance: r.counted ? voteBalance(r.counted) : null,
         currencyRaw: r.currencyRaw,
         blockNumber: null,
         timestamp: null,
@@ -108,6 +111,14 @@ export function useReferendumVotes(
     gcTime: 30 * 60_000,
     retry: 1,
   })
+}
+
+function voteBalance(v: VoteRecord): bigint {
+  return v.type === "Standard"
+    ? v.balance
+    : v.type === "Split"
+      ? v.aye + v.nay
+      : v.aye + v.nay + v.abstain
 }
 
 async function readAtBlock(api: ApiPromise, atBlock: number): Promise<ApiPromise> {
