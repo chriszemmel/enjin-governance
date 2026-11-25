@@ -23,7 +23,7 @@
  * Pure functions only. No React, no chain calls. Feed it the data you have.
  */
 
-import { nextSpendPeriodBlock, type PayoutStatus } from "./payout"
+import { type ClaimStatus, nextSpendPeriodBlock, type PayoutStatus } from "./payout"
 import { type EnactmentRecord, enactmentBlock, type TaskAddress } from "./scheduler"
 import type { OngoingStatus, Referendum, Track } from "./types"
 
@@ -93,7 +93,18 @@ export type TimelineEvent = {
 
 /** Where a treasury spend's payout stands, for display. */
 export type PayoutView = {
-  state: "upcoming" | "active" | "done" | "skipped" | "unknown"
+  /**
+   * `claimable` and `expired` are for a `treasury.spend`, which is paid out
+   * when someone calls `treasury.payout`: open until `expireAt`, then lapsed.
+   * `closed`: its entry is gone, paid out or lapsed. The rest are for both kinds.
+   */
+  state: "upcoming" | "active" | "done" | "skipped" | "unknown" | "claimable" | "expired" | "closed"
+  /** A `treasury.spend` (claimed by hand) rather than a `spend_local` (paid at the next spend period). */
+  claim?: boolean
+  /** `claimable` / `expired`: the last block it can be claimed at. */
+  expireAt?: number | null
+  /** `treasury.spends` index, once known. */
+  spendIndex?: number | null
   /**
    * Active: the spend period it's due at. Upcoming: an estimate, if any.
    * Done: the spend period that paid it, once found.
@@ -176,7 +187,7 @@ export function enactmentStateFrom(
 }
 
 /** For a treasury spend_local: what the payout stage needs. */
-export type SpendContext = {
+export type LocalSpendContext = {
   /** `treasury.spendPeriod`, when known. */
   spendPeriod: number | null
   /** `treasury.lastSpendPeriod`: the periods fall at this block plus multiples of the period. Null: multiples of it. */
@@ -184,6 +195,13 @@ export type SpendContext = {
   /** After enactment: where the treasury proposal stands. */
   payout: PayoutStatus
 }
+
+/** For a treasury spend: it is claimed by hand, so only where it stands matters. */
+export type ClaimSpendContext = {
+  claim: ClaimStatus
+}
+
+export type SpendContext = LocalSpendContext | ClaimSpendContext
 
 export type LifecycleContext = {
   /**
@@ -358,7 +376,9 @@ function buildOngoingLifecycle(
   }
 
   let payout: PayoutView | null = null
-  if (context.spend) {
+  if (context.spend && "claim" in context.spend) {
+    payout = { state: "upcoming", block: null, approx: true, proposalIndex: null, claim: true }
+  } else if (context.spend) {
     const sp = context.spend.spendPeriod
     const block = sp ? nextSpendPeriodBlock(expectedEnact, sp, context.spend.lastSpendPeriod ?? 0) : null
     payout = { state: "upcoming", block, approx: true, proposalIndex: null }
@@ -644,12 +664,45 @@ function buildTerminalLifecycle(
   }
 }
 
+/** The payout of an approved referendum whose call is a `treasury.spend`. */
+function approvedClaim(
+  enactment: EnactmentState,
+  enactedAt: number | null,
+  claim: ClaimStatus,
+): PayoutView {
+  const base = { block: null, approx: false, proposalIndex: null, claim: true as const }
+  if (enactment.status === "scheduled") return { ...base, state: "upcoming", approx: true }
+  if (enactment.status !== "executed") return { ...base, state: "unknown" }
+  if (enactment.ok === false) return { ...base, state: "skipped" }
+  switch (claim.status) {
+    case "open":
+      return {
+        ...base,
+        state: "claimable",
+        spendIndex: claim.spendIndex,
+        expireAt: claim.expireAt,
+        since: enactedAt,
+      }
+    case "paid":
+      return { ...base, state: "done", spendIndex: claim.spendIndex, block: claim.block ?? null }
+    case "expired":
+      return { ...base, state: "expired", spendIndex: claim.spendIndex, expireAt: claim.expireAt }
+    case "closed":
+      return { ...base, state: "closed", spendIndex: claim.spendIndex }
+    case "none":
+      return { ...base, state: "skipped" }
+    default:
+      return { ...base, state: "unknown" }
+  }
+}
+
 function approvedPayout(
   enactment: EnactmentState,
   enactedAt: number | null,
   spend: SpendContext,
   currentBlock: number | null,
 ): PayoutView {
+  if ("claim" in spend) return approvedClaim(enactment, enactedAt, spend.claim)
   const sp = spend.spendPeriod
   if (enactment.status === "scheduled") {
     return {
@@ -691,6 +744,37 @@ function approvedPayout(
 }
 
 function payoutEvent(payout: PayoutView): TimelineEvent {
+  if (payout.claim) {
+    switch (payout.state) {
+      case "claimable":
+        return {
+          id: "payout",
+          label: "Payout",
+          block: payout.expireAt ?? null,
+          approx: false,
+          status: "upcoming",
+          note: "open until",
+        }
+      case "done":
+        return { id: "payout", label: "Paid out", block: payout.block, approx: false, status: "done" }
+      case "expired":
+        return {
+          id: "payout",
+          label: "Expired",
+          block: payout.expireAt ?? null,
+          approx: false,
+          status: "failed",
+        }
+      case "closed":
+        return { id: "payout", label: "Closed", block: null, approx: false, status: "unknown" }
+      case "skipped":
+        return { id: "payout", label: "No payout", block: null, approx: false, status: "failed" }
+      case "upcoming":
+        return { id: "payout", label: "Payout", block: null, approx: true, status: "upcoming" }
+      default:
+        return { id: "payout", label: "Payout", block: null, approx: false, status: "unknown" }
+    }
+  }
   switch (payout.state) {
     case "active":
       return {

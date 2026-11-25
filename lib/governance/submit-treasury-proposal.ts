@@ -3,7 +3,7 @@
  *
  * Four calls, atomically batched:
  *
- *   1. preimage.notePreimage(<spend_local call bytes>)
+ *   1. preimage.notePreimage(<treasury.spend call bytes>)
  *   2. referenda.submit(<track origin>, Lookup{hash,len}, <enactment>)
  *   3. preimage.notePreimage(EGOV1:{"u":"<json url>","h":"<sha256>"})
  *   4. referenda.setMetadata(<index>, blake2_256(envelope bytes))
@@ -32,7 +32,7 @@ import type { SubmittableExtrinsic } from "@polkadot/api/types"
 import type { ISubmittableResult } from "@polkadot/types/types"
 import { stringToU8a, u8aToHex } from "@polkadot/util"
 import type { TreasuryTier } from "./types"
-import { assertTierCoversAmount, buildSpendLocalCall } from "./treasury"
+import { assertTierCoversAmount, buildSpendCall } from "./treasury"
 import { noteAndHash } from "./preimage"
 import { buildSetMetadata, buildSubmit } from "./referenda"
 
@@ -83,7 +83,7 @@ export function buildTreasuryProposal(
   // than at on-chain enactment.
   assertTierCoversAmount(args.tier, args.amount)
 
-  const call = buildSpendLocalCall(api, {
+  const call = buildSpendCall(api, {
     amount: args.amount,
     beneficiary: args.beneficiary,
   })
@@ -134,7 +134,7 @@ export function previewPreimage(
   api: ApiPromise,
   args: { amount: bigint; beneficiary: string },
 ): { preimageHash: `0x${string}`; preimageLen: number; callHex: `0x${string}` } {
-  const call = buildSpendLocalCall(api, args)
+  const call = buildSpendCall(api, args)
   const bytes = call.toU8a()
   const noted = noteAndHash(api, bytes)
   return {

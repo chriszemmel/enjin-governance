@@ -304,7 +304,7 @@ export default function TreasuryPage() {
                 </li>
                 <li>
                   Anyone can submit a treasury request by referendum - the
-                  call is a <code className="font-mono text-foreground">treasury.spend_local</code>{" "}
+                  call is a <code className="font-mono text-foreground">treasury.spend</code>{" "}
                   wrapped in a preimage and submitted via{" "}
                   <code className="font-mono text-foreground">referenda.submit</code>.
                 </li>
@@ -316,9 +316,11 @@ export default function TreasuryPage() {
                   amounts are read live from the chain.
                 </li>
                 <li>
-                  Approved spends are paid to the beneficiary automatically
-                  at the treasury&apos;s next spend period after enactment,
-                  once the treasury holds enough to cover them.
+                  A spend approved as <code>spend_local</code> is paid to the
+                  beneficiary automatically at the treasury&apos;s next spend
+                  period after enactment, once the treasury holds enough to
+                  cover it. A <code>treasury.spend</code> is claimed by hand
+                  once it is enacted, by anyone, within its claim window.
                 </li>
               </ul>
             </div>

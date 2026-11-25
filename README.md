@@ -309,7 +309,7 @@
   Active / Approved / Rejected / Cancelled / Timed out). Cards show
   tally split-bar, track badge, lifecycle stage.
 - **`/proposals/[index]`** - full detail page: treasury-request
-  summary card when the call is `treasury.spend_local`, address links
+  summary card when the call is `treasury.spend` or `treasury.spend_local`, address links
   on every account reference (SS58 / hex pubkey re-encoded to the
   chain's prefix), votes list with profile enrichment, participation
   graph, votes swiper, vote panel, decision/submission deposit cards.
@@ -602,7 +602,7 @@ binding - see [GOVERNANCE_FLOW](docs/GOVERNANCE_FLOW.md#filing-a-proposal)):
 
 ```text
 utility.batchAll([
-  preimage.notePreimage(<treasury.spendLocal call bytes>),
+  preimage.notePreimage(<treasury.spend call bytes>),
   referenda.submit(<track origin>, Lookup{hash, len}, <enactment>),
   preimage.notePreimage('EGOV1:{"u":"<json url>","h":"<sha256>"}'),
   referenda.setMetadata(<index>, blake2_256(<envelope bytes>)),

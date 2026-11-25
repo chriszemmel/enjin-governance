@@ -3,6 +3,37 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.8 - 2026-11-26
+
+- **Claim a `treasury.spend` payout:** since runtime 1082 a `spend_local`
+  waits up to 24 days for the next spend period. A referendum whose call is
+  `treasury.spend` is paid out as soon as it is enacted, by anyone calling
+  `treasury.payout` within 30 days. Its payout step shows Pending, Open (with
+  a **Claim payout** button, that asks for a wallet first, confirms the
+  amount and where it goes, then signs `treasury.payout`), Paid or Expired
+  (the funds stay in the treasury). `spend_local` referenda look and behave
+  as before. `treasury.spend` has the same amount limits per track as
+  `spend_local`, checked on a fork of mainnet. The confirmation shows what
+  the claim costs, and a paid spend shows the block it was claimed in. A
+  spend whose entry is gone is looked up in the chain's history, so it reads
+  Paid or Expired. When the page can't tell which of several identical open
+  spends is the referendum's, it shows Open without the button.
+- **New treasury requests are filed as `treasury.spend`:** the create page
+  (and the advanced composer's treasury spend) now files
+  `treasury.spend(null, amount, beneficiary, null)`, so the payout can be
+  claimed as soon as the referendum is enacted instead of waiting up to 24
+  days for the next spend period. The create page says so under the
+  amount. Referenda filed as `spend_local` before keep their payout step.
+- **No more spend-limit notice on runtime 1082:** the create page told
+  everyone "This app has no treasury spend limits for runtime spec 1082, so
+  it uses spec 1080's". The limits of 1082 are listed now (unchanged, checked
+  on a fork of mainnet for every origin, for both calls), and a runtime the
+  app hasn't listed yet is held to the lowest known limits without saying so.
+  `pnpm test:fork` fails when an upgrade changes a limit.
+- **The proposal page says a `treasury.spend` is claimed:** the line under a
+  treasury request said the referendum "pays the beneficiary", which is true
+  of `spend_local` only. Its spend-limit warning now covers `treasury.spend`.
+
 ## 2.0.7 - 2026-11-25
 
 - **sENJ votes count at their ENJ value:** runtime 1082 (v1.8.2) counts a

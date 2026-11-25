@@ -18,6 +18,8 @@ export type StepRow = {
   state: LifecycleStageState
   /** Payout steps get a dashed dot while they're still to come. */
   dashed?: boolean
+  /** The step offers an action: claim `treasury.spend` number `spendIndex`. */
+  action?: { kind: "claim"; spendIndex: number; expires: string | null }
   when: { main: string; sub?: string; mono?: boolean } | null
 }
 
@@ -59,6 +61,23 @@ export function heroFor(lifecycle: Lifecycle, currentBlock: number | null): Hero
     return {
       big: timeLeft(payout.block, currentBlock),
       unit: "to payout",
+      pill: "Approved",
+      approved,
+      progress:
+        since != null && currentBlock != null && span > 0
+          ? clamp01((currentBlock - since) / span)
+          : 0,
+    }
+  }
+  if (!stage && payout?.state === "claimable" && payout.expireAt == null) {
+    return { big: null, unit: "Ready to claim", pill: "Approved", approved, progress: 0 }
+  }
+  if (!stage && payout?.state === "claimable" && payout.expireAt != null) {
+    const since = payout.since ?? null
+    const span = since != null ? payout.expireAt - since : 0
+    return {
+      big: timeLeft(payout.expireAt, currentBlock),
+      unit: "left to claim",
       pill: "Approved",
       approved,
       progress:
@@ -116,7 +135,9 @@ export function stepRows(
     stageRow(stage, byId, lifecycle, currentBlock),
   )
   const payout = lifecycle.payout
-  if (payout) {
+  if (payout?.claim) {
+    rows.push(claimRow(payout, currentBlock, amount))
+  } else if (payout) {
     const label = amount ? `Payout · ${amount}` : "Payout"
     const due = payout.block
     switch (payout.state) {
@@ -173,6 +194,95 @@ export function stepRows(
     }
   }
   return rows
+}
+
+/**
+ * The payout step of a `treasury.spend`: nobody pays it automatically, so it
+ * says what to do (claim it) and until when, instead of dating a spend period.
+ */
+function claimRow(
+  payout: NonNullable<Lifecycle["payout"]>,
+  currentBlock: number | null,
+  amount: string | null,
+): StepRow {
+  const label = amount ? `Payout · ${amount}` : "Payout"
+  const expiry = payout.expireAt ?? null
+  switch (payout.state) {
+    case "claimable":
+      return {
+        key: "payout",
+        label,
+        note:
+          payout.spendIndex == null
+            ? "Several open spends match this one, so it can't be claimed from here yet. Try again in a moment."
+            : `${
+                expiry != null ? `Expires ${whenText(expiry, currentBlock, true)}. ` : ""
+              }Anyone can trigger this, the beneficiary receives it.`,
+        noteTone: "muted",
+        state: "active",
+        when: { main: "Open" },
+        ...(payout.spendIndex != null
+          ? {
+              action: {
+                kind: "claim" as const,
+                spendIndex: payout.spendIndex,
+                expires: expiry != null ? whenText(expiry, currentBlock, true) : null,
+              },
+            }
+          : {}),
+      }
+    case "done":
+      return {
+        key: "payout",
+        label: amount ? `Paid out · ${amount}` : "Paid out",
+        note:
+          payout.block != null
+            ? `Claimed ${dayText(payout.block, currentBlock)} in block #${formatBlockNumber(payout.block)}.`
+            : "The beneficiary received it.",
+        noteTone: "muted",
+        state: "done",
+        when: { main: "Paid" },
+      }
+    case "expired":
+      return {
+        key: "payout",
+        label,
+        note: `${
+          expiry != null ? `Not claimed by ${dayText(expiry, currentBlock)}.` : "Not claimed in time."
+        } The funds stay in the treasury.`,
+        noteTone: "muted",
+        state: "failed",
+        when: { main: "Expired" },
+      }
+    case "closed":
+      return {
+        key: "payout",
+        label,
+        note: "No longer open: paid out, or expired and cleared.",
+        noteTone: "muted",
+        state: "unknown",
+        when: { main: "Closed" },
+      }
+    case "skipped":
+      return {
+        key: "payout",
+        label: "No payout",
+        note: "The call failed when it was enacted",
+        noteTone: "danger",
+        state: "skipped",
+        when: null,
+      }
+    default:
+      return {
+        key: "payout",
+        label,
+        note: "You claim it yourself once the call has run.",
+        noteTone: "muted",
+        state: payout.state === "upcoming" ? "upcoming" : "unknown",
+        dashed: true,
+        when: { main: "Pending" },
+      }
+  }
 }
 
 function stageRow(
@@ -298,6 +408,20 @@ export function finishedSummary(
         }
         if (payout?.state === "skipped") {
           return { title: `Enacted${on(enactedAt)}`, sub: "No payout", tone: "danger" }
+        }
+        if (payout?.state === "expired") {
+          return {
+            title: `Expired${payout.expireAt != null ? ` ${onDayText(payout.expireAt, currentBlock)}` : ""}`,
+            sub: "Not claimed in time. The funds stay in the treasury.",
+            tone: "danger",
+          }
+        }
+        if (payout?.state === "closed") {
+          return {
+            title: `Enacted${on(enactedAt)}`,
+            sub: "The payout is closed: paid out, or expired and cleared",
+            tone: "muted",
+          }
         }
         const sub = [
           decidedAt != null ? `Approved ${dayText(decidedAt, currentBlock)}` : null,

@@ -29,7 +29,8 @@ import {
 } from "@/components/create/create-ui"
 import { subscanExtrinsicUrl, subscanReferendumUrl } from "@/lib/chain/chains"
 import { getActiveChain, useActiveChain } from "@/lib/chain/use-chain"
-import { formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
+import { formatBlockDuration, formatTokenAmount, parseTokenAmount } from "@/lib/chain/format"
+import { claimNote } from "@/lib/governance/payout"
 import { env } from "@/lib/env"
 import {
   encodeForChain,
@@ -340,9 +341,9 @@ function CreatePageInner() {
   const amountExceedsMaxTier =
     parsedAmount != null && parsedAmount > 0n && !amountError && tiers != null && pickedTier == null
 
-  // Non-blocking notes under the amount field. spend_local doesn't check the
-  // treasury balance: an approved spend the treasury can't cover waits until
-  // it can.
+  // Non-blocking notes under the amount field. The spend is filed as a
+  // treasury.spend, which is claimed after enactment; the treasury balance is
+  // only checked then, and a payout it can't cover fails and can be tried again.
   const amountWarnings: string[] = []
   if (treasuryTiers.table && treasuryTiers.notice) {
     amountWarnings.push(treasuryTiers.notice)
@@ -353,9 +354,18 @@ function CreatePageInner() {
     parsedAmount > treasuryBalanceQuery.data
   ) {
     amountWarnings.push(
-      `The treasury holds ${formatTokenAmount(treasuryBalanceQuery.data, chain)} right now. If approved, this spend is paid only once the treasury can cover it in full.`,
+      `The treasury holds ${formatTokenAmount(treasuryBalanceQuery.data, chain)} right now. If approved, the payout only works once the treasury can cover it in full.`,
     )
   }
+
+  // How the payout works, under the amount: a treasury.spend is claimed after
+  // enactment, within the pallet's window (`treasury.payoutPeriod`).
+  const payoutPeriod = (apiQuery.data as ApiPromise | undefined)?.consts.treasury?.payoutPeriod
+  const payoutBlocks = payoutPeriod ? Number(payoutPeriod.toString()) : null
+  const amountNote =
+    parsedAmount != null && parsedAmount > 0n
+      ? claimNote(payoutBlocks ? formatBlockDuration(payoutBlocks) : null)
+      : null
 
   // Track-level deposits for the picked origin (read from chain consts).
   const trackForOrigin = useMemo(() => {
@@ -988,6 +998,7 @@ function CreatePageInner() {
             amount={amount}
             amountError={amountError}
             amountWarnings={amountWarnings}
+            amountNote={amountNote}
             tiers={tiers}
             pickedTier={pickedTier}
             requiredPlanck={requiredPlanck}

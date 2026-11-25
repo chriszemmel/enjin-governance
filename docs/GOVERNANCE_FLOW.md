@@ -190,7 +190,7 @@ period - the blocks divisible by `treasury.spendPeriod` (14,400) - if the
 pot covers them, and removes them. `useSpendPayout`
 (`lib/query/hooks/use-spend-payout.ts`, logic in
 `lib/governance/payout.ts`) tracks it when the decoded call is a
-`spendLocal` (not `treasury.spend`, which pays through `treasury.payout`):
+`spendLocal` (a `treasury.spend` is claimed by hand, see below):
 
 - before enactment: upcoming, estimated at the spend period after the
   enactment block;
@@ -209,6 +209,40 @@ pot covers them, and removes them. `useSpendPayout`
 
 #12 created treasury proposal #6, awarded at 17,553,600; #14 created #7,
 awarded at 17,640,000.
+
+**Claiming a `treasury.spend`.** `treasury.spend(assetKind, amount,
+beneficiary, validFrom)` (`assetKind` is `null` on Enjin) isn't paid at a
+spend period: it stores an entry in `treasury.spends` (emitting
+`AssetSpendApproved`) that anyone can pay out with `treasury.payout(index)`
+from the block it is valid from (the approval, with `validFrom` `None`) until
+`expireAt`, `treasury.payoutPeriod` (432,000 blocks, about 30 days) later.
+The funds go to the beneficiary; the caller only pays the fee. It has the
+same per-track amount limits as `spendLocal` (checked on a fork of spec 1082:
+MediumSpender 250,000 ENJ passes, 250,001 doesn't, for both).
+`useSpendClaim` (`lib/query/hooks/use-spend-claim.ts`, logic in
+`lib/governance/payout.ts`, `resolveClaim`) tracks it when the decoded call
+is a `treasury.spend`:
+
+- before enactment: Pending, with no date;
+- after it: the spend index and window from the `AssetSpendApproved` the
+  enactment emitted (or, without the archive, the latest pending entry with
+  the same beneficiary and amount). `pending` within its window → Open, with
+  the Claim payout button and "Expires ≈ date"; `pending` past `expireAt` →
+  Expired (the funds never left the treasury); `attempted` → Paid (it stays
+  until someone calls `checkStatus`); `failed` → Open again, until it
+  expires. An entry that is gone was paid (within its window) or is closed
+  (after it: paid, or lapsed and cleared, which the state can't tell apart).
+  The archive settles a closed one (`settleClosed`): a block with its
+  `treasury.Paid` → Paid, none → Expired. Without the enactment record,
+  several pending entries with the same beneficiary and amount are shown as
+  Open with no button, so the page never pays out another referendum's spend;
+- the Claim payout button (`components/governance/claim-payout-button.tsx`)
+  asks for a wallet first, like the Refund button, then confirms the amount,
+  the beneficiary (linked, with a copy button, "You" when it is the connected
+  account) and the call, and signs `treasury.payout(index)`.
+
+`spend_local` referenda keep the payout step above, unchanged. A referendum is
+one or the other, from its decoded call.
 
 ## Writing to the chain: `useExtrinsic`
 
@@ -275,7 +309,8 @@ There are two composers. Both end in one signed `utility.batchAll` that
 files the referendum and binds its EGOV1 record.
 
 - **Treasury wizard** (`/create`, `app/create/page.tsx`) - a
-  `treasury.spendLocal(amount, beneficiary)` call. The origin tier is
+  `treasury.spend(null, amount, beneficiary, null)` call, claimed by hand
+  after enactment (see Claiming a `treasury.spend`). The origin tier is
   picked from the amount (see [Origins and treasury tiers](#origins-and-treasury-tiers)).
   The call is always noted as a preimage and submitted by `Lookup`.
 - **Advanced composer** (`/create/advanced`, `app/create/advanced/page.tsx`) -
@@ -572,7 +607,7 @@ be valid for the active chain.
 Each treasury origin can authorize a spend up to a fixed limit, set by the
 runtime's `Spender` EnsureOrigin (relaychain
 `runtime/common/src/governance/origins.rs`, the treasury's `SpendOrigin`).
-If the amount exceeds the origin's limit, `spend_local` fails with
+If the amount exceeds the origin's limit, `spend_local` and `spend` fail with
 `InsufficientPermission` at enactment, after the full vote. The limits
 aren't in metadata or `api.consts`, so `ENJIN_SPEND_LIMITS` in
 `lib/governance/treasury.ts` copies them from the runtime source, one
@@ -614,11 +649,12 @@ pickOriginForAmount(amount, tiers) →
   the other tiers'.
 - `assertTierCoversAmount` re-checks at build time, so a referendum is
   never filed under an origin the table says is too small.
-- `spend_local` doesn't check the treasury balance. The wizard warns,
-  without blocking, when a request is larger than the treasury holds: an
-  approved spend is paid at a later spend period, once the treasury can
-  cover it in full.
-- The proposal page warns when an ongoing `spend_local` is above its
+- Neither call checks the treasury balance when it is approved. The wizard
+  warns, without blocking, when a request is larger than the treasury
+  holds: a `spend_local` is paid at a later spend period once the treasury
+  can cover it in full, and a claim of a `spend` it can't cover fails and
+  can be tried again within its window.
+- The proposal page warns when an ongoing `spend_local` or `spend` is above its
   track's limit, e.g. one filed before these limits were in place.
 - When a runtime upgrade changes `Spender`, add its spec version to
   `ENJIN_SPEND_LIMITS` before the upgrade is applied.

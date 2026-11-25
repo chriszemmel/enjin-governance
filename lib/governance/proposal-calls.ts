@@ -18,7 +18,7 @@
 import type { ApiPromise } from "@polkadot/api"
 import type { Call } from "@polkadot/types/interfaces"
 import { stringToHex, u8aToHex } from "@polkadot/util"
-import { buildSpendLocalCall } from "./treasury"
+import { buildSpendCall } from "./treasury"
 import {
   buildCancelReferendumCall,
   buildKillReferendumCall,
@@ -97,7 +97,7 @@ export function submitOriginAt(index: number): SubmitOrigin {
 export function buildProposalCall(api: ApiPromise, spec: ProposalCallSpec): Call {
   switch (spec.kind) {
     case "treasurySpend":
-      return buildSpendLocalCall(api, {
+      return buildSpendCall(api, {
         amount: spec.amount,
         beneficiary: spec.beneficiary,
       })

@@ -89,12 +89,20 @@ export async function readEnactmentTask(
   return decodeTaskAddress(await lookup(enactmentTaskName(index)))
 }
 
-/** A `treasury.SpendApproved` the enacted call emitted. */
+/**
+ * A `treasury.SpendApproved` (from `spend_local`) or `treasury.AssetSpendApproved`
+ * (from `spend`) the enacted call emitted. For the second, `proposalIndex` is
+ * the spend's index and `validFrom` / `expireAt` bound the window to claim it.
+ */
 export type SpendApproved = {
   proposalIndex: number
   amount: bigint
   /** Beneficiary public key, hex. */
   beneficiary: `0x${string}`
+  /** `AssetSpendApproved` only: the first block the spend can be paid out. */
+  validFrom?: number
+  /** `AssetSpendApproved` only: the block after which it can't be. */
+  expireAt?: number
 }
 
 /** What happened when an enactment task ran. */
@@ -130,8 +138,13 @@ export function enactmentOutcome(
   const name = taskName.toLowerCase()
   for (const event of events) {
     if (event.kind === "spendApproved") {
-      const { proposalIndex, amount, beneficiary } = event
-      pending.push({ proposalIndex, amount, beneficiary })
+      const { proposalIndex, amount, beneficiary, validFrom, expireAt } = event
+      pending.push({
+        proposalIndex,
+        amount,
+        beneficiary,
+        ...(validFrom != null && expireAt != null ? { validFrom, expireAt } : {}),
+      })
     } else if (event.kind === "dispatched") {
       if (event.taskName?.toLowerCase() === name) return { ok: event.ok, spends: pending }
       pending = []
@@ -189,6 +202,18 @@ function toSchedulerEvent(record: unknown): SchedulerEvent {
       proposalIndex: toNumber(data[0]),
       amount: toBigInt(data[1]),
       beneficiary: beneficiary?.toU8a ? u8aToHex(beneficiary.toU8a()) : "0x",
+    }
+  }
+  if (event.section === "treasury" && event.method === "AssetSpendApproved") {
+    // AssetSpendApproved { index, asset_kind, amount, beneficiary, valid_from, expire_at }
+    const beneficiary = data[3] as { toU8a?: () => Uint8Array }
+    return {
+      kind: "spendApproved",
+      proposalIndex: toNumber(data[0]),
+      amount: toBigInt(data[2]),
+      beneficiary: beneficiary?.toU8a ? u8aToHex(beneficiary.toU8a()) : "0x",
+      validFrom: toNumber(data[4]),
+      expireAt: toNumber(data[5]),
     }
   }
   return { kind: "other" }

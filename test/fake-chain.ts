@@ -14,6 +14,7 @@ type FakeExtrinsic = {
   call: string
   args: unknown[]
   hash: { toHex: () => string }
+  paymentInfo: (address: string) => Promise<{ partialFee: { toBigInt: () => bigint } }>
   signAsync: (
     address: string,
     options: unknown,
@@ -26,6 +27,7 @@ type SignedRecord = { extrinsic: FakeExtrinsic; address: string; options: unknow
 const ENJIN_ARITY: Record<string, Record<string, number>> = {
   convictionVoting: { vote: 3, removeVote: 3, delegate: 5, undelegate: 2, unlock: 3 },
   fellowshipCollective: { vote: 2 },
+  treasury: { payout: 1 },
 }
 
 const IN_BLOCK = {
@@ -43,13 +45,14 @@ const IN_BLOCK = {
 export function createFakeChain(opts: { voteLockingPeriod?: number; specVersion?: number } = {}) {
   const signed: SignedRecord[] = []
   /** Make the next N signatures fail, as a wallet rejecting the request would. */
-  const controls = { rejectNextSigns: 0 }
+  const controls = { rejectNextSigns: 0, partialFee: 12_500_000_000_000_000n }
 
   const extrinsic = (call: string, args: unknown[]): FakeExtrinsic => {
     const ex: FakeExtrinsic = {
       call,
       args,
       hash: { toHex: () => `0x${call.replace(/\W/g, "")}` },
+      paymentInfo: async () => ({ partialFee: { toBigInt: () => controls.partialFee } }),
       signAsync: async (address, options) => {
         if (controls.rejectNextSigns > 0) {
           controls.rejectNextSigns -= 1

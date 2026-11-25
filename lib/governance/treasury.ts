@@ -79,6 +79,21 @@ export const ENJIN_SPEND_LIMITS: readonly SpendLimits[] = [
       { origin: "TreasuryAdmin", maxAmount: 25_000_000n * ENJ },
     ],
   },
+  {
+    // relaychain v1.8.2 - the limits are unchanged from 1080. Checked on a
+    // fork of mainnet: each origin's limit passes and one ENJ above it fails
+    // with InsufficientPermission, for spend_local and spend (`pnpm test:fork`,
+    // fork/spend-limits.fork.ts, which fails when a later upgrade changes them).
+    specVersion: 1082,
+    tiers: [
+      { origin: "SmallTipper", maxAmount: 2_500n * ENJ },
+      { origin: "BigTipper", maxAmount: 10_000n * ENJ },
+      { origin: "SmallSpender", maxAmount: 50_000n * ENJ },
+      { origin: "MediumSpender", maxAmount: 250_000n * ENJ },
+      { origin: "BigSpender", maxAmount: 2_500_000n * ENJ },
+      { origin: "TreasuryAdmin", maxAmount: 25_000_000n * ENJ },
+    ],
+  },
 ]
 
 /** The treasury spend origins, smallest → largest spend authority. */
@@ -209,10 +224,28 @@ export type SpendLocalParams = {
 }
 
 /**
+ * Build a `treasury.spend(null, amount, beneficiary, null)` Call (not an
+ * extrinsic): a spend in the native token that anyone can pay out with
+ * `treasury.payout` as soon as it is enacted (`null` asset kind: ENJ; `null`
+ * `validFrom`: from the enactment), instead of waiting for the next spend
+ * period like `spendLocal`.
+ */
+export function buildSpendCall(api: ApiPromise, params: SpendLocalParams): Call {
+  return txCall(api, "treasury", "spend")(
+    null,
+    params.amount.toString(),
+    params.beneficiary,
+    null,
+  ).method as Call
+}
+
+/**
  * Build a `treasury.spendLocal(amount, beneficiary)` Call (not an extrinsic).
  *
  * For Relaychain-internal spends - the beneficiary is paid in the relay's
- * native token from the relay treasury account.
+ * native token from the relay treasury account, at the next spend period.
+ * The composers file `buildSpendCall` instead; referenda filed before that
+ * still carry this one.
  */
 export function buildSpendLocalCall(api: ApiPromise, params: SpendLocalParams): Call {
   return txCall(api, "treasury", "spendLocal")(

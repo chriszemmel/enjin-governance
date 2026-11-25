@@ -151,9 +151,12 @@ export function Stage(p: StageProps) {
           summary={
             p.preimageAlreadyNoted
               ? "Already noted on chain - this step will be skipped. The referendum will reference the existing preimage by hash."
-              : "Stores the call bytes on chain so the referendum has something to enact when it passes."
+              : "Stores the treasury.spend call on chain so the referendum has something to enact when it passes. Once it is enacted, the payout is claimed on the proposal page."
           }
           details={[
+            { label: "Call", value: "treasury.spend" },
+            { label: "Amount", value: p.amountFormatted },
+            { label: "Beneficiary", value: p.beneficiary },
             { label: "Preimage hash", value: p.preimageHash },
             { label: "Length (bytes)", value: String(p.preimageLen) },
           ]}
