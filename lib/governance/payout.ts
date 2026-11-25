@@ -15,7 +15,7 @@ import { u8aToHex } from "@polkadot/util"
 import { decodeAddress } from "@polkadot/util-crypto"
 import type { ProposalIntent } from "./call-extract"
 import type { EnactmentRecord } from "./scheduler"
-import { queryEntry } from "@/lib/chain/runtime"
+import { queryEntry, txCall } from "@/lib/chain/runtime"
 
 /** A `treasury.proposals` entry. */
 export type TreasuryProposalEntry = {
@@ -61,6 +61,99 @@ export function localSpendTarget(intent: ProposalIntent | undefined): SpendTarge
 }
 
 /**
+ * The spend a `treasury.spend` intent makes, or null for anything else. Unlike
+ * `spend_local`, it is paid when someone calls `treasury.payout`, within the
+ * window the spend is valid for.
+ */
+export function claimSpendTarget(intent: ProposalIntent | undefined): SpendTarget | null {
+  if (!intent || intent.kind !== "treasury-spend" || intent.method !== "spend") return null
+  try {
+    return { beneficiary: u8aToHex(decodeAddress(intent.beneficiary)), amount: intent.amount }
+  } catch {
+    return null
+  }
+}
+
+/** A `treasury.spends` entry: a `treasury.spend` waiting to be paid out. */
+export type TreasurySpendEntry = {
+  index: number
+  /** Beneficiary public key, hex. */
+  beneficiary: `0x${string}`
+  amount: bigint
+  /** The first block it can be paid out. */
+  validFrom: number
+  /** The block after which it can't be. */
+  expireAt: number
+  /** `pending`: not paid yet. `attempted`: paid out (until `checkStatus` clears it). `failed`: the payment failed, to retry. */
+  status: "pending" | "attempted" | "failed"
+}
+
+/** Where the payout of a `treasury.spend` stands, after enactment. */
+export type ClaimStatus =
+  /** Can't be told from chain state (or not read yet). */
+  | { status: "unknown" }
+  /** Ready to be paid out by anyone, until `expireAt`. */
+  | { status: "open"; spendIndex: number; expireAt: number }
+  /** Paid out. */
+  | { status: "paid"; spendIndex: number }
+  /** Not paid out in its window; the funds never left the treasury. */
+  | { status: "expired"; spendIndex: number; expireAt: number }
+  /** The entry is gone: paid out, or lapsed and cleared, which the state alone can't tell apart. */
+  | { status: "closed"; spendIndex: number | null }
+  /** The enacted call failed, so there is nothing to claim. */
+  | { status: "none" }
+
+/**
+ * Where an enacted `treasury.spend` stands, from `treasury.spends` and, when
+ * the archive could read it, the enactment's own `AssetSpendApproved`.
+ *
+ * With the record, the spend's index is the one the event announced. Without
+ * it, a pending spend with the same beneficiary and amount is taken (the
+ * latest one). An entry whose window has passed is expired, one the payout
+ * has attempted is paid. A spend that is gone and was approved by the record
+ * is paid while its window lasts, and closed after (it could also have lapsed).
+ */
+export function resolveClaim(input: {
+  record: EnactmentRecord | null
+  spend: SpendTarget
+  spends: readonly TreasurySpendEntry[]
+  currentBlock: number | null
+}): ClaimStatus {
+  const { record, spend, spends, currentBlock } = input
+  if (record?.ok === false) return { status: "none" }
+
+  const same = (beneficiary: string, amount: bigint) =>
+    beneficiary.toLowerCase() === spend.beneficiary.toLowerCase() && amount === spend.amount
+
+  const approved = record?.spends.find((s) => s.validFrom != null && same(s.beneficiary, s.amount))
+  const entry = approved
+    ? spends.find((e) => e.index === approved.proposalIndex)
+    : spends
+        .filter((e) => e.status === "pending" && same(e.beneficiary, e.amount))
+        .sort((a, b) => b.index - a.index)[0]
+
+  if (entry) {
+    if (entry.status === "attempted") return { status: "paid", spendIndex: entry.index }
+    if (currentBlock != null && currentBlock > entry.expireAt) {
+      return { status: "expired", spendIndex: entry.index, expireAt: entry.expireAt }
+    }
+    return { status: "open", spendIndex: entry.index, expireAt: entry.expireAt }
+  }
+  if (approved) {
+    const expireAt = approved.expireAt ?? null
+    return currentBlock != null && expireAt != null && currentBlock > expireAt
+      ? { status: "closed", spendIndex: approved.proposalIndex }
+      : { status: "paid", spendIndex: approved.proposalIndex }
+  }
+  return { status: "unknown" }
+}
+
+/** `treasury.payout(index)`: pays a `treasury.spend` out to its beneficiary. Anyone can send it. */
+export function buildClaimPayout(api: Pick<ApiPromise, "tx">, index: number) {
+  return txCall(api, "treasury", "payout")(index)
+}
+
+/**
  * The first spend-period block after `block`, and one at `block` itself has
  * already run. Spend periods fall at `origin + k * spendPeriod`. Older
  * treasuries pay at the blocks divisible by `spendPeriod` (origin 0); newer
@@ -98,7 +191,9 @@ export function resolvePayout(input: {
   const sameSpend = (beneficiary: string, amount: bigint) =>
     beneficiary.toLowerCase() === spend.beneficiary.toLowerCase() && amount === spend.amount
 
-  const approved = record?.spends.find((s) => sameSpend(s.beneficiary, s.amount))
+  const approved = record?.spends.find(
+    (s) => s.validFrom == null && sameSpend(s.beneficiary, s.amount),
+  )
   if (approved) {
     const stored = proposals.find((p) => p.index === approved.proposalIndex)
     if (!stored) return { status: "paid", proposalIndex: approved.proposalIndex }
@@ -209,6 +304,33 @@ export async function readLastSpendPeriod(api: ApiPromise, block?: number): Prom
   if (!entry) return null
   const value = await entry()
   return value.isSome && value.unwrap ? value.unwrap().toNumber() : null
+}
+
+/** Every `treasury.spends` entry: the `treasury.spend`s that are waiting for a payout, or not yet cleared. */
+export async function readTreasurySpends(api: ApiPromise): Promise<TreasurySpendEntry[]> {
+  const spends = api.query.treasury?.spends
+  if (!spends) return []
+  const out: TreasurySpendEntry[] = []
+  for (const [key, value] of await spends.entries()) {
+    const opt = value as unknown as { isSome?: boolean; unwrap: () => unknown }
+    const raw = (opt.isSome === false ? null : opt.isSome ? opt.unwrap() : value) as {
+      amount: { toBigInt: () => bigint }
+      beneficiary: { toU8a: () => Uint8Array }
+      validFrom: { toNumber: () => number }
+      expireAt: { toNumber: () => number }
+      status: { isPending?: boolean; isAttempted?: boolean; isFailed?: boolean }
+    } | null
+    if (!raw) continue
+    out.push({
+      index: (key.args[0] as unknown as { toNumber: () => number }).toNumber(),
+      beneficiary: u8aToHex(raw.beneficiary.toU8a()),
+      amount: raw.amount.toBigInt(),
+      validFrom: raw.validFrom.toNumber(),
+      expireAt: raw.expireAt.toNumber(),
+      status: raw.status.isAttempted ? "attempted" : raw.status.isFailed ? "failed" : "pending",
+    })
+  }
+  return out
 }
 
 /** The treasury's stored proposals and the approved indices waiting for a spend period. */

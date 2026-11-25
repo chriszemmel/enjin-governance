@@ -963,7 +963,10 @@ export default function DocsPage() {
                 scheduler dispatches the noted call at least this many
                 blocks later, or later still if the proposal asked for a
                 later block. A treasury <Code>spend_local</Code> then waits
-                for the next spend period to be paid.
+                for the next spend period to be paid, while a{" "}
+                <Code>treasury.spend</Code> can be claimed by anyone with{" "}
+                <Code>treasury.payout</Code> as soon as it is enacted, within
+                its claim window.
               </li>
             </ul>
             <p>

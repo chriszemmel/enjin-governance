@@ -190,7 +190,7 @@ period - the blocks divisible by `treasury.spendPeriod` (14,400) - if the
 pot covers them, and removes them. `useSpendPayout`
 (`lib/query/hooks/use-spend-payout.ts`, logic in
 `lib/governance/payout.ts`) tracks it when the decoded call is a
-`spendLocal` (not `treasury.spend`, which pays through `treasury.payout`):
+`spendLocal` (a `treasury.spend` is claimed by hand, see below):
 
 - before enactment: upcoming, estimated at the spend period after the
   enactment block;
@@ -209,6 +209,36 @@ pot covers them, and removes them. `useSpendPayout`
 
 #12 created treasury proposal #6, awarded at 17,553,600; #14 created #7,
 awarded at 17,640,000.
+
+**Claiming a `treasury.spend`.** `treasury.spend(assetKind, amount,
+beneficiary, validFrom)` (`assetKind` is `null` on Enjin) isn't paid at a
+spend period: it stores an entry in `treasury.spends` (emitting
+`AssetSpendApproved`) that anyone can pay out with `treasury.payout(index)`
+from the block it is valid from (the approval, with `validFrom` `None`) until
+`expireAt`, `treasury.payoutPeriod` (432,000 blocks, about 30 days) later.
+The funds go to the beneficiary; the caller only pays the fee. It has the
+same per-track amount limits as `spendLocal` (checked on a fork of spec 1082:
+MediumSpender 250,000 ENJ passes, 250,001 doesn't, for both).
+`useSpendClaim` (`lib/query/hooks/use-spend-claim.ts`, logic in
+`lib/governance/payout.ts`, `resolveClaim`) tracks it when the decoded call
+is a `treasury.spend`:
+
+- before enactment: Pending, with no date;
+- after it: the spend index and window from the `AssetSpendApproved` the
+  enactment emitted (or, without the archive, the latest pending entry with
+  the same beneficiary and amount). `pending` within its window → Open, with
+  the Claim payout button and "Expires ≈ date"; `pending` past `expireAt` →
+  Expired (the funds never left the treasury); `attempted` → Paid (it stays
+  until someone calls `checkStatus`); `failed` → Open again, until it
+  expires. An entry that is gone was paid (within its window) or is closed
+  (after it: paid, or lapsed and cleared, which the state can't tell apart);
+- the Claim payout button (`components/governance/claim-payout-button.tsx`)
+  asks for a wallet first, like the Refund button, then confirms the amount,
+  the beneficiary (linked, with a copy button, "You" when it is the connected
+  account) and the call, and signs `treasury.payout(index)`.
+
+`spend_local` referenda keep the payout step above, unchanged. A referendum is
+one or the other, from its decoded call.
 
 ## Writing to the chain: `useExtrinsic`
 

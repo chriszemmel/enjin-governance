@@ -3,6 +3,18 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.8 - 2026-11-26
+
+- **Claim a `treasury.spend` payout:** since runtime 1082 a `spend_local`
+  waits up to 24 days for the next spend period. A referendum whose call is
+  `treasury.spend` is paid out as soon as it is enacted, by anyone calling
+  `treasury.payout` within 30 days. Its payout step shows Pending, Open (with
+  a **Claim payout** button, that asks for a wallet first, confirms the
+  amount and where it goes, then signs `treasury.payout`), Paid or Expired
+  (the funds stay in the treasury). `spend_local` referenda look and behave
+  as before. `treasury.spend` has the same amount limits per track as
+  `spend_local`, checked on a fork of mainnet.
+
 ## 2.0.7 - 2026-11-25
 
 - **sENJ votes count at their ENJ value:** runtime 1082 (v1.8.2) counts a

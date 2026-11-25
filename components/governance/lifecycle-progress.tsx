@@ -3,12 +3,13 @@
 import { useId, useState } from "react"
 import { Check, ChevronRight, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { subscanBlockUrl } from "@/lib/chain/chains"
+import { type ChainConfig, subscanBlockUrl } from "@/lib/chain/chains"
 import { useActiveChain } from "@/lib/chain/use-chain"
 import { useCurrentBlock } from "@/lib/query/hooks/use-current-block"
 import { useEnactment } from "@/lib/query/hooks/use-enactment"
 import { useReferendumHistory } from "@/lib/query/hooks/use-referendum-history"
 import type { ReferendaPallet } from "@/lib/governance/referenda"
+import { useSpendClaim } from "@/lib/query/hooks/use-spend-claim"
 import { useSpendPayout } from "@/lib/query/hooks/use-spend-payout"
 import {
   blockToDate,
@@ -32,8 +33,9 @@ import {
   type StepRow,
   stepRows,
 } from "@/lib/governance/lifecycle-view"
-import { localSpendTarget } from "@/lib/governance/payout"
+import { claimSpendTarget, localSpendTarget, type SpendTarget } from "@/lib/governance/payout"
 import type { Referendum, Track } from "@/lib/governance/types"
+import { ClaimPayoutButton } from "./claim-payout-button"
 
 interface LifecycleProgressProps {
   referendum: Referendum
@@ -85,8 +87,12 @@ export function LifecycleProgress({
     enabled: pallet === "referenda",
     withRecord: historyQuery.isSuccess || historyQuery.isError,
   })
-  const target = localSpendTarget(intent)
-  const spend = useSpendPayout(referendum.index, target, enactment)
+  const localTarget = localSpendTarget(intent)
+  const claimTarget = claimSpendTarget(intent)
+  const target = localTarget ?? claimTarget
+  const localSpend = useSpendPayout(referendum.index, localTarget, enactment)
+  const claimSpend = useSpendClaim(referendum.index, claimTarget, enactment)
+  const spend = localSpend ?? claimSpend
   const lifecycle = getLifecycle(referendum, track ?? null, currentBlock, {
     history,
     enactment: enactment.state,
@@ -98,6 +104,7 @@ export function LifecycleProgress({
     lifecycle.terminal != null &&
     lifecycle.activeStageId == null &&
     lifecycle.payout?.state !== "active" &&
+    lifecycle.payout?.state !== "claimable" &&
     lifecycle.payout?.state !== "upcoming"
 
   return done ? (
@@ -113,6 +120,7 @@ export function LifecycleProgress({
       lifecycle={lifecycle}
       currentBlock={currentBlock}
       amount={amount}
+      claim={claimTarget ? { target: claimTarget, chain } : null}
       className={className}
     />
   )
@@ -124,11 +132,14 @@ function RunningCard({
   lifecycle,
   currentBlock,
   amount,
+  claim,
   className,
 }: {
   lifecycle: Lifecycle
   currentBlock: number | null
   amount: string | null
+  /** The spend a "claim" step pays out, for its button. */
+  claim?: { target: SpendTarget; chain: ChainConfig } | null
   className?: string
 }) {
   const headingId = useId()
@@ -181,7 +192,12 @@ function RunningCard({
 
       <ol aria-label="Steps">
         {rows.map((row, i) => (
-          <StepItem key={row.key} row={row} last={i === rows.length - 1} />
+          <StepItem
+            key={row.key}
+            row={row}
+            last={i === rows.length - 1}
+            claim={claim ?? null}
+          />
         ))}
       </ol>
 
@@ -205,7 +221,15 @@ function RunningCard({
   )
 }
 
-function StepItem({ row, last }: { row: StepRow; last: boolean }) {
+function StepItem({
+  row,
+  last,
+  claim,
+}: {
+  row: StepRow
+  last: boolean
+  claim: { target: SpendTarget; chain: ChainConfig } | null
+}) {
   const upcoming = row.state === "upcoming" || row.state === "unknown"
   return (
     <li
@@ -252,12 +276,22 @@ function StepItem({ row, last }: { row: StepRow; last: boolean }) {
             {row.note}
           </p>
         )}
+        {row.action?.kind === "claim" && claim && (
+          <ClaimPayoutButton
+            spendIndex={row.action.spendIndex}
+            amount={claim.target.amount}
+            beneficiary={claim.target.beneficiary}
+            expires={row.action.expires}
+            chain={claim.chain}
+          />
+        )}
       </div>
       {row.when && (
         <div
           className={cn(
             "text-right text-xs leading-5 whitespace-nowrap",
             upcoming ? "text-muted-foreground" : "text-foreground",
+            row.state === "failed" && "text-destructive-text",
           )}
         >
           <p className={cn(row.when.mono && "font-mono text-[11px] tabular-nums")}>{row.when.main}</p>

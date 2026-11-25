@@ -26,6 +26,7 @@ type SignedRecord = { extrinsic: FakeExtrinsic; address: string; options: unknow
 const ENJIN_ARITY: Record<string, Record<string, number>> = {
   convictionVoting: { vote: 3, removeVote: 3, delegate: 5, undelegate: 2, unlock: 3 },
   fellowshipCollective: { vote: 2 },
+  treasury: { payout: 1 },
 }
 
 const IN_BLOCK = {

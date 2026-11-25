@@ -72,6 +72,7 @@ shown differently or not at all (see the finding).
 | 12 | Treasury proposal - `app/create/page.tsx:750` | `batchAll[preimage.notePreimage(spendLocal(amount, beneficiary)), referenda.submit(Origins.<tier>, Lookup{hash, len}, enactment), preimage.notePreimage(envelope), referenda.setMetadata(index, hash)]` | review: amount, beneficiary, track, raw call hex, preimage hash, enactment; submit step: one card per call | ✅ (raw bytes shown); ⚠️ amount rounded (F4) | fork: referendum on the tier's track, preimage == spendLocal(amount, beneficiary), metadata == envelope |
 | 13 | Advanced composer - `app/create/advanced/page.tsx:854` | `batchAll[(notePreimage), submit(origin, Inline \| Lookup, enactment), (notePreimage envelope), setMetadata]`, or envelope + `setMetadata` for an existing referendum | pallet.method, call hex, hash, size, origin, enactment | ⚠️ arguments not decoded (F11) | unit (builders) |
 | 14 | Sign-in - `lib/auth/siwe.ts:48`, signed via `signRaw` | a text message: app name, address, nonce, time | the wallet shows the message | ⚠️ no site in the message (F12) | code |
+| 15 | Claim a payout - `components/governance/claim-payout-button.tsx` | `treasury.payout(index)` | the confirmation: amount, beneficiary (identicon, short address linked to Subscan, copy button, "You" when it is the connected account), `treasury.payout(index)`, who receives it, the deadline | ✅ the index is the spend the card names; the funds go to the beneficiary, not the signer | component, fork (`fork/spend-claim.fork.ts`) |
 
 ## Findings
 

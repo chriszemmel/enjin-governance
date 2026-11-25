@@ -185,3 +185,51 @@ export async function storedVote(
   }
   throw new Error(`unknown vote record: ${JSON.stringify(record)}`)
 }
+
+/**
+ * Run `tx`'s call at the next block as `origin` (a `PalletsOrigin`, e.g.
+ * `{ origins: "MediumSpender" }`), the way a passed referendum's enactment
+ * would, by putting it in the scheduler's agenda. Returns the scheduler's
+ * dispatch result for it.
+ */
+export async function dispatchAsOrigin(
+  fork: Fork,
+  tx: SubmittableExtrinsic<"promise">,
+  origin: Record<string, unknown>,
+): Promise<{ ok: boolean; events: string[] }> {
+  const head = (await fork.api.rpc.chain.getHeader()).number.toNumber()
+  const at = head + 1
+  await fork.provider.send("dev_setStorage", [
+    {
+      Scheduler: {
+        Agenda: [
+          [
+            [at],
+            [
+              {
+                maybeId: null,
+                priority: 0,
+                call: { inline: tx.method.toHex() },
+                maybePeriodic: null,
+                origin,
+              },
+            ],
+          ],
+        ],
+      },
+    },
+  ])
+  const hash = await newBlock(fork)
+  const atHash = await fork.api.at(hash)
+  const raw = await queryEntry(atHash, "system", "events")()
+  const events = fork.api.createType<Vec<EventRecord>>("Vec<EventRecord>", raw.toU8a())
+  const dispatched = events.find(
+    ({ event }) => event.section === "scheduler" && event.method === "Dispatched",
+  )
+  const result = (dispatched?.event.data as unknown as { result?: { isOk?: boolean } } | undefined)
+    ?.result
+  return {
+    ok: result?.isOk === true,
+    events: events.map(({ event }) => `${event.section}.${event.method}`),
+  }
+}
