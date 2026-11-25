@@ -8,6 +8,7 @@ import {
   treasuryTiersForSpec,
   type SpendLimits,
 } from "@/lib/governance/treasury"
+import { tierTableNotice } from "@/lib/query/hooks/use-treasury-tiers"
 import type { TreasuryTier } from "@/lib/governance/types"
 import { defined } from "@/test/defined"
 
@@ -95,10 +96,17 @@ describe("treasuryTiersForSpec", () => {
     expect(limitOf(table.tiers, "BigTipper")).toBe(ENJ(10_000))
   })
 
+  it("lists spec 1082 as verified, with 1080's limits (checked on a fork of mainnet)", () => {
+    const table = treasuryTiersForSpec(1082)!
+    expect(table.verified).toBe(true)
+    expect(table.limitsSpecVersion).toBe(1082)
+    expect(table.tiers).toEqual(SPEC_1080)
+  })
+
   it("flags an unlisted newer spec as unverified and uses the newest limits", () => {
     const table = treasuryTiersForSpec(1090)!
     expect(table.verified).toBe(false)
-    expect(table.limitsSpecVersion).toBe(1080)
+    expect(table.limitsSpecVersion).toBe(1082)
     expect(table.tiers).toEqual(SPEC_1080)
   })
 
@@ -230,5 +238,19 @@ describe("assertTierCoversAmount", () => {
       expect(tier).not.toBeNull()
       expect(() => assertTierCoversAmount(tier, amount)).not.toThrow()
     }
+  })
+})
+
+describe("the notice the create page shows", () => {
+  it("says nothing for a listed spec, nor for a newer one this app hasn't listed", () => {
+    expect(tierTableNotice(1082, treasuryTiersForSpec(1082))).toBeNull()
+    expect(tierTableNotice(1090, treasuryTiersForSpec(1090))).toBeNull()
+    expect(tierTableNotice(null, null)).toBeNull()
+  })
+
+  it("says a spend can't be filed on a runtime older than every listed spec", () => {
+    expect(tierTableNotice(1060, treasuryTiersForSpec(1060))).toBe(
+      "This app has no treasury spend limits for runtime spec 1060, so it can't file a spend on this chain.",
+    )
   })
 })

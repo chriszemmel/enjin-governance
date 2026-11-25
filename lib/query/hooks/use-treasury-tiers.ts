@@ -8,8 +8,10 @@ import { useSpecVersion } from "./use-spec-version"
  * The treasury tier table for the connected runtime (`treasuryTiersForSpec`).
  * `specVersion` is null until the API connects. `table` is null then too, and
  * when the runtime predates every listed spec - its limits are unknown, so
- * callers must not file a spend. `notice` explains that case and the
- * unverified one (a spec missing from the list), for display.
+ * callers must not file a spend. `notice` explains that case, for display.
+ * A spec missing from the list (newer than every entry) is not shown to the
+ * user: the table still holds every origin to the lowest known limit, and
+ * `fork/spend-limits.fork.ts` is what catches an upgrade that changes them.
  */
 export function useTreasuryTiers(chain?: ChainConfig) {
   // Polled from the ApiPromise (useSpecVersion): polkadot.js updates
@@ -20,16 +22,13 @@ export function useTreasuryTiers(chain?: ChainConfig) {
   return { specVersion, table, notice: tierTableNotice(specVersion, table) }
 }
 
-function tierTableNotice(
+export function tierTableNotice(
   specVersion: number | null,
   table: TreasuryTierTable | null,
 ): string | null {
   if (specVersion == null) return null
   if (!table) {
     return `This app has no treasury spend limits for runtime spec ${specVersion}, so it can't file a spend on this chain.`
-  }
-  if (!table.verified) {
-    return `This app has no treasury spend limits for runtime spec ${specVersion}, so it uses spec ${table.limitsSpecVersion}'s. If that upgrade lowered a limit, a spend can fail at enactment.`
   }
   return null
 }

@@ -14,6 +14,15 @@ All notable changes to Enjin Governance. Versions follow
   (the funds stay in the treasury). `spend_local` referenda look and behave
   as before. `treasury.spend` has the same amount limits per track as
   `spend_local`, checked on a fork of mainnet.
+- **No more spend-limit notice on runtime 1082:** the create page told
+  everyone "This app has no treasury spend limits for runtime spec 1082, so
+  it uses spec 1080's". The limits of 1082 are listed now (unchanged, checked
+  on a fork of mainnet for every origin, for both calls), and a runtime the
+  app hasn't listed yet is held to the lowest known limits without saying so.
+  `pnpm test:fork` fails when an upgrade changes a limit.
+- **The proposal page says a `treasury.spend` is claimed:** the line under a
+  treasury request said the referendum "pays the beneficiary", which is true
+  of `spend_local` only. Its spend-limit warning now covers `treasury.spend`.
 
 ## 2.0.7 - 2026-11-25
 

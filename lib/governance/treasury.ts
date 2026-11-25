@@ -79,6 +79,21 @@ export const ENJIN_SPEND_LIMITS: readonly SpendLimits[] = [
       { origin: "TreasuryAdmin", maxAmount: 25_000_000n * ENJ },
     ],
   },
+  {
+    // relaychain v1.8.2 - the limits are unchanged from 1080. Checked on a
+    // fork of mainnet: each origin's limit passes and one ENJ above it fails
+    // with InsufficientPermission, for spend_local and spend (`pnpm test:fork`,
+    // fork/spend-limits.fork.ts, which fails when a later upgrade changes them).
+    specVersion: 1082,
+    tiers: [
+      { origin: "SmallTipper", maxAmount: 2_500n * ENJ },
+      { origin: "BigTipper", maxAmount: 10_000n * ENJ },
+      { origin: "SmallSpender", maxAmount: 50_000n * ENJ },
+      { origin: "MediumSpender", maxAmount: 250_000n * ENJ },
+      { origin: "BigSpender", maxAmount: 2_500_000n * ENJ },
+      { origin: "TreasuryAdmin", maxAmount: 25_000_000n * ENJ },
+    ],
+  },
 ]
 
 /** The treasury spend origins, smallest → largest spend authority. */
