@@ -385,7 +385,7 @@ function FinishedCard({
               summary.tone === "ok"
                 ? "border-green-500/50 text-green-600 dark:text-green-400"
                 : summary.tone === "danger"
-                  ? "border-destructive/50 text-destructive-text"
+                  ? "border-destructive bg-destructive/15 text-destructive"
                   : "border-border text-muted-foreground",
             )}
           >

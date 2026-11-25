@@ -133,6 +133,15 @@ describe("ClaimPayoutButton", () => {
     expect(dialog.queryByText(/not to you/)).toBeNull()
   })
 
+  it("shows what the claim costs the caller, from the node", async () => {
+    const user = userEvent.setup()
+    state.chain.controls.partialFee = 12_500_000_000_000_000n
+    renderButton()
+    const dialog = await open(user)
+    expect(await dialog.findByText("≈ 0.0125 ENJ")).toBeTruthy()
+    expect(dialog.getByText("Fee, paid by you")).toBeTruthy()
+  })
+
   it("leaves out the deadline when it isn't known", async () => {
     const user = userEvent.setup()
     renderButton({ expires: null })

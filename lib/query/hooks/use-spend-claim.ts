@@ -6,12 +6,15 @@ import { useActiveChain } from "@/lib/chain/use-chain"
 import type { ClaimSpendContext, EnactmentState } from "@/lib/governance/lifecycle"
 import {
   type ClaimStatus,
+  claimReaders,
+  findClaimBlock,
   readTreasurySpends,
   resolveClaim,
   type SpendTarget,
 } from "@/lib/governance/payout"
 import type { EnactmentRecord } from "@/lib/governance/scheduler"
 import { useApi } from "./use-api"
+import { useArchiveApi } from "./use-archive-api"
 
 /**
  * Where the payout of a referendum's `treasury.spend` stands, for
@@ -61,6 +64,30 @@ export function useSpendClaim(
     },
   })
 
+  // A paid spend: find the block that paid it. Past blocks don't change, so the
+  // answer is kept for the session.
+  const archive = useArchiveApi(target)
+  const paid = query.data?.status === "paid" ? query.data : null
+  const blockQuery = useQuery<number | null>({
+    queryKey: ["spend-claim-block", target.id, paid?.spendIndex ?? null, paid?.validFrom ?? null],
+    queryFn: async () => {
+      const a = archive.data
+      if (!a || !api || paid?.validFrom == null) throw new Error("Archive not ready")
+      const head = await api.rpc.chain.getHeader()
+      return findClaimBlock({
+        validFrom: paid.validFrom,
+        currentBlock: (head.number as unknown as { toNumber: () => number }).toNumber(),
+        ...claimReaders(a, paid.spendIndex),
+      })
+    },
+    enabled: archive.isSuccess && apiQuery.isSuccess && paid?.validFrom != null,
+    staleTime: Infinity,
+    retry: 2,
+  })
+
   if (!spend) return null
-  return { claim: query.data ?? { status: "unknown" } }
+  const claim: ClaimStatus = paid
+    ? { ...paid, block: blockQuery.data ?? null }
+    : (query.data ?? { status: "unknown" })
+  return { claim }
 }

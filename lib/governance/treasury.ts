@@ -224,10 +224,28 @@ export type SpendLocalParams = {
 }
 
 /**
+ * Build a `treasury.spend(null, amount, beneficiary, null)` Call (not an
+ * extrinsic): a spend in the native token that anyone can pay out with
+ * `treasury.payout` as soon as it is enacted (`null` asset kind: ENJ; `null`
+ * `validFrom`: from the enactment), instead of waiting for the next spend
+ * period like `spendLocal`.
+ */
+export function buildSpendCall(api: ApiPromise, params: SpendLocalParams): Call {
+  return txCall(api, "treasury", "spend")(
+    null,
+    params.amount.toString(),
+    params.beneficiary,
+    null,
+  ).method as Call
+}
+
+/**
  * Build a `treasury.spendLocal(amount, beneficiary)` Call (not an extrinsic).
  *
  * For Relaychain-internal spends - the beneficiary is paid in the relay's
- * native token from the relay treasury account.
+ * native token from the relay treasury account, at the next spend period.
+ * The composers file `buildSpendCall` instead; referenda filed before that
+ * still carry this one.
  */
 export function buildSpendLocalCall(api: ApiPromise, params: SpendLocalParams): Call {
   return txCall(api, "treasury", "spendLocal")(

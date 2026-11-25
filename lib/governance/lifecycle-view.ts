@@ -229,7 +229,10 @@ function claimRow(
       return {
         key: "payout",
         label: amount ? `Paid out · ${amount}` : "Paid out",
-        note: "The beneficiary received it.",
+        note:
+          payout.block != null
+            ? `Claimed ${dayText(payout.block, currentBlock)} in block #${formatBlockNumber(payout.block)}.`
+            : "The beneficiary received it.",
         noteTone: "muted",
         state: "done",
         when: { main: "Paid" },

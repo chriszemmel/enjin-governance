@@ -7,6 +7,8 @@ import {
   TREASURY_SPEND_ORIGINS,
   treasuryTiersForSpec,
   type SpendLimits,
+  buildSpendCall,
+  buildSpendLocalCall,
 } from "@/lib/governance/treasury"
 import { tierTableNotice } from "@/lib/query/hooks/use-treasury-tiers"
 import type { TreasuryTier } from "@/lib/governance/types"
@@ -252,5 +254,29 @@ describe("the notice the create page shows", () => {
     expect(tierTableNotice(1060, treasuryTiersForSpec(1060))).toBe(
       "This app has no treasury spend limits for runtime spec 1060, so it can't file a spend on this chain.",
     )
+  })
+})
+
+describe("the spend calls", () => {
+  const record = (sink: unknown[][]) =>
+    ({
+      tx: {
+        treasury: {
+          spend: (...a: unknown[]) => (sink.push(["spend", ...a]), { method: "spend" }),
+          spendLocal: (...a: unknown[]) => (sink.push(["spendLocal", ...a]), { method: "local" }),
+        },
+      },
+    }) as unknown as Parameters<typeof buildSpendCall>[0]
+
+  it("buildSpendCall is treasury.spend in the native token, valid from the enactment", () => {
+    const sink: unknown[][] = []
+    expect(buildSpendCall(record(sink), { amount: 250n, beneficiary: "enBob" })).toBe("spend")
+    expect(sink).toEqual([["spend", null, "250", "enBob", null]])
+  })
+
+  it("buildSpendLocalCall is unchanged", () => {
+    const sink: unknown[][] = []
+    buildSpendLocalCall(record(sink), { amount: 250n, beneficiary: "enBob" })
+    expect(sink).toEqual([["spendLocal", "250", "enBob"]])
   })
 })

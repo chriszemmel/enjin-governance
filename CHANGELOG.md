@@ -13,7 +13,14 @@ All notable changes to Enjin Governance. Versions follow
   amount and where it goes, then signs `treasury.payout`), Paid or Expired
   (the funds stay in the treasury). `spend_local` referenda look and behave
   as before. `treasury.spend` has the same amount limits per track as
-  `spend_local`, checked on a fork of mainnet.
+  `spend_local`, checked on a fork of mainnet. The confirmation shows what
+  the claim costs, and a paid spend shows the block it was claimed in.
+- **New treasury requests are filed as `treasury.spend`:** the create page
+  (and the advanced composer's treasury spend) now files
+  `treasury.spend(null, amount, beneficiary, null)`, so the payout can be
+  claimed as soon as the referendum is enacted instead of waiting up to 24
+  days for the next spend period. The create page says so under the
+  amount. Referenda filed as `spend_local` before keep their payout step.
 - **No more spend-limit notice on runtime 1082:** the create page told
   everyone "This app has no treasury spend limits for runtime spec 1082, so
   it uses spec 1080's". The limits of 1082 are listed now (unchanged, checked

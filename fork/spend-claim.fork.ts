@@ -3,6 +3,8 @@ import { decodeAddress } from "@polkadot/util-crypto"
 import { u8aToHex } from "@polkadot/util"
 import {
   buildClaimPayout,
+  claimReaders,
+  findClaimBlock,
   claimSpendTarget,
   localSpendTarget,
   readTreasuryProposals,
@@ -103,6 +105,24 @@ describe("treasury.spend", () => {
     )
     expect((await freeBalance(beneficiary)) - before).toBe(AMOUNT)
 
+    // The app finds the block that paid it, from the chain's own history.
+    const paidAt = await head()
+    expect(
+      await findClaimBlock({
+        validFrom: entry.validFrom,
+        currentBlock: paidAt,
+        ...claimReaders(fork.api, entry.index),
+      }),
+    ).toBe(paidAt)
+    await newBlock(fork)
+    expect(
+      await findClaimBlock({
+        validFrom: entry.validFrom,
+        currentBlock: await head(),
+        ...claimReaders(fork.api, entry.index),
+      }),
+    ).toBe(paidAt)
+
     // The entry stays (attempted) until someone calls checkStatus.
     expect(await entryFor(AMOUNT)).toMatchObject({ index: entry.index, status: "attempted" })
     expect(
@@ -132,7 +152,7 @@ describe("treasury.spend", () => {
         spends: await readTreasurySpends(fork.api),
         currentBlock: await head(),
       }),
-    ).toEqual({ status: "paid", spendIndex: entry.index })
+    ).toEqual({ status: "paid", spendIndex: entry.index, validFrom: entry.validFrom })
   })
 
   it("can't be claimed after its window, and the app calls it expired", async () => {

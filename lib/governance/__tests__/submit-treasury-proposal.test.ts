@@ -34,7 +34,7 @@ function fakeApi(sink: Recorded[]): ApiPromise {
   return {
     tx: {
       treasury: {
-        spendLocal: rec("treasury.spendLocal", { method: { toU8a: () => CALL_BYTES } }),
+        spend: rec("treasury.spend", { method: { toU8a: () => CALL_BYTES } }),
       },
       preimage: { notePreimage: rec("preimage.notePreimage", { __tx: "note" }) },
       referenda: {
@@ -52,7 +52,7 @@ const ENVELOPE_BYTES = stringToU8a(ENVELOPE)
 const ENVELOPE_HASH = blake2AsHex(ENVELOPE_BYTES, 256)
 
 describe("buildTreasuryProposal", () => {
-  it("derives hash/len/callHex from the spend_local call bytes", () => {
+  it("derives hash/len/callHex from the treasury.spend call bytes", () => {
     const built = buildTreasuryProposal(fakeApi([]), {
       amount: 1000n,
       beneficiary: "enAlice",
@@ -98,12 +98,12 @@ describe("buildTreasuryProposal", () => {
       { __tx: "note" },
       { __tx: "setMetadata" },
     ])
-    // spendLocal runs first (to produce the bytes), then the four batch
+    // treasury.spend runs first (to produce the bytes), then the four batch
     // members. setMetadata is strictly after both submit (the referendum
     // must exist) and the envelope note (the hash must resolve) - the
     // runtime rejects any other order with PreimageNotExist.
     expect(sink.map((r) => r.call)).toEqual([
-      "treasury.spendLocal",
+      "treasury.spend",
       "preimage.notePreimage",
       "referenda.submit",
       "preimage.notePreimage",
@@ -120,8 +120,9 @@ describe("buildTreasuryProposal", () => {
       remarkPayload: "EGOV1:{}",
       referendumIndex: 0,
     })
-    const spend = sink.find((r) => r.call === "treasury.spendLocal")!
-    expect(spend.args).toEqual(["250", "enBob"])
+    const spend = sink.find((r) => r.call === "treasury.spend")!
+    // No asset kind (the native token), and valid from the enactment.
+    expect(spend.args).toEqual([null, "250", "enBob", null])
   })
 
   it("notes the spend preimage as the hex of the call bytes", () => {
@@ -234,6 +235,6 @@ describe("previewPreimage", () => {
     expect(preview.preimageLen).toBe(4)
     expect(preview.callHex).toBe(CALL_HEX)
     // Only the spend call + preimage note are touched - no submit, no metadata.
-    expect(sink.map((r) => r.call)).toEqual(["treasury.spendLocal", "preimage.notePreimage"])
+    expect(sink.map((r) => r.call)).toEqual(["treasury.spend", "preimage.notePreimage"])
   })
 })

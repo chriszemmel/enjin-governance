@@ -2,12 +2,13 @@
 
 import { useState } from "react"
 import { Check, Copy, Loader2 } from "lucide-react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { subscanExtrinsicUrl, type ChainConfig } from "@/lib/chain/chains"
 import { formatTokenAmount } from "@/lib/chain/format"
 import { encodeForChain, encodePublicKeyForChain } from "@/lib/chain/ss58"
 import { buildClaimPayout } from "@/lib/governance/payout"
+import { useApi } from "@/lib/query/hooks/use-api"
 import { useExtrinsic } from "@/lib/query/hooks/use-tx"
 import { useWallet } from "@/lib/wallet/use-wallet"
 import { walletDisplayFor } from "@/lib/wallet/connector-registry"
@@ -55,6 +56,20 @@ export function ClaimPayoutButton({ spendIndex, amount, beneficiary, expires, ch
   const ss58 = toSs58(beneficiary, chain)
   const isYou = isSameAccount(activeAddress, ss58, chain)
   const amountText = formatTokenAmount(amount, chain, { maxFractionDigits: 2 })
+
+  // What the claim costs the caller, from the node, once the confirmation is open.
+  const api = useApi().data
+  const feeQuery = useQuery<bigint>({
+    queryKey: ["claim-payout-fee", chain.id, spendIndex, activeAddress],
+    queryFn: async () => {
+      if (!api || !activeAddress) throw new Error("not ready")
+      const info = await buildClaimPayout(api, spendIndex).paymentInfo(activeAddress)
+      return info.partialFee.toBigInt()
+    },
+    enabled: confirmOpen && api != null && !!activeAddress,
+    staleTime: 60_000,
+    retry: 1,
+  })
 
   const tx = useExtrinsic({
     build: (api) => buildClaimPayout(api, spendIndex),
@@ -128,6 +143,13 @@ export function ClaimPayoutButton({ spendIndex, amount, beneficiary, expires, ch
                 treasury.payout({spendIndex})
               </span>
             </Row>
+            {feeQuery.data != null && (
+              <Row label="Fee, paid by you">
+                <span className="font-semibold text-foreground">
+                  ≈ {formatTokenAmount(feeQuery.data, chain, { maxFractionDigits: 4 })}
+                </span>
+              </Row>
+            )}
           </dl>
           <div className="text-center text-[13px] leading-snug">
             <p className="text-muted-foreground">

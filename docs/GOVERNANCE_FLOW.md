@@ -305,7 +305,8 @@ There are two composers. Both end in one signed `utility.batchAll` that
 files the referendum and binds its EGOV1 record.
 
 - **Treasury wizard** (`/create`, `app/create/page.tsx`) - a
-  `treasury.spendLocal(amount, beneficiary)` call. The origin tier is
+  `treasury.spend(null, amount, beneficiary, null)` call, claimed by hand
+  after enactment (see Claiming a `treasury.spend`). The origin tier is
   picked from the amount (see [Origins and treasury tiers](#origins-and-treasury-tiers)).
   The call is always noted as a preimage and submitted by `Lookup`.
 - **Advanced composer** (`/create/advanced`, `app/create/advanced/page.tsx`) -
@@ -602,7 +603,7 @@ be valid for the active chain.
 Each treasury origin can authorize a spend up to a fixed limit, set by the
 runtime's `Spender` EnsureOrigin (relaychain
 `runtime/common/src/governance/origins.rs`, the treasury's `SpendOrigin`).
-If the amount exceeds the origin's limit, `spend_local` fails with
+If the amount exceeds the origin's limit, `spend_local` and `spend` fail with
 `InsufficientPermission` at enactment, after the full vote. The limits
 aren't in metadata or `api.consts`, so `ENJIN_SPEND_LIMITS` in
 `lib/governance/treasury.ts` copies them from the runtime source, one
@@ -644,11 +645,12 @@ pickOriginForAmount(amount, tiers) →
   the other tiers'.
 - `assertTierCoversAmount` re-checks at build time, so a referendum is
   never filed under an origin the table says is too small.
-- `spend_local` doesn't check the treasury balance. The wizard warns,
-  without blocking, when a request is larger than the treasury holds: an
-  approved spend is paid at a later spend period, once the treasury can
-  cover it in full.
-- The proposal page warns when an ongoing `spend_local` is above its
+- Neither call checks the treasury balance when it is approved. The wizard
+  warns, without blocking, when a request is larger than the treasury
+  holds: a `spend_local` is paid at a later spend period once the treasury
+  can cover it in full, and a claim of a `spend` it can't cover fails and
+  can be tried again within its window.
+- The proposal page warns when an ongoing `spend_local` or `spend` is above its
   track's limit, e.g. one filed before these limits were in place.
 - When a runtime upgrade changes `Spender`, add its spec version to
   `ENJIN_SPEND_LIMITS` before the upgrade is applied.

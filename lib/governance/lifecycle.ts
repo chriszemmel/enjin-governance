@@ -684,7 +684,7 @@ function approvedClaim(
         since: enactedAt,
       }
     case "paid":
-      return { ...base, state: "done", spendIndex: claim.spendIndex }
+      return { ...base, state: "done", spendIndex: claim.spendIndex, block: claim.block ?? null }
     case "expired":
       return { ...base, state: "expired", spendIndex: claim.spendIndex, expireAt: claim.expireAt }
     case "closed":
@@ -756,7 +756,7 @@ function payoutEvent(payout: PayoutView): TimelineEvent {
           note: "open until",
         }
       case "done":
-        return { id: "payout", label: "Paid out", block: null, approx: false, status: "done" }
+        return { id: "payout", label: "Paid out", block: payout.block, approx: false, status: "done" }
       case "expired":
         return {
           id: "payout",

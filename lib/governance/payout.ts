@@ -105,8 +105,8 @@ export type ClaimStatus =
   | { status: "unknown" }
   /** Ready to be paid out by anyone, until `expireAt`. */
   | { status: "open"; spendIndex: number; expireAt: number }
-  /** Paid out. */
-  | { status: "paid"; spendIndex: number }
+  /** Paid out; `block` is where, once found (`findClaimBlock`), and `validFrom` where to start looking. */
+  | { status: "paid"; spendIndex: number; validFrom?: number | null; block?: number | null }
   /** Not paid out in its window; the funds never left the treasury. */
   | { status: "expired"; spendIndex: number; expireAt: number }
   /** The entry is gone: paid out, or lapsed and cleared, which the state alone can't tell apart. */
@@ -144,7 +144,9 @@ export function resolveClaim(input: {
         .sort((a, b) => b.index - a.index)[0]
 
   if (entry) {
-    if (entry.status === "attempted") return { status: "paid", spendIndex: entry.index }
+    if (entry.status === "attempted") {
+      return { status: "paid", spendIndex: entry.index, validFrom: entry.validFrom }
+    }
     if (currentBlock != null && currentBlock > entry.expireAt) {
       return { status: "expired", spendIndex: entry.index, expireAt: entry.expireAt }
     }
@@ -154,9 +156,66 @@ export function resolveClaim(input: {
     const expireAt = approved.expireAt ?? null
     return currentBlock != null && expireAt != null && currentBlock > expireAt
       ? { status: "closed", spendIndex: approved.proposalIndex }
-      : { status: "paid", spendIndex: approved.proposalIndex }
+      : { status: "paid", spendIndex: approved.proposalIndex, validFrom: approved.validFrom ?? null }
   }
   return { status: "unknown" }
+}
+
+/**
+ * The block a `treasury.spend` was paid out at: the first block from `validFrom`
+ * at whose state the spend is no longer pending (it stays pending until the
+ * payout is attempted, and never goes back), confirmed by that block's
+ * `treasury.Paid` event for it, found by binary search in a few archive reads.
+ * Null when it was never paid by `currentBlock` (it may have expired instead).
+ */
+export async function findClaimBlock(input: {
+  validFrom: number
+  currentBlock: number
+  /** Whether, after `block`, the spend is no longer waiting to be paid. */
+  settled: (block: number) => Promise<boolean>
+  /** Whether `block`'s events pay the spend out. */
+  paid: (block: number) => Promise<boolean>
+}): Promise<number | null> {
+  const { validFrom, currentBlock, settled, paid } = input
+  if (!(currentBlock >= validFrom) || !(await settled(currentBlock))) return null
+  let lo = validFrom
+  let hi = currentBlock
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (await settled(mid)) hi = mid
+    else lo = mid + 1
+  }
+  return (await paid(lo)) ? lo : null
+}
+
+/** `findClaimBlock`'s chain reads for `treasury.spends` entry `spendIndex`, on an archive node. */
+export function claimReaders(
+  api: ApiPromise,
+  spendIndex: number,
+): { settled: (block: number) => Promise<boolean>; paid: (block: number) => Promise<boolean> } {
+  const at = async (block: number) => api.at(await api.rpc.chain.getBlockHash(block))
+  return {
+    settled: async (block) => {
+      const state = await at(block)
+      const entry = (await queryEntry(state, "treasury", "spends")(spendIndex)) as unknown as {
+        isSome: boolean
+        unwrap: () => { status: { isPending: boolean } }
+      }
+      return !(entry.isSome && entry.unwrap().status.isPending)
+    },
+    paid: async (block) => {
+      const state = await at(block)
+      const events = (await queryEntry(state, "system", "events")()) as unknown as {
+        event: { section: string; method: string; data: ArrayLike<unknown> }
+      }[]
+      return events.some(
+        ({ event }) =>
+          event.section === "treasury" &&
+          event.method === "Paid" &&
+          Number((event.data[0] as { toString: () => string }).toString()) === spendIndex,
+      )
+    },
+  }
 }
 
 /** `treasury.payout(index)`: pays a `treasury.spend` out to its beneficiary. Anyone can send it. */

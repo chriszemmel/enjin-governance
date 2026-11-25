@@ -285,16 +285,18 @@ describe("treasury proposal", () => {
     if (ref.status.type !== "Ongoing") throw new Error("not ongoing")
     expect(ref.status.proposal).toEqual({ hash: built.preimageHash, len: built.preimageLen })
 
-    // The preimage is the spend the user saw: spendLocal(amount, beneficiary).
+    // The preimage is the spend the user saw: spend(null, amount, beneficiary, null).
     const preimage = defined(
       await getPreimage(fork.api, { hash: built.preimageHash, len: built.preimageLen }),
     )
     const spend = fork.api.createType("Call", preimage.bytes)
-    expect(`${spend.section}.${spend.method}`).toBe("treasury.spendLocal")
-    expect(BigInt(spend.args[0]?.toString() ?? "0")).toBe(amount)
-    expect(fork.api.createType("AccountId", spend.args[1]?.toU8a().slice(-32)).toString()).toBe(
+    expect(`${spend.section}.${spend.method}`).toBe("treasury.spend")
+    expect(spend.args[0]?.toJSON()).toBeNull()
+    expect(BigInt(spend.args[1]?.toString() ?? "0")).toBe(amount)
+    expect(fork.api.createType("AccountId", spend.args[2]?.toU8a().slice(-32)).toString()).toBe(
       fork.api.createType("AccountId", fork.dave.publicKey).toString(),
     )
+    expect(spend.args[3]?.toJSON()).toBeNull()
 
     // The metadata binds the envelope the app wrote.
     expect(await getReferendumMetadata(fork.api, index)).toEqual({

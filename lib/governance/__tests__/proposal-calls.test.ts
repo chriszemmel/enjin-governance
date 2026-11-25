@@ -26,7 +26,7 @@ function fakeApi(sink: Recorded[]): ApiPromise {
     }
   return {
     tx: {
-      treasury: { spendLocal: rec("treasury.spendLocal") },
+      treasury: { spend: rec("treasury.spend") },
       referenda: { cancel: rec("referenda.cancel"), kill: rec("referenda.kill") },
       whitelist: { whitelistCall: rec("whitelist.whitelistCall") },
       system: {
@@ -39,14 +39,14 @@ function fakeApi(sink: Recorded[]): ApiPromise {
 }
 
 describe("buildProposalCall", () => {
-  it("treasurySpend → treasury.spendLocal(amount, beneficiary)", () => {
+  it("treasurySpend → treasury.spend(null, amount, beneficiary, null)", () => {
     const sink: Recorded[] = []
     buildProposalCall(fakeApi(sink), {
       kind: "treasurySpend",
       amount: 500n,
       beneficiary: "enAlice",
     })
-    expect(sink[0]).toEqual({ call: "treasury.spendLocal", args: ["500", "enAlice"] })
+    expect(sink[0]).toEqual({ call: "treasury.spend", args: [null, "500", "enAlice", null] })
   })
 
   it("cancelReferendum → referenda.cancel(index)", () => {
