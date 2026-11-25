@@ -98,8 +98,29 @@ describe("treasury.spend", () => {
     const before = await freeBalance(beneficiary)
 
     // Alice isn't the beneficiary.
-    const included = await signAndInclude(fork, buildClaimPayout(fork.api, entry.index), fork.alice)
+    // What the confirmation shows as the fee: the node's estimate for this call.
+    const claim = buildClaimPayout(fork.api, entry.index)
+    const estimate = (await claim.paymentInfo(fork.alice.address)).partialFee.toBigInt()
+    const callerBefore = await freeBalance(fork.alice.address)
+
+    const included = await signAndInclude(fork, claim, fork.alice)
     expect(included.ok, included.error ?? "").toBe(true)
+
+    // The fee that was charged: to the caller (not the beneficiary), no more than
+    // the estimate, and the whole of what the caller lost.
+    const feePaid = defined(
+      included.events.find(
+        ({ event }) =>
+          event.section === "transactionPayment" && event.method === "TransactionFeePaid",
+      ),
+      "TransactionFeePaid",
+    )
+    const actualFee = BigInt(feePaid.event.data[1]?.toString() ?? "0")
+    process.stderr.write(`\nclaim fee: estimate ${estimate} planck, charged ${actualFee} planck\n`)
+    expect(estimate).toBeGreaterThan(0n)
+    expect(actualFee).toBeGreaterThan(0n)
+    expect(actualFee).toBeLessThanOrEqual(estimate)
+    expect(callerBefore - (await freeBalance(fork.alice.address))).toBe(actualFee)
     expect(included.events.map(({ event }) => `${event.section}.${event.method}`)).toContain(
       "treasury.Paid",
     )

@@ -146,7 +146,7 @@ export function ClaimPayoutButton({ spendIndex, amount, beneficiary, expires, ch
             {feeQuery.data != null && (
               <Row label="Fee, paid by you">
                 <span className="font-semibold text-foreground">
-                  ≈ {formatTokenAmount(feeQuery.data, chain, { maxFractionDigits: 4 })}
+                  {formatFee(feeQuery.data, chain)}
                 </span>
               </Row>
             )}
@@ -254,6 +254,18 @@ function BeneficiaryChip({
   )
 }
 
+/**
+ * The fee as the confirmation words it: "≈ 0.0058 ENJ", rounded up to four
+ * decimals so an estimate never understates the cost, and "< 0.0001 ENJ" for a
+ * fee too small to show.
+ */
+export function formatFee(fee: bigint, chain: ChainConfig): string {
+  const unit = 10n ** BigInt(chain.decimals - 4)
+  if (fee < unit) return `< 0.0001 ${chain.ticker}`
+  const rounded = ((fee + unit - 1n) / unit) * unit
+  return `≈ ${formatTokenAmount(rounded, chain, { maxFractionDigits: 4 })}`
+}
+
 function toSs58(value: string, chain: ChainConfig): string | null {
   try {
     return /^0x[0-9a-fA-F]{64}$/.test(value)
@@ -272,4 +284,3 @@ function isSameAccount(active: string | null, ss58: string | null, chain: ChainC
     return false
   }
 }
-

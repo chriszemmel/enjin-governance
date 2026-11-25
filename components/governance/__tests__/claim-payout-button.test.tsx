@@ -9,7 +9,7 @@ import { CHAINS } from "@/lib/chain/chains"
 import { initializeWasm } from "@/lib/chain/ss58"
 import { createFakeChain } from "@/test/fake-chain"
 import { defined } from "@/test/defined"
-import { ClaimPayoutButton } from "../claim-payout-button"
+import { ClaimPayoutButton, formatFee } from "../claim-payout-button"
 
 /**
  * Claiming a `treasury.spend`: a wallet that isn't connected is asked for
@@ -140,6 +140,19 @@ describe("ClaimPayoutButton", () => {
     const dialog = await open(user)
     expect(await dialog.findByText("≈ 0.0125 ENJ")).toBeTruthy()
     expect(dialog.getByText("Fee, paid by you")).toBeTruthy()
+  })
+
+  it("shows the fee as the node estimated it, rounded up to four decimals", () => {
+    // The fee charged for treasury.payout on a fork of mainnet: 0.005752...
+    expect(formatFee(5_752_791_909_689_424n, chain)).toBe("≈ 0.0058 ENJ")
+    expect(formatFee(12_500_000_000_000_000n, chain)).toBe("≈ 0.0125 ENJ")
+    expect(formatFee(12_500_000_000_000_001n, chain)).toBe("≈ 0.0126 ENJ")
+  })
+
+  it("never shows a tiny fee as zero", () => {
+    expect(formatFee(99_999_999_999_999n, chain)).toBe("< 0.0001 ENJ")
+    expect(formatFee(100_000_000_000_000n, chain)).toBe("≈ 0.0001 ENJ")
+    expect(formatFee(1n, chain)).toBe("< 0.0001 ENJ")
   })
 
   it("leaves out the deadline when it isn't known", async () => {
