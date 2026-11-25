@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ApiPromise } from "@polkadot/api"
 import {
   buildClaimPayout,
+  claimNote,
   claimReaders,
   claimSpendTarget,
   findClaimBlock,
@@ -283,6 +284,20 @@ describe("claimReaders", () => {
     expect(await paid(100)).toBe(true)
     expect(await paid(101)).toBe(false)
     expect(await paid(102)).toBe(false)
+  })
+})
+
+describe("claimNote", () => {
+  it("says the payout is claimed after enactment, and for how long", () => {
+    expect(claimNote("30d")).toBe(
+      "Once the referendum is enacted, you or anyone else claims the payout on the proposal page. It goes to the beneficiary. Claim it within 30d, or it expires.",
+    )
+  })
+
+  it("leaves out the window when the chain's isn't known", () => {
+    expect(claimNote(null)).toBe(
+      "Once the referendum is enacted, you or anyone else claims the payout on the proposal page. It goes to the beneficiary.",
+    )
   })
 })
 

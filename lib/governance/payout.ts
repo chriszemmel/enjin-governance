@@ -85,6 +85,17 @@ export function spendDispatchNote(method: string, chainName: string): string {
     : `and pays the beneficiary from the ${chainName} treasury.`
 }
 
+/**
+ * What the create page says under the amount: a `treasury.spend` isn't paid
+ * by itself, it is claimed once the referendum is enacted, within a window
+ * (`window`, as a duration like "30d", when the chain's is known).
+ */
+export function claimNote(window: string | null): string {
+  return `Once the referendum is enacted, you or anyone else claims the payout on the proposal page. It goes to the beneficiary.${
+    window ? ` Claim it within ${window}, or it expires.` : ""
+  }`
+}
+
 /** A `treasury.spends` entry: a `treasury.spend` waiting to be paid out. */
 export type TreasurySpendEntry = {
   index: number

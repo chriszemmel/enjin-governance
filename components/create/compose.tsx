@@ -49,6 +49,8 @@ type ComposeProps = {
   amountError: string | null
   /** Non-blocking notes shown under the amount (unverified limits, treasury balance). */
   amountWarnings: string[]
+  /** An informational line under the amount (not a warning): how the payout is claimed. */
+  amountNote?: string | null
   /** Spend tiers for the connected runtime; null while connecting or unsupported. */
   tiers: readonly TreasuryTier[] | null
   pickedTier: TreasuryTier | null
@@ -181,6 +183,9 @@ export function Compose(p: ComposeProps) {
           <p className="text-[11px] text-muted-foreground">
             The smallest treasury track that covers this amount will be chosen automatically.
           </p>
+        )}
+        {p.amountNote && (
+          <p className="text-[11px] text-muted-foreground leading-relaxed">{p.amountNote}</p>
         )}
         {p.amountWarnings.map((w) => (
           <p key={w} className="text-[11px] text-amber-300 leading-relaxed">
