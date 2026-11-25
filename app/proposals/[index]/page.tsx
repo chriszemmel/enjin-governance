@@ -54,6 +54,7 @@ import { useInlineCall, usePreimage } from "@/lib/query/hooks/use-preimage"
 import { useTracks } from "@/lib/query/hooks/use-tracks"
 import { useTreasuryTiers } from "@/lib/query/hooks/use-treasury-tiers"
 import { encodeForChain } from "@/lib/chain/ss58"
+import { spendDispatchNote } from "@/lib/governance/payout"
 import { StatusChip } from "@/components/governance/status-chip"
 import {
   type ChainConfig,
@@ -368,9 +369,11 @@ export default function ProposalDetailPage() {
   // The spend tier this referendum's track authorizes on the connected
   // runtime, so an amount above its limit (e.g. filed before the tiers were
   // corrected) is flagged before it fails at enactment. `treasury.spend`
-  // converts its asset amount before the check, so only spend_local is compared.
+  // converts its asset amount before the check; on Enjin the asset is the
+  // native one, so `spend` has the same limits as `spend_local` (checked on a
+  // fork of spec 1082).
   const spendLimitTier =
-    isOngoing && track && intent?.kind === "treasury-spend" && intent.method !== "spend"
+    isOngoing && track && intent?.kind === "treasury-spend"
       ? (treasuryTiers.table?.tiers.find(
           (t) => canonicalTrackName(t.origin) === canonicalTrackName(track.name),
         ) ?? null)
@@ -1201,7 +1204,7 @@ function TreasuryRequestSummary({
           <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
             If approved, this referendum dispatches{" "}
             <code className="font-mono text-foreground">treasury.{intent.method}</code>{" "}
-            and pays the beneficiary from the {chain.shortName} treasury.
+            {spendDispatchNote(intent.method, chain.shortName)}
           </p>
           {limitTier && limit != null && intent.amount > limit && (
             <p className="text-[11px] text-amber-300 mt-2 leading-relaxed">

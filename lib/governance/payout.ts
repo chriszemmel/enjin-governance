@@ -74,6 +74,17 @@ export function claimSpendTarget(intent: ProposalIntent | undefined): SpendTarge
   }
 }
 
+/**
+ * What the proposal page says an approved treasury spend does, by the call it
+ * is. A `spend_local` pays from the treasury by itself at the next spend
+ * period; a `spend` is paid when someone claims it.
+ */
+export function spendDispatchNote(method: string, chainName: string): string {
+  return method === "spend"
+    ? `and approves the spend. Once it is enacted, anyone can claim the payout to the beneficiary from the ${chainName} treasury.`
+    : `and pays the beneficiary from the ${chainName} treasury.`
+}
+
 /** A `treasury.spends` entry: a `treasury.spend` waiting to be paid out. */
 export type TreasurySpendEntry = {
   index: number

@@ -304,7 +304,8 @@ export default function TreasuryPage() {
                 </li>
                 <li>
                   Anyone can submit a treasury request by referendum - the
-                  call is a <code className="font-mono text-foreground">treasury.spend_local</code>{" "}
+                  call is a <code className="font-mono text-foreground">treasury.spend_local</code> or{" "}
+                  <code className="font-mono text-foreground">treasury.spend</code>{" "}
                   wrapped in a preimage and submitted via{" "}
                   <code className="font-mono text-foreground">referenda.submit</code>.
                 </li>

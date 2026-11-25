@@ -12,6 +12,7 @@ import {
   claimSpendTarget,
   readTreasurySpends,
   resolveClaim,
+  spendDispatchNote,
   type TreasurySpendEntry,
 } from "@/lib/governance/payout"
 import type { ProposalIntent } from "@/lib/governance/call-extract"
@@ -177,6 +178,20 @@ describe("resolveClaim", () => {
     })
     expect(resolve({ record: local, spend, spends: [], currentBlock: VALID_FROM }).status).toBe(
       "unknown",
+    )
+  })
+})
+
+describe("spendDispatchNote", () => {
+  it("says a spend_local pays by itself, and a spend is claimed", () => {
+    expect(spendDispatchNote("spend_local", "Enjin Relay")).toBe(
+      "and pays the beneficiary from the Enjin Relay treasury.",
+    )
+    expect(spendDispatchNote("spendLocal", "Enjin Relay")).toBe(
+      "and pays the beneficiary from the Enjin Relay treasury.",
+    )
+    expect(spendDispatchNote("spend", "Enjin Relay")).toBe(
+      "and approves the spend. Once it is enacted, anyone can claim the payout to the beneficiary from the Enjin Relay treasury.",
     )
   })
 })
