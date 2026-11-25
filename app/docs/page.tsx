@@ -488,10 +488,12 @@ export default function DocsPage() {
               </Code>
               , and the ENJ-equivalent is{" "}
               <Code>senjBalance * stakeFactor</Code>. The vote panel shows
-              both numbers next to each source. The chain counts the sENJ
-              amount 1:1 like ENJ, for approval and for support: the stake
-              factor only shows what the sENJ is worth and adds no voting
-              weight.
+              both numbers next to each source. From runtime 1082 the chain
+              counts a vote or delegation made with sENJ at its ENJ value,
+              the amount times the pool&apos;s stake factor at the moment you
+              vote, for approval and for support. The tally stores that as
+              the vote&apos;s <Code>counted</Code> amount, next to the amount
+              you cast. A vote made before 1082 keeps counting 1:1.
             </p>
             <p>
               The vote panel automatically detects every pool you hold sENJ

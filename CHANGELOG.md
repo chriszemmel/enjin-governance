@@ -3,6 +3,20 @@
 All notable changes to Enjin Governance. Versions follow
 [semantic versioning](https://semver.org/); dates are UTC.
 
+## 2.0.7 - 2026-11-25
+
+- **sENJ votes count at their ENJ value:** runtime 1082 (v1.8.2) counts a
+  vote or delegation made with sENJ at the pool's rate when it is cast, not
+  1:1 as 2.0.3 said. The vote panel's voting power now multiplies the sENJ
+  amount by the pool's stake factor and says so, and the participation chart
+  weighs each vote by what the tally holds for it. The voter list shows an
+  sENJ vote at that ENJ value with an sENJ badge, so its row compares with
+  the ENJ ones; the details show the sENJ amount, the ENJ value and the
+  rate. List rows no longer carry the lock (it is in the details), and
+  amounts turn compact from 100,000 so a row stays one line on a narrow
+  phone. On referendum #20 the chain's tally equals the sum of the counted
+  amounts. A vote cast before 1082 keeps counting 1:1.
+
 ## 2.0.6 - 2026-11-24
 
 - **Payout dates follow the treasury's own count:** a spend's payout was

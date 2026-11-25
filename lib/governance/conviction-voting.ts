@@ -552,6 +552,12 @@ export type PollVoter = {
    * voteManager.voteCurrencies). Null on stock single-currency Substrate.
    */
   currencyRaw: unknown
+  /**
+   * What the tally holds for this vote (spec 1082's `counted`), or null on a
+   * runtime that stores only the vote. For sENJ it is the amount at the
+   * pool's ENJ rate when the vote was cast, so it can be larger than `vote`.
+   */
+  counted: VoteRecord | null
 }
 
 /**
@@ -598,10 +604,9 @@ export async function listVotesOnPoll(
     const voter = accountCodec.toString()
     const trackId = trackCodec.toNumber?.() ?? Number(trackCodec.toString())
     const currencyFromKey = currencyCodec?.toJSON?.() ?? null
-    const votes = decodeVotes(value, trackId)
-    for (const v of votes) {
-      if (v.pollIndex === pollIndex) {
-        out.push({ voter, trackId, vote: v, currencyRaw: currencyFromKey })
+    for (const { vote, counted } of decodeVotesWithCounted(value, trackId)) {
+      if (vote.pollIndex === pollIndex) {
+        out.push({ voter, trackId, vote, currencyRaw: currencyFromKey, counted })
       }
     }
   }
@@ -906,16 +911,34 @@ function decodePrior(priorRaw: unknown): { unlockAt: number; amount: bigint } | 
 }
 
 function decodeVotes(raw: unknown, trackId: number): VoteRecord[] {
+  return decodeVotesWithCounted(raw, trackId).map((r) => r.vote)
+}
+
+/**
+ * The casting votes of one `votingFor` entry, each with what the tally holds
+ * for it (`counted`, spec 1082 onward; null before, or when it has no shape
+ * we know).
+ */
+function decodeVotesWithCounted(
+  raw: unknown,
+  trackId: number,
+): { vote: VoteRecord; counted: VoteRecord | null }[] {
   const v = raw as Record<string, unknown>
   if (!v.isCasting) return []
   const casting = v.asCasting as Record<string, unknown>
   const votes =
     (casting.votes as unknown as ReadonlyArray<readonly [unknown, unknown]>) ?? []
 
-  const out: VoteRecord[] = []
+  const out: { vote: VoteRecord; counted: VoteRecord | null }[] = []
   for (const [pollIndexCodec, record] of votes) {
-    const decoded = decodeAccountVote(toNumber(pollIndexCodec), trackId, record)
-    if (decoded) out.push(decoded)
+    const pollIndex = toNumber(pollIndexCodec)
+    const vote = decodeAccountVote(pollIndex, trackId, record)
+    if (!vote) continue
+    const counted = (record as Record<string, unknown> | null | undefined)?.counted
+    out.push({
+      vote,
+      counted: counted ? decodeAccountVote(pollIndex, trackId, counted) : null,
+    })
   }
   return out
 }

@@ -1,11 +1,11 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { ChevronRight, Lock, Users } from "lucide-react"
+import { ChevronRight, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Bar } from "./skeletons"
 import { type ChainConfig } from "@/lib/chain/chains"
-import { formatBlockDuration, formatTokenAmount } from "@/lib/chain/format"
+import { formatTokenAmount, formatTokenAmountCompact } from "@/lib/chain/format"
 import {
   encodeForChain,
   encodePublicKeyForChain,
@@ -130,6 +130,15 @@ export function VotesList({
           )
         })}
       </div>
+      {visible.some(
+        (r) => r.countedBalance != null && decodeCurrency(r.currencyRaw).kind === "SEnj",
+      ) && (
+        <p className="text-[11px] text-muted-foreground leading-relaxed text-center">
+          sENJ is shown at its ENJ value.
+          <br />
+          Tap a vote for details.
+        </p>
+      )}
       {rows.length > 5 && (
         <button
           onClick={() => setExpanded((e) => !e)}
@@ -140,6 +149,21 @@ export function VotesList({
       )}
     </div>
   )
+}
+
+/** Planck per whole token's worth of ENJ, from which a row's amount turns compact. */
+const COMPACT_FROM_ENJ = 100_000n
+
+/**
+ * A row's amount: in full up to 99,999.99, compact from 100,000 ("103.8K",
+ * "13.84M"), so a row stays one line, as tall as every other, on a narrow
+ * phone. The details show the amount in full.
+ */
+function formatRowAmount(planck: bigint, chain: ChainConfig): string {
+  const whole = planck / 10n ** BigInt(chain.decimals)
+  return whole >= COMPACT_FROM_ENJ
+    ? formatTokenAmountCompact(planck, chain, { withTicker: false })
+    : formatTokenAmount(planck, chain, { maxFractionDigits: 2, withTicker: false })
 }
 
 function VoteRow({
@@ -188,16 +212,12 @@ function VoteRow({
       ? decodeCurrency(subscanCurrencyRaw)
       : chainCurrency
   const lockBlocks = conviction != null ? convictionLockBlocks(conviction, voteLockingPeriod) : 0
-  const lockLabel =
-    conviction === "None"
-      ? "No lock"
-      : lockBlocks > 0
-        ? formatBlockDuration(lockBlocks)
-        : null
-
   const displayVoter = row.voter
     ? normaliseVoterAddress(row.voter, chain)
     : null
+  // An sENJ vote is listed at the ENJ value the tally holds for it
+  // (spec 1082 onward), so every row compares with the ENJ ones.
+  const countedEnj = currency.kind === "SEnj" ? row.countedBalance : null
 
   // Tint the entire row card by verdict - green for aye, red for nay -
   // so the avatars stay clean circles instead of carrying a coloured
@@ -251,21 +271,24 @@ function VoteRow({
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
-            <span className="font-mono tabular-nums">
-              {formatTokenAmount(row.balance, chain, {
-                maxFractionDigits: 2,
-                withTicker: false,
-              })}
-            </span>
-            <CurrencyBadge currency={currency} />
-            {lockLabel && (
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5 min-w-0 whitespace-nowrap overflow-hidden">
+            {countedEnj != null ? (
               <>
-                <span aria-hidden>·</span>
-                <span className="inline-flex items-center gap-1">
-                  <Lock className="w-2.5 h-2.5" />
-                  {lockLabel} lock
+                {/* An sENJ vote at the ENJ value the tally holds for it, so
+                    every row compares with the ENJ ones; the sENJ amount is
+                    in the details. */}
+                <span className="font-mono tabular-nums">{formatRowAmount(countedEnj, chain)}</span>
+                <span>{chain.ticker}</span>
+                <span className="rounded border border-border px-1 text-[10px] leading-4">
+                  sENJ
                 </span>
+              </>
+            ) : (
+              <>
+                <span className="font-mono tabular-nums">
+                  {formatRowAmount(row.balance, chain)}
+                </span>
+                <CurrencyBadge currency={currency} />
               </>
             )}
           </div>
@@ -291,6 +314,7 @@ function VoteRow({
           multiplier={multiplier}
           lockBlocks={lockBlocks}
           balance={row.balance}
+          countedBalance={row.countedBalance}
           currency={currency}
           extrinsicIndex={extrinsicIndex}
         />

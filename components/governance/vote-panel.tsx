@@ -246,7 +246,13 @@ export function VotingPanel({
   // an 18-decimal bigint directly.
   const votingPower = (() => {
     if (parsedAmount == null) return 0
-    const centi = parsedAmount / 10n ** BigInt(chain.decimals - 2)
+    // From spec 1082 an sENJ vote counts at the pool's ENJ rate (the stake
+    // factor, `realEnjBalance / senjBalance`); ENJ counts as it is.
+    const counted =
+      currency.kind === "SEnj" && currency.senjBalance > 0n
+        ? (parsedAmount * currency.realEnjBalance) / currency.senjBalance
+        : parsedAmount
+    const centi = counted / 10n ** BigInt(chain.decimals - 2)
     return (Number(centi) / 100) * effectiveMultiplier
   })()
 
@@ -690,7 +696,7 @@ export function VotingPanel({
                   <Zap className="w-3.5 h-3.5 text-primary" />
                   {abstain ? "Support" : "Voting power"}
                 </span>
-                {/* Weight in ENJ terms (sENJ counts 1:1), with the sum it comes from
+                {/* Weight in ENJ terms (sENJ at the pool's rate), with the sum it comes from
                     under it, so a 6x vote doesn't read as six times the balance. */}
                 <span className="flex flex-col items-end gap-0.5 text-right">
                   <span className="font-semibold text-primary font-mono whitespace-nowrap">
@@ -713,8 +719,8 @@ export function VotingPanel({
               </div>
               {currency.kind !== "Enj" && (
                 <p className="text-[11px] text-muted-foreground leading-relaxed -mt-1 px-1">
-                  Counts 1:1 like ENJ, not by what it&apos;s worth. Locked sENJ keeps collecting
-                  staking rewards, but you can&apos;t unbond or transfer it until the lock ends.
+                  sENJ is weighted at its ENJ value. Locked sENJ keeps earning rewards but can&apos;t
+                  be unbonded or transferred until the lock ends.
                 </p>
               )}
 
