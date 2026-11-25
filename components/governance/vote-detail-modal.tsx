@@ -36,6 +36,8 @@ interface VoteDetailModalProps {
   /** Blocks the vote stays locked after the referendum ends (0 = none / unknown). */
   lockBlocks: number
   balance: bigint
+  /** What the tally holds for the vote (spec 1082 onward); null when unknown. */
+  countedBalance?: bigint | null
   currency: ReturnType<typeof decodeCurrency>
   extrinsicIndex: string | null
 }
@@ -57,9 +59,14 @@ export function VoteDetailModal({
   multiplier,
   lockBlocks,
   balance,
+  countedBalance = null,
   currency,
   extrinsicIndex,
 }: VoteDetailModalProps) {
+  // An sENJ vote at the ENJ value the tally holds for it, and the rate that
+  // gave it (counted / cast).
+  const counted = currency.kind === "SEnj" && balance > 0n ? countedBalance : null
+  const rate = counted != null ? (Number(counted) / Number(balance)).toFixed(4) : null
   const lockLabel =
     abstain || conviction === "None"
       ? "No lock"
@@ -109,6 +116,14 @@ export function VoteDetailModal({
                   ? `${formatTokenAmount(balance, chain, { maxFractionDigits: 4, withTicker: false })} sENJ`
                   : formatTokenAmount(balance, chain, { maxFractionDigits: 4 })}
               </DialogTitle>
+              {counted != null && (
+                <p className="text-sm font-mono tabular-nums text-foreground">
+                  ≈ {formatTokenAmount(counted, chain, { maxFractionDigits: 2 })}
+                  <span className="block text-[11px] text-muted-foreground">
+                    1 sENJ ≈ {rate} {chain.ticker}
+                  </span>
+                </p>
+              )}
               <p className="inline-flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 {verdictIcon}
                 <span className="font-medium text-foreground">{verdictLabel}</span>

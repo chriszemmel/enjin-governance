@@ -719,9 +719,8 @@ export function VotingPanel({
               </div>
               {currency.kind !== "Enj" && (
                 <p className="text-[11px] text-muted-foreground leading-relaxed -mt-1 px-1">
-                  Counts at what the sENJ is worth in ENJ when you vote, not 1:1. Locked sENJ keeps
-                  collecting staking rewards, but you can&apos;t unbond or transfer it until the
-                  lock ends.
+                  sENJ is weighted at its ENJ value. Locked sENJ keeps earning rewards but can&apos;t
+                  be unbonded or transferred until the lock ends.
                 </p>
               )}
 
