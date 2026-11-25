@@ -9,6 +9,7 @@ import {
   claimReaders,
   findClaimBlock,
   readTreasurySpends,
+  settleClosed,
   resolveClaim,
   type SpendTarget,
 } from "@/lib/governance/payout"
@@ -64,23 +65,30 @@ export function useSpendClaim(
     },
   })
 
-  // A paid spend: find the block that paid it. Past blocks don't change, so the
-  // answer is kept for the session.
+  // A paid spend: find the block that paid it. A closed one (its entry gone
+  // after its window): the same search tells paid from expired. Past blocks
+  // don't change, so the answer is kept for the session.
   const archive = useArchiveApi(target)
   const paid = query.data?.status === "paid" ? query.data : null
+  const closed = query.data?.status === "closed" ? query.data : null
+  const lookup = paid ?? closed
+  const lookupIndex = lookup?.spendIndex ?? null
+  const lookupFrom = lookup?.validFrom ?? null
   const blockQuery = useQuery<number | null>({
-    queryKey: ["spend-claim-block", target.id, paid?.spendIndex ?? null, paid?.validFrom ?? null],
+    queryKey: ["spend-claim-block", target.id, lookupIndex, lookupFrom],
     queryFn: async () => {
       const a = archive.data
-      if (!a || !api || paid?.validFrom == null) throw new Error("Archive not ready")
+      if (!a || !api || lookupIndex == null || lookupFrom == null) {
+        throw new Error("Archive not ready")
+      }
       const head = await api.rpc.chain.getHeader()
       return findClaimBlock({
-        validFrom: paid.validFrom,
+        validFrom: lookupFrom,
         currentBlock: (head.number as unknown as { toNumber: () => number }).toNumber(),
-        ...claimReaders(a, paid.spendIndex),
+        ...claimReaders(a, lookupIndex),
       })
     },
-    enabled: archive.isSuccess && apiQuery.isSuccess && paid?.validFrom != null,
+    enabled: archive.isSuccess && apiQuery.isSuccess && lookupIndex != null && lookupFrom != null,
     staleTime: Infinity,
     retry: 2,
   })
@@ -88,6 +96,8 @@ export function useSpendClaim(
   if (!spend) return null
   const claim: ClaimStatus = paid
     ? { ...paid, block: blockQuery.data ?? null }
-    : (query.data ?? { status: "unknown" })
+    : closed
+      ? settleClosed(closed, blockQuery.isSuccess ? blockQuery.data : undefined)
+      : (query.data ?? { status: "unknown" })
   return { claim }
 }

@@ -69,6 +69,9 @@ export function heroFor(lifecycle: Lifecycle, currentBlock: number | null): Hero
           : 0,
     }
   }
+  if (!stage && payout?.state === "claimable" && payout.expireAt == null) {
+    return { big: null, unit: "Ready to claim", pill: "Approved", approved, progress: 0 }
+  }
   if (!stage && payout?.state === "claimable" && payout.expireAt != null) {
     const since = payout.since ?? null
     const span = since != null ? payout.expireAt - since : 0
@@ -209,9 +212,12 @@ function claimRow(
       return {
         key: "payout",
         label,
-        note: `${
-          expiry != null ? `Expires ${whenText(expiry, currentBlock, true)}. ` : ""
-        }Anyone can trigger this, the beneficiary receives it.`,
+        note:
+          payout.spendIndex == null
+            ? "Several open spends match this one, so it can't be claimed from here yet. Try again in a moment."
+            : `${
+                expiry != null ? `Expires ${whenText(expiry, currentBlock, true)}. ` : ""
+              }Anyone can trigger this, the beneficiary receives it.`,
         noteTone: "muted",
         state: "active",
         when: { main: "Open" },

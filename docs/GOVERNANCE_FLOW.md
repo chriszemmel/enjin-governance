@@ -231,7 +231,11 @@ is a `treasury.spend`:
   Expired (the funds never left the treasury); `attempted` → Paid (it stays
   until someone calls `checkStatus`); `failed` → Open again, until it
   expires. An entry that is gone was paid (within its window) or is closed
-  (after it: paid, or lapsed and cleared, which the state can't tell apart);
+  (after it: paid, or lapsed and cleared, which the state can't tell apart).
+  The archive settles a closed one (`settleClosed`): a block with its
+  `treasury.Paid` → Paid, none → Expired. Without the enactment record,
+  several pending entries with the same beneficiary and amount are shown as
+  Open with no button, so the page never pays out another referendum's spend;
 - the Claim payout button (`components/governance/claim-payout-button.tsx`)
   asks for a wallet first, like the Refund button, then confirms the amount,
   the beneficiary (linked, with a copy button, "You" when it is the connected

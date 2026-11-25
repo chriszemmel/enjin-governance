@@ -11,6 +11,7 @@ import {
   readTreasurySpends,
   resolveClaim,
   resolvePayout,
+  settleClosed,
   type TreasurySpendEntry,
 } from "@/lib/governance/payout"
 import type { ProposalIntent } from "@/lib/governance/call-extract"
@@ -219,6 +220,34 @@ describe("treasury.spend", () => {
     expect(late.ok).toBe(false)
     expect(late.error ?? "").toMatch(/SpendExpired/i)
     expect(await freeBalance(beneficiary)).toBe(before)
+
+    // Someone clears the lapsed entry. The state alone now says "closed"; the
+    // chain's history says no block paid it, so the app calls it expired.
+    const cleared = await signAndInclude(
+      fork,
+      defined(fork.api.tx.treasury?.checkStatus?.(entry.index), "treasury.checkStatus"),
+      fork.alice,
+    )
+    expect(cleared.ok, cleared.error ?? "").toBe(true)
+    const closed = resolveClaim({
+      record,
+      spend: target(EXPIRING),
+      spends: await readTreasurySpends(fork.api),
+      currentBlock: await head(),
+    })
+    expect(closed.status).toBe("closed")
+    if (closed.status !== "closed") return
+    const block = await findClaimBlock({
+      validFrom: entry.validFrom,
+      currentBlock: await head(),
+      ...claimReaders(fork.api, entry.index),
+    })
+    expect(block).toBeNull()
+    expect(settleClosed(closed, block)).toEqual({
+      status: "expired",
+      spendIndex: entry.index,
+      expireAt: now,
+    })
   })
 })
 

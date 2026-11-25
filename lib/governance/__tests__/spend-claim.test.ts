@@ -15,6 +15,7 @@ import {
   findClaimBlock,
   readTreasurySpends,
   resolveClaim,
+  settleClosed,
   spendDispatchNote,
   type TreasurySpendEntry,
 } from "@/lib/governance/payout"
@@ -126,11 +127,20 @@ describe("resolveClaim", () => {
     ).toMatchObject({ status: "open", spendIndex: 0 })
   })
 
-  it("without the archive record, takes the latest pending spend with the same beneficiary and amount", () => {
-    const spends = [entry({ index: 3 }), entry({ index: 5 }), entry({ index: 6, amount: 1n })]
+  it("without the archive record, takes the one pending spend with the same beneficiary and amount", () => {
+    const spends = [entry({ index: 5 }), entry({ index: 6, amount: 1n })]
     expect(resolve({ record: null, spend, spends, currentBlock: VALID_FROM + 10 })).toMatchObject({
       status: "open",
       spendIndex: 5,
+    })
+  })
+
+  it("without the record, several matching spends are open but none is named", () => {
+    const spends = [entry({ index: 3 }), entry({ index: 5 })]
+    expect(resolve({ record: null, spend, spends, currentBlock: VALID_FROM + 10 })).toEqual({
+      status: "open",
+      spendIndex: null,
+      expireAt: null,
     })
   })
 
@@ -155,6 +165,8 @@ describe("resolveClaim", () => {
     expect(resolve({ record: record(), spend, spends: [], currentBlock: EXPIRE_AT + 1 })).toEqual({
       status: "closed",
       spendIndex: 0,
+      validFrom: VALID_FROM,
+      expireAt: EXPIRE_AT,
     })
   })
 
@@ -182,6 +194,40 @@ describe("resolveClaim", () => {
     expect(resolve({ record: local, spend, spends: [], currentBlock: VALID_FROM }).status).toBe(
       "unknown",
     )
+  })
+})
+
+describe("settleClosed", () => {
+  const closed = {
+    status: "closed",
+    spendIndex: 0,
+    validFrom: VALID_FROM,
+    expireAt: EXPIRE_AT,
+  } as const
+
+  it("is paid when the archive found the block that paid it", () => {
+    expect(settleClosed(closed, VALID_FROM + 41)).toEqual({
+      status: "paid",
+      spendIndex: 0,
+      validFrom: VALID_FROM,
+      block: VALID_FROM + 41,
+    })
+  })
+
+  it("is expired when the archive found no payout", () => {
+    expect(settleClosed(closed, null)).toEqual({
+      status: "expired",
+      spendIndex: 0,
+      expireAt: EXPIRE_AT,
+    })
+  })
+
+  it("stays closed until the archive answers, or without what it needs", () => {
+    expect(settleClosed(closed, undefined)).toBe(closed)
+    const noIndex = { ...closed, spendIndex: null }
+    expect(settleClosed(noIndex, VALID_FROM + 41)).toBe(noIndex)
+    const noWindow = { status: "closed", spendIndex: 0 } as const
+    expect(settleClosed(noWindow, null)).toBe(noWindow)
   })
 })
 
@@ -567,6 +613,20 @@ describe("the lifecycle of a treasury.spend", () => {
       state: "unknown",
       when: { main: "Pending" },
     })
+  })
+
+  it("several matching spends: open, no button, and it says why", () => {
+    const lc = getLifecycle(approved20(), mediumSpender, HEAD, {
+      enactment: executed,
+      spend: { claim: { status: "open", spendIndex: null, expireAt: null } },
+    })
+    const row = stepRows(lc, HEAD, "200,000 ENJ").at(-1)
+    expect(row).toMatchObject({ state: "active", when: { main: "Open" } })
+    expect(row?.action).toBeUndefined()
+    expect(row?.note).toBe(
+      "Several open spends match this one, so it can't be claimed from here yet. Try again in a moment.",
+    )
+    expect(heroFor(lc, HEAD)).toMatchObject({ big: null, unit: "Ready to claim", approved: true })
   })
 
   it("an open spend without its index offers no button", () => {

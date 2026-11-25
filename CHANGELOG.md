@@ -14,7 +14,10 @@ All notable changes to Enjin Governance. Versions follow
   (the funds stay in the treasury). `spend_local` referenda look and behave
   as before. `treasury.spend` has the same amount limits per track as
   `spend_local`, checked on a fork of mainnet. The confirmation shows what
-  the claim costs, and a paid spend shows the block it was claimed in.
+  the claim costs, and a paid spend shows the block it was claimed in. A
+  spend whose entry is gone is looked up in the chain's history, so it reads
+  Paid or Expired. When the page can't tell which of several identical open
+  spends is the referendum's, it shows Open without the button.
 - **New treasury requests are filed as `treasury.spend`:** the create page
   (and the advanced composer's treasury spend) now files
   `treasury.spend(null, amount, beneficiary, null)`, so the payout can be

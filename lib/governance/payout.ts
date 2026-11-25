@@ -114,14 +114,27 @@ export type TreasurySpendEntry = {
 export type ClaimStatus =
   /** Can't be told from chain state (or not read yet). */
   | { status: "unknown" }
-  /** Ready to be paid out by anyone, until `expireAt`. */
-  | { status: "open"; spendIndex: number; expireAt: number }
+  /**
+   * Ready to be paid out by anyone, until `expireAt`. Both are null when
+   * several open spends match and the enactment record isn't there to say
+   * which is this referendum's: open, but not to be claimed from here.
+   */
+  | { status: "open"; spendIndex: number | null; expireAt: number | null }
   /** Paid out; `block` is where, once found (`findClaimBlock`), and `validFrom` where to start looking. */
   | { status: "paid"; spendIndex: number; validFrom?: number | null; block?: number | null }
   /** Not paid out in its window; the funds never left the treasury. */
   | { status: "expired"; spendIndex: number; expireAt: number }
-  /** The entry is gone: paid out, or lapsed and cleared, which the state alone can't tell apart. */
-  | { status: "closed"; spendIndex: number | null }
+  /**
+   * The entry is gone after its window: paid out, or lapsed and cleared, which
+   * the state alone can't tell apart. The archive can (`settleClosed`), from
+   * `validFrom` on.
+   */
+  | {
+      status: "closed"
+      spendIndex: number | null
+      validFrom?: number | null
+      expireAt?: number | null
+    }
   /** The enacted call failed, so there is nothing to claim. */
   | { status: "none" }
 
@@ -148,11 +161,14 @@ export function resolveClaim(input: {
     beneficiary.toLowerCase() === spend.beneficiary.toLowerCase() && amount === spend.amount
 
   const approved = record?.spends.find((s) => s.validFrom != null && same(s.beneficiary, s.amount))
-  const entry = approved
-    ? spends.find((e) => e.index === approved.proposalIndex)
-    : spends
-        .filter((e) => e.status === "pending" && same(e.beneficiary, e.amount))
-        .sort((a, b) => b.index - a.index)[0]
+  const matching = approved
+    ? []
+    : spends.filter((e) => e.status === "pending" && same(e.beneficiary, e.amount))
+  // Without the record, two open spends of the same amount to the same
+  // beneficiary can't be told apart: say it is open, but name none of them,
+  // so the page never offers to pay out another referendum's spend.
+  if (matching.length > 1) return { status: "open", spendIndex: null, expireAt: null }
+  const entry = approved ? spends.find((e) => e.index === approved.proposalIndex) : matching[0]
 
   if (entry) {
     if (entry.status === "attempted") {
@@ -166,10 +182,37 @@ export function resolveClaim(input: {
   if (approved) {
     const expireAt = approved.expireAt ?? null
     return currentBlock != null && expireAt != null && currentBlock > expireAt
-      ? { status: "closed", spendIndex: approved.proposalIndex }
-      : { status: "paid", spendIndex: approved.proposalIndex, validFrom: approved.validFrom ?? null }
+      ? {
+          status: "closed",
+          spendIndex: approved.proposalIndex,
+          validFrom: approved.validFrom ?? null,
+          expireAt,
+        }
+      : {
+          status: "paid",
+          spendIndex: approved.proposalIndex,
+          validFrom: approved.validFrom ?? null,
+        }
   }
   return { status: "unknown" }
+}
+
+/**
+ * A closed spend, told apart with what the archive found (`findClaimBlock`):
+ * the block that paid it → paid; no such block → it expired and was cleared.
+ * `block` undefined means the archive hasn't answered: it stays closed.
+ */
+export function settleClosed(
+  claim: Extract<ClaimStatus, { status: "closed" }>,
+  block: number | null | undefined,
+): ClaimStatus {
+  if (block === undefined || claim.spendIndex == null) return claim
+  if (block != null) {
+    return { status: "paid", spendIndex: claim.spendIndex, validFrom: claim.validFrom, block }
+  }
+  return claim.expireAt != null
+    ? { status: "expired", spendIndex: claim.spendIndex, expireAt: claim.expireAt }
+    : claim
 }
 
 /**
